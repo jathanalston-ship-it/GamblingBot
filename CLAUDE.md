@@ -48,6 +48,11 @@ trading platform for US equities. Python 3.12, strictly typed. See
   (next-bar-open fills + truncated history, with proof tests), commissions,
   slippage, gap-aware stops; cost models in `execution/slippage.py`; time
   boundary in `core/clock.py`. See `docs/BACKTESTING.md`.
+- **Trade intelligence DB** (`trades` table + migration `0003`) — per-trade
+  entry/exit, holding time, MFE/MAE, sector, volume, relative volume, regime,
+  entry/exit reasons; attribution (`analytics/attribution.py`), SQL
+  (`analytics/queries.py`, `sql/trade_intelligence.sql`) and markdown dashboards
+  (`analytics/dashboard.py`). See `docs/TRADE_INTELLIGENCE.md`.
 
 ## Philosophy (what we optimise for)
 

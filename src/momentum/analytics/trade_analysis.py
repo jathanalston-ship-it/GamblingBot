@@ -36,6 +36,13 @@ class Trade:
     side: Side = Side.LONG
     entry_date: dt.date | None = None
     exit_date: dt.date | None = None
+    # --- trade-intelligence context (optional; used for attribution) -------
+    sector: str | None = None
+    regime: str | None = None
+    entry_reason: str | None = None
+    exit_reason: str | None = None
+    volume: float | None = None
+    relative_volume: float | None = None
 
     @property
     def is_winner(self) -> bool:

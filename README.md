@@ -67,6 +67,7 @@ metrics above.
 | **[docs/SCANNER.md](docs/SCANNER.md)** | Momentum scanner: filters, momentum score, ranking, persistence (implemented). |
 | **[docs/ANALYTICS.md](docs/ANALYTICS.md)** | Performance & trade analytics built around the positive-skew objective (implemented). |
 | **[docs/BACKTESTING.md](docs/BACKTESTING.md)** | Event-driven backtester: no look-ahead (with proofs), commissions, slippage, gap risk (implemented). |
+| **[docs/TRADE_INTELLIGENCE.md](docs/TRADE_INTELLIGENCE.md)** | Trade intelligence DB: per-trade storage, attribution reports, SQL queries, dashboards (implemented). |
 | **[docs/ROADMAP.md](docs/ROADMAP.md)** | Phased implementation order. |
 
 ## Tech stack

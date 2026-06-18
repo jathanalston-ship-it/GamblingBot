@@ -18,11 +18,18 @@ from momentum.analytics.drawdown_analysis import (
     max_drawdown,
     ulcer_index,
 )
+from momentum.analytics.attribution import (
+    TradeIntelligenceReport,
+    attribute_by,
+    trade_intelligence_report,
+)
+from momentum.analytics.dashboard import render_dashboard
 from momentum.analytics.performance import (
     OBJECTIVE_METRICS,
     PerformanceReport,
     analyze_performance,
 )
+from momentum.analytics.queries import NAMED_QUERIES, get_query, run_query
 from momentum.analytics.trade_analysis import Trade, TradeStats, compute_trade_stats
 
 __all__ = [
@@ -37,4 +44,12 @@ __all__ = [
     "drawdown_series",
     "max_drawdown",
     "ulcer_index",
+    # trade intelligence
+    "TradeIntelligenceReport",
+    "trade_intelligence_report",
+    "attribute_by",
+    "render_dashboard",
+    "NAMED_QUERIES",
+    "get_query",
+    "run_query",
 ]

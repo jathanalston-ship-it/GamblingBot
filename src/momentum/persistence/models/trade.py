@@ -4,6 +4,7 @@ The atomic unit of performance analysis. A trade links back to the signal that
 triggered it and the sizing decision that shaped it, and records the realised
 outcome in both dollars and R-multiples, plus excursion stats for stop research.
 """
+
 from __future__ import annotations
 
 import datetime as dt
@@ -44,9 +45,13 @@ class Trade(IntPKMixin, TimestampMixin, Base):
     # Market regime at entry (for attribution).
 
     # --- entry / exit -------------------------------------------------------
-    entry_ts: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    entry_ts: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
     # Fill timestamp of the entry.
-    exit_ts: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    exit_ts: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
     # Fill timestamp of the exit (NULL while open).
     entry_price: Mapped[float] = mapped_column(Float, nullable=False)
     # Average entry fill price.
@@ -78,10 +83,22 @@ class Trade(IntPKMixin, TimestampMixin, Base):
     # Calendar days held.
     bars_held: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Number of bars held (granularity-independent duration).
-    exit_reason: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    exit_reason: Mapped[str | None] = mapped_column(String(24), nullable=True, index=True)
     # "stop" | "trailing_stop" | "target" | "time_stop" | "signal_exit" | "regime_exit" | "manual".
     status: Mapped[str] = mapped_column(String(8), nullable=False, default="open", index=True)
     # "open" | "closed".
+
+    # --- trade-intelligence context (the "why" and the conditions) ----------
+    sector: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    # GICS-style sector of the symbol at entry (for attribution).
+    regime_label: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    # Denormalised market-regime label at entry: "bullish" | "neutral" | "bearish".
+    entry_reason: Mapped[str | None] = mapped_column(String(48), nullable=True, index=True)
+    # Why we entered, e.g. "breakout_50d" | "momentum_rank" | "pullback".
+    entry_volume: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Share volume on the entry bar.
+    entry_relative_volume: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Entry-bar volume vs its trailing average (demand at entry).
 
     # --- relationships ------------------------------------------------------
     entry_signal: Mapped["Signal | None"] = relationship("Signal")
