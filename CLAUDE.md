@@ -53,6 +53,11 @@ trading platform for US equities. Python 3.12, strictly typed. See
   entry/exit reasons; attribution (`analytics/attribution.py`), SQL
   (`analytics/queries.py`, `sql/trade_intelligence.sql`) and markdown dashboards
   (`analytics/dashboard.py`). See `docs/TRADE_INTELLIGENCE.md`.
+- **Weekly research reporting** (`src/momentum/reporting/research_report.py`,
+  `research_reports` table + migration `0004`) — reads all trades/signals/
+  regimes and emits evidence (what worked/failed, largest winners/losers,
+  improvement hypotheses) as markdown/JSON/DB record. **Read-only: never
+  modifies strategy/config.** See `docs/RESEARCH_REPORTING.md`.
 
 ## Philosophy (what we optimise for)
 

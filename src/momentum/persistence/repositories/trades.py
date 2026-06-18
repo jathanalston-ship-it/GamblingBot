@@ -9,6 +9,7 @@ layer runs on persisted trades exactly as on backtest output.
 
 from __future__ import annotations
 
+import datetime as dt
 from collections.abc import Sequence
 
 from sqlalchemy import select
@@ -33,6 +34,22 @@ class TradeRepository(Repository[Trade]):
     # -- filtered reads ----------------------------------------------------- #
     def closed(self, run_id: str | None = None) -> list[Trade]:
         return self._query(run_id=run_id, status="closed")
+
+    def closed_between(
+        self, start: dt.date, end: dt.date, run_id: str | None = None
+    ) -> list[Trade]:
+        """Closed trades whose *exit* falls within ``[start, end]`` (the week)."""
+        start_dt = dt.datetime.combine(start, dt.time.min, tzinfo=dt.timezone.utc)
+        end_dt = dt.datetime.combine(end, dt.time.max, tzinfo=dt.timezone.utc)
+        stmt = select(Trade).where(
+            Trade.status == "closed",
+            Trade.exit_ts.is_not(None),
+            Trade.exit_ts >= start_dt,
+            Trade.exit_ts <= end_dt,
+        )
+        if run_id is not None:
+            stmt = stmt.where(Trade.run_id == run_id)
+        return list(self.session.scalars(stmt.order_by(Trade.exit_ts.asc())).all())
 
     def open_positions(self, run_id: str | None = None) -> list[Trade]:
         return self._query(run_id=run_id, status="open")

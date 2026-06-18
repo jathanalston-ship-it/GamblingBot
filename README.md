@@ -68,6 +68,7 @@ metrics above.
 | **[docs/ANALYTICS.md](docs/ANALYTICS.md)** | Performance & trade analytics built around the positive-skew objective (implemented). |
 | **[docs/BACKTESTING.md](docs/BACKTESTING.md)** | Event-driven backtester: no look-ahead (with proofs), commissions, slippage, gap risk (implemented). |
 | **[docs/TRADE_INTELLIGENCE.md](docs/TRADE_INTELLIGENCE.md)** | Trade intelligence DB: per-trade storage, attribution reports, SQL queries, dashboards (implemented). |
+| **[docs/RESEARCH_REPORTING.md](docs/RESEARCH_REPORTING.md)** | Automated weekly research reports: evidence only (markdown/JSON/DB), never auto-tunes (implemented). |
 | **[docs/ROADMAP.md](docs/ROADMAP.md)** | Phased implementation order. |
 
 ## Tech stack
