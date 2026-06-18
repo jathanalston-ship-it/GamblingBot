@@ -2,9 +2,9 @@
 
 The full catalog (per docs/ARCHITECTURE.md) is ``Side``, ``OrderType``,
 ``TimeInForce``, ``OrderStatus``, ``SignalType``, ``ExitReason``, ``RunMode``,
-``RegimeState``, ``AssetClass``. The regime-related members are implemented
-here (used by the market-regime engine and the ``market_regimes`` table);
-the trading-execution members are added by later phases.
+``RegimeState``, ``AssetClass``. The regime- and risk-related members are
+implemented here; the remaining trading-execution members are added by later
+phases.
 
 All enums subclass ``str`` so their values serialize transparently to JSON,
 YAML and SQL string columns.
@@ -13,6 +13,31 @@ YAML and SQL string columns.
 from __future__ import annotations
 
 from enum import Enum
+
+
+class Side(str, Enum):
+    """Direction of a position or order."""
+
+    LONG = "long"
+    SHORT = "short"
+
+    @property
+    def sign(self) -> int:
+        """+1 for long, -1 for short — the direction price risk runs."""
+        return 1 if self is Side.LONG else -1
+
+
+class RiskVerdict(str, Enum):
+    """Outcome of the risk gateway for a proposed trade."""
+
+    APPROVE = "approve"
+    RESIZE = "resize"
+    VETO = "veto"
+
+    @property
+    def is_tradeable(self) -> bool:
+        """Whether an order may be created (approved or resized, not vetoed)."""
+        return self is not RiskVerdict.VETO
 
 
 class RegimeState(str, Enum):

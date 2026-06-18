@@ -37,6 +37,9 @@ trading platform for US equities. Python 3.12, strictly typed. See
   by a momentum score; indicators in `signals/indicators.py` &
   `signals/momentum.py`; results persist to `scan_results` (migration `0002`).
   See `docs/SCANNER.md`.
+- **Risk engine** (`src/momentum/risk/`) — the gateway (`risk_manager.py`) sizes,
+  stops and vets every trade (position size, stops, heat, exposure, correlation,
+  drawdown/regime throttle, circuit breakers). See `docs/RISK_MANAGEMENT.md`.
 
 Most other modules under `src/momentum/` remain documented stubs.
 

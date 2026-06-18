@@ -36,6 +36,14 @@ drawdown_throttle:
     - {drawdown_pct: 0.15, risk_multiplier: 0.50}
     - {drawdown_pct: 0.20, risk_multiplier: 0.25}
 
+regime:
+  enabled: true
+  # Scale the per-trade risk budget by the market regime (links the regime
+  # engine to sizing). A 0 multiplier means "no new entries in this regime".
+  bullish_multiplier: 1.00
+  neutral_multiplier: 0.50
+  bearish_multiplier: 0.00
+
 circuit_breakers:
   daily_loss_kill_switch_pct: 0.04   # halt new entries if down >4% on the day
   max_consecutive_losses: 8          # pause & alert for review

@@ -2,7 +2,9 @@
 
 This is the heart of the platform. The strategy is intentionally simple; **the risk engine is where the engineering effort and the edge live.**
 
-> **Status:** Specification only. Formulas below define intended behavior; no code is implemented yet.
+> **Status: implemented.** Code in `src/momentum/risk/` (gateway:
+> `risk_manager.py`); configuration in `risk_config.py` loaded from
+> `config/risk.example.yaml`; tests in `tests/unit/risk/`. See §10 for the API.
 
 ---
 
@@ -215,4 +217,57 @@ Every number above is a config value, not a constant in code — so risk behavio
 | Portfolio | `max_open_positions`, `max_gross_exposure`, `max_net_exposure`, `max_sector_weight`, `max_portfolio_heat` |
 | Correlation | `lookback_days`, `max_pairwise_correlation`, `max_cluster_positions` |
 | Drawdown | `tiers[]` (drawdown_pct → risk_multiplier) |
+| Regime | `bullish_multiplier`, `neutral_multiplier`, `bearish_multiplier` |
 | Circuit breakers | `daily_loss_kill_switch_pct`, `max_consecutive_losses` |
+
+---
+
+## 10. Implementation & API
+
+The engine lives in `src/momentum/risk/` — one small, independently-tested
+module per concern (`volatility`, `position_sizing`, `stops`, `exposure`,
+`heat`, `correlation`, `drawdown`, `limits`) composed by the gateway in
+`risk_manager.py`. Configuration is immutable Pydantic (`risk_config.py`,
+`config_hash()` for reproducibility).
+
+```python
+from momentum.risk import RiskManager, RiskConfig, TradeProposal, AccountState, OpenPosition
+from momentum.core.enums import RegimeState
+
+rm = RiskManager(RiskConfig.from_yaml("config/risk.yaml"))
+
+proposal = TradeProposal(symbol="AAPL", entry_ref=50.0, atr=1.50, sector="Tech")
+account  = AccountState(equity=100_000, regime=RegimeState.BULLISH,
+                        open_positions=(...), peak_equity=100_000)
+
+a = rm.evaluate(proposal, account)          # -> RiskAssessment
+a.verdict            # APPROVE | RESIZE | VETO
+a.approved_shares    # Position Size
+a.risk_per_trade_pct # Risk % (after drawdown/regime throttle)
+a.initial_stop       # Stop Level
+a.gross_exposure_after, a.net_exposure_after, a.portfolio_heat_after  # Portfolio Exposure
+a.binding_constraint # which rule resized/vetoed
+a.to_record()        # kwargs for the position_sizes table
+```
+
+### Inputs → outputs
+
+| Requested input | Carried by |
+|---|---|
+| Account size | `AccountState.equity` |
+| Volatility | `TradeProposal.volatility_annual` (vol-target method) |
+| ATR | `TradeProposal.atr` |
+| Market regime | `AccountState.regime` → `regime` risk multiplier |
+| Open positions | `AccountState.open_positions` (exposure, heat, slots) |
+| Correlation | `TradeProposal.returns` vs each position's `returns` |
+
+| Requested output | Field |
+|---|---|
+| Position size | `approved_shares` (+ `requested_shares`) |
+| Risk % | `risk_per_trade_pct` (effective), `target_weight` |
+| Stop level | `initial_stop` (`stop_distance` = 1R/share) |
+| Portfolio exposure | `gross_exposure_after`, `net_exposure_after`, `portfolio_heat_after` |
+
+The drawdown throttle and market-regime multiplier scale the per-trade risk
+budget **before** sizing (a 0 regime multiplier vetoes outright), wiring the
+regime engine's verdict directly into position sizing.
