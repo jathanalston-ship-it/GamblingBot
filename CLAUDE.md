@@ -40,6 +40,17 @@ trading platform for US equities. Python 3.12, strictly typed. See
 - **Risk engine** (`src/momentum/risk/`) — the gateway (`risk_manager.py`) sizes,
   stops and vets every trade (position size, stops, heat, exposure, correlation,
   drawdown/regime throttle, circuit breakers). See `docs/RISK_MANAGEMENT.md`.
+- **Analytics** (`src/momentum/analytics/`) — performance & trade metrics built
+  around the positive-skew objective (expectancy, profit factor, avg/largest
+  winner, trend capture); win rate is reported, never targeted. See
+  `docs/ANALYTICS.md`.
+
+## Philosophy (what we optimise for)
+
+Optimise for **expectancy, profit factor, average winner, largest winner, trend
+capture** — a positive-skew payoff. Do **not** maximise win rate or trade count.
+Low win rates, long holds and large winner/loser asymmetry are accepted by
+design; win rate / trade count / holding time are diagnostics only.
 
 Most other modules under `src/momentum/` remain documented stubs.
 

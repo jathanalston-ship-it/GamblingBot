@@ -26,6 +26,31 @@ A systematic **momentum-breakout** research and trading platform for US equities
 - **Modular.** Strict layering; vendors and brokers sit behind interfaces.
 - **Fully auditable.** Any trade — or non-trade — can be explained and reproduced from stored config, code version and seed.
 
+### What we optimise for
+
+This system is built for a **positive-skew payoff**, not a high hit rate. We do
+**not** maximise win rate, and we do **not** maximise the number of trades.
+We optimise for:
+
+| Objective | Why |
+|---|---|
+| **Expectancy** (R per trade) | The primary metric — average edge per bet |
+| **Profit factor** | Gross profit vs gross loss |
+| **Average winner** | Winners must be large |
+| **Largest winner** | The right tail carries the system |
+| **Trend capture** | How much of each move we actually keep |
+
+Consequently we **accept** — by design, not by accident:
+
+- **Low win rates** (sub-50% is fine when winners dwarf losers),
+- **Long holding periods** (winners are held for weeks; losers are cut fast),
+- **Large asymmetry** between winners and losers (small fixed −1R losses, open-ended winners).
+
+Win rate, trade count and holding time are **reported as diagnostics, never
+targeted.** The analytics layer (`momentum.analytics`, see
+[docs/ANALYTICS.md](docs/ANALYTICS.md)) leads every report with the objective
+metrics above.
+
 > ⚠️ Research software for systematic strategy development. Trading involves substantial risk of loss. Nothing here is financial advice.
 
 ---
@@ -40,6 +65,7 @@ A systematic **momentum-breakout** research and trading platform for US equities
 | **[docs/SCHEMA.md](docs/SCHEMA.md)** | **As-built** schema: the 7 implemented tables, full field reference, ERD, and the Alembic migration plan. |
 | **[docs/REGIME_ENGINE.md](docs/REGIME_ENGINE.md)** | Market-regime engine: scoring system, configuration, API, and persistence mapping (implemented). |
 | **[docs/SCANNER.md](docs/SCANNER.md)** | Momentum scanner: filters, momentum score, ranking, persistence (implemented). |
+| **[docs/ANALYTICS.md](docs/ANALYTICS.md)** | Performance & trade analytics built around the positive-skew objective (implemented). |
 | **[docs/ROADMAP.md](docs/ROADMAP.md)** | Phased implementation order. |
 
 ## Tech stack
