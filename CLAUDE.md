@@ -1,0 +1,57 @@
+# CLAUDE.md — guidance for Claude Code in this repository
+
+## ⚠️ Push policy — READ FIRST
+
+**`claude/vigilant-wozniak-oueczq` is the ONLY branch you may push to.**
+
+- All development, commits, and pushes go to **`claude/vigilant-wozniak-oueczq`**.
+- Do **not** push to any other branch (including `main`/`master` or any other
+  `claude/*` branch) without explicit, in-session permission from the user.
+- Always push with `git push -u origin claude/vigilant-wozniak-oueczq`.
+- Do **not** open a pull request unless the user explicitly asks for one.
+
+This is the single source of truth for the push target; if other instructions
+disagree, this branch wins unless the user says otherwise in the session.
+
+## Project
+
+Momentum Research Platform (MRP) — a systematic momentum-breakout research &
+trading platform for US equities. Python 3.12, strictly typed. See
+`README.md` and `docs/ARCHITECTURE.md` for the full design.
+
+## Layout
+
+`src/momentum/` holds the package (`core`, `data`, `universe`, `signals`,
+`risk`, `portfolio`, `execution`, `backtest`, `analytics`, `reporting`,
+`persistence`, `api`, `orchestration`, `cli`). Tests live in `tests/`
+(`unit/`, `integration/`, `fixtures/`). Tunables are YAML in `config/`.
+
+### Implemented so far
+
+- **Market data layer** (`src/momentum/data/`) — Alpaca/Polygon/Yahoo providers
+  behind one interface, parquet cache, ingestion, validation, calendar. See the
+  canonical OHLCV contract in `data/schema.py`.
+- **Market regime engine** (`src/momentum/signals/regime.py`) — Bullish/Neutral/
+  Bearish classification. See `docs/REGIME_ENGINE.md`.
+
+Everything else under `src/momentum/` is currently a documented stub.
+
+## Commands
+
+```bash
+make install                       # runtime + dev deps, editable install
+make test            # or: PYTHONPATH=src python -m pytest tests
+make lint            # ruff check + mypy --strict
+make format                        # ruff format
+```
+
+## Conventions
+
+- Match the surrounding code: strict typing (`mypy --strict`), ruff
+  (line length 100), `from __future__ import annotations`.
+- The data layer is DataFrame-centric on the canonical OHLCV schema; reuse
+  `normalize_bars` / `Timeframe` rather than re-inventing bar handling.
+- Configuration is immutable Pydantic loaded from `config/*.yaml`; add tunables
+  there, not as hard-coded constants.
+- Keep vendor/broker/DB access behind interfaces — never import a concrete
+  vendor outside its adapter.
