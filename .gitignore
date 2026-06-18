@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.env
+
+# Data & databases (never commit market data or the research DB)
+data/raw/
+data/processed/
+data/cache/
+*.db
+*.sqlite
+*.sqlite3
+*.parquet
+
+# Reports / artifacts (keep the dir, ignore generated contents)
+reports/*
+!reports/.gitkeep
+*.html
+!docs/**/*.html
+
+# Logs (keep the dir, ignore log files)
+logs/*
+!logs/.gitkeep
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/

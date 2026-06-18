@@ -1,0 +1,8 @@
+# Tradeable-universe screen. Keep it liquid to keep slippage assumptions honest.
+min_price: 5.00                  # avoid sub-$5 / penny names
+max_price: 2000.00
+min_avg_dollar_volume: 20000000  # 20M/day 20-day average
+min_market_cap: 500000000        # 500M
+adv_lookback_days: 20
+exclude_sectors: []              # e.g. ["Financials"] if desired
+max_universe_size: 1000

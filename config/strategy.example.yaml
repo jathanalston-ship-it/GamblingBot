@@ -1,0 +1,17 @@
+# The deliberately SIMPLE breakout strategy. No risk logic here.
+entry:
+  breakout_lookback: 50          # N-day high (Donchian upper) breakout
+  momentum_lookback: 126         # ~6 months ROC for ranking
+  momentum_min_rank_pct: 0.20    # only top 20% by momentum may enter
+  volume_confirmation: true
+  volume_zscore_min: 1.0
+
+regime_filter:
+  enabled: true
+  index_symbol: SPY
+  ma_period: 200                 # only take longs when SPY > 200DMA
+
+exit:
+  donchian_exit_lookback: 20     # trail out on N-day low (channel exit)
+  use_time_stop: true
+  max_holding_days: 60

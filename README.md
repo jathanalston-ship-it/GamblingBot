@@ -1,0 +1,74 @@
+# Momentum Research Platform (MRP)
+
+A systematic **momentum-breakout** research and trading platform for US equities — built around the thesis that durable edge comes from **risk management and position sizing**, not from predicting markets.
+
+> **Status: architecture & scaffold only.** This repository currently contains the
+> project structure, documented module stubs (docstrings, no logic), configuration
+> templates and the design documents. No business logic is implemented yet.
+
+---
+
+## What it does (by design)
+
+1. **Scan** US equities and build a clean, point-in-time tradeable universe.
+2. **Detect** momentum breakouts with a deliberately *simple* strategy.
+3. **Evaluate risk** for every candidate through a single, central risk engine.
+4. **Size** positions dynamically from risk-per-trade and volatility.
+5. **Hold** for days to weeks, trailing stops to ride trends.
+6. **Capture** large trend moves (positive-skew exit policy).
+7. **Measure** everything — detailed, reproducible performance statistics.
+8. **Execute** the same code in backtest, paper and live.
+
+## Philosophy
+
+- **Simple strategy, sophisticated risk.** The strategy emits only "enter/exit". *All* sizing, stops and limits live in one auditable risk engine.
+- **Data driven.** Every tunable is config; every decision is persisted.
+- **Modular.** Strict layering; vendors and brokers sit behind interfaces.
+- **Fully auditable.** Any trade — or non-trade — can be explained and reproduced from stored config, code version and seed.
+
+> ⚠️ Research software for systematic strategy development. Trading involves substantial risk of loss. Nothing here is financial advice.
+
+---
+
+## Documentation
+
+| Doc | Contents |
+|---|---|
+| **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** | System layers, data-flow & dependency diagrams, the full module catalog, one-code-path design. |
+| **[docs/RISK_MANAGEMENT.md](docs/RISK_MANAGEMENT.md)** | The risk engine: sizing, stops, heat, correlation, drawdown throttle, circuit breakers, worked examples. |
+| **[docs/DATA_MODEL.md](docs/DATA_MODEL.md)** | Database schema + ERD and the auditability guarantees. |
+| **[docs/ROADMAP.md](docs/ROADMAP.md)** | Phased implementation order. |
+
+## Tech stack
+
+Python 3.12 · SQLite + SQLAlchemy 2.0 · Pandas · NumPy · Plotly · FastAPI · Pydantic · Typer
+
+## Project layout
+
+```
+config/        versioned tunables (strategy + risk), NOT secrets
+docs/          architecture & design documents
+src/momentum/  the package: core, data, universe, signals, risk, portfolio,
+               execution, backtest, analytics, reporting, persistence, api,
+               orchestration, cli
+tests/         unit / integration / fixtures
+notebooks/     exploratory research
+scripts/       one-off ops
+data/ reports/ logs/   gitignored runtime artifacts
+```
+
+## Getting started (once implemented)
+
+```bash
+cp .env.example .env                      # add data/broker credentials
+cp config/settings.example.yaml config/settings.yaml
+cp config/risk.example.yaml     config/risk.yaml
+cp config/strategy.example.yaml config/strategy.yaml
+cp config/universe.example.yaml config/universe.yaml
+
+make install        # editable install + deps
+make backtest       # run a backtest from config  (mrp backtest)
+make serve          # FastAPI service              (mrp serve)
+```
+
+The intended CLI surface: `mrp ingest | scan | backtest | report | paper-trade | serve`.

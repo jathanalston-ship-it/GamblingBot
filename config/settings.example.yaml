@@ -1,0 +1,26 @@
+# Global settings. Copy to settings.yaml. Tunables only — secrets go in .env.
+environment: research            # research | paper | live
+timezone: America/New_York
+
+data:
+  provider: yfinance             # yfinance | alpaca | polygon
+  timeframe: 1d
+  history_years: 15
+  cache_dir: data/cache
+  adjust_for_splits: true
+  adjust_for_dividends: true
+
+database:
+  url: sqlite:///data/momentum.db
+  echo: false
+
+logging:
+  level: INFO
+  json: true
+  dir: logs
+
+backtest:
+  start: "2010-01-01"
+  end: "2024-12-31"
+  initial_equity: 100000
+  rng_seed: 42
