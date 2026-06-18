@@ -44,6 +44,10 @@ trading platform for US equities. Python 3.12, strictly typed. See
   around the positive-skew objective (expectancy, profit factor, avg/largest
   winner, trend capture); win rate is reported, never targeted. See
   `docs/ANALYTICS.md`.
+- **Backtester** (`src/momentum/backtest/`) — event-driven, no look-ahead
+  (next-bar-open fills + truncated history, with proof tests), commissions,
+  slippage, gap-aware stops; cost models in `execution/slippage.py`; time
+  boundary in `core/clock.py`. See `docs/BACKTESTING.md`.
 
 ## Philosophy (what we optimise for)
 

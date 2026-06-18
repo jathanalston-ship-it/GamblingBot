@@ -66,6 +66,7 @@ metrics above.
 | **[docs/REGIME_ENGINE.md](docs/REGIME_ENGINE.md)** | Market-regime engine: scoring system, configuration, API, and persistence mapping (implemented). |
 | **[docs/SCANNER.md](docs/SCANNER.md)** | Momentum scanner: filters, momentum score, ranking, persistence (implemented). |
 | **[docs/ANALYTICS.md](docs/ANALYTICS.md)** | Performance & trade analytics built around the positive-skew objective (implemented). |
+| **[docs/BACKTESTING.md](docs/BACKTESTING.md)** | Event-driven backtester: no look-ahead (with proofs), commissions, slippage, gap risk (implemented). |
 | **[docs/ROADMAP.md](docs/ROADMAP.md)** | Phased implementation order. |
 
 ## Tech stack
