@@ -2,7 +2,10 @@
 
 SQLite (WAL mode) via SQLAlchemy 2.0 for research; the repository pattern keeps the schema swappable to Postgres for production. Every model lives in `src/momentum/persistence/models/`.
 
-> **Status:** Schema specification only — no ORM code implemented yet.
+> **Status:** Broader *target* design. The first seven tables are now implemented
+> and migrated — see **[SCHEMA.md](SCHEMA.md)** for the as-built schema, full field
+> reference and Alembic migration plan. Note two naming refinements there:
+> `equity_curve` → `portfolio_snapshots`, `risk_assessments` → `position_sizes`.
 
 The schema is designed around one requirement: **full auditability and reproducibility.** Raw inputs, every decision, and every outcome are all persisted and linked back to the `run` that produced them.
 

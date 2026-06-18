@@ -1,5 +1,32 @@
-"""SQLAlchemy ORM models — one module per table; see docs/DATA_MODEL.md.
+"""ORM models package.
 
-Architecture scaffold only — interface contract described below; NO implementation yet.
-See docs/ARCHITECTURE.md for the full module catalog and diagrams.
+Importing this package imports every model module, which registers all tables
+on ``Base.metadata`` — required for ``Base.metadata.create_all(...)`` and for
+Alembic autogeneration to "see" the full schema.
+
+Implemented tables: market_regimes, signals, position_sizes, trades,
+portfolio_snapshots, risk_metrics, optimization_results.
 """
+from __future__ import annotations
+
+from momentum.persistence.models.base import Base, IntPKMixin, TimestampMixin
+from momentum.persistence.models.market_regime import MarketRegime
+from momentum.persistence.models.optimization_result import OptimizationResult
+from momentum.persistence.models.portfolio_snapshot import PortfolioSnapshot
+from momentum.persistence.models.position_size import PositionSize
+from momentum.persistence.models.risk_metric import RiskMetric
+from momentum.persistence.models.signal import Signal
+from momentum.persistence.models.trade import Trade
+
+__all__ = [
+    "Base",
+    "IntPKMixin",
+    "TimestampMixin",
+    "MarketRegime",
+    "Signal",
+    "PositionSize",
+    "Trade",
+    "PortfolioSnapshot",
+    "RiskMetric",
+    "OptimizationResult",
+]
