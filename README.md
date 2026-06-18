@@ -39,6 +39,7 @@ A systematic **momentum-breakout** research and trading platform for US equities
 | **[docs/DATA_MODEL.md](docs/DATA_MODEL.md)** | Broader target schema + ERD and the auditability guarantees. |
 | **[docs/SCHEMA.md](docs/SCHEMA.md)** | **As-built** schema: the 7 implemented tables, full field reference, ERD, and the Alembic migration plan. |
 | **[docs/REGIME_ENGINE.md](docs/REGIME_ENGINE.md)** | Market-regime engine: scoring system, configuration, API, and persistence mapping (implemented). |
+| **[docs/SCANNER.md](docs/SCANNER.md)** | Momentum scanner: filters, momentum score, ranking, persistence (implemented). |
 | **[docs/ROADMAP.md](docs/ROADMAP.md)** | Phased implementation order. |
 
 ## Tech stack

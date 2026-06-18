@@ -33,8 +33,12 @@ trading platform for US equities. Python 3.12, strictly typed. See
   canonical OHLCV contract in `data/schema.py`.
 - **Market regime engine** (`src/momentum/signals/regime.py`) — Bullish/Neutral/
   Bearish classification. See `docs/REGIME_ENGINE.md`.
+- **Momentum scanner** (`src/momentum/universe/`) — screens & ranks the universe
+  by a momentum score; indicators in `signals/indicators.py` &
+  `signals/momentum.py`; results persist to `scan_results` (migration `0002`).
+  See `docs/SCANNER.md`.
 
-Everything else under `src/momentum/` is currently a documented stub.
+Most other modules under `src/momentum/` remain documented stubs.
 
 ## Commands
 

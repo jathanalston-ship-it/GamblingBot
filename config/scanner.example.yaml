@@ -1,0 +1,45 @@
+# Momentum scanner: screen the US equity universe and rank candidates.
+# Copy to config/scanner.yaml and tune. Loaded via ScannerConfig.from_yaml().
+#
+# Pipeline: build per-symbol features -> score (0..100) -> apply hard filters
+# -> rank survivors (rank 1 = strongest momentum).
+
+model_version: v1
+
+# EMA stack periods (the 20 > 50 > 200 trend structure)
+ema_fast: 20
+ema_mid: 50
+ema_slow: 200
+
+# Lookback windows (trading days)
+dollar_volume_lookback: 20       # trailing avg $-volume window (liquidity)
+relative_volume_lookback: 20     # baseline window for relative volume
+atr_period: 14
+ath_lookback: null               # null = all-time high; or an int window in bars
+
+# Blended-momentum lookbacks (bars -> weight) and the optional 12-1 skip
+momentum_lookbacks:
+  63: 0.4                         # ~3 months
+  126: 0.3                        # ~6 months
+  252: 0.3                        # ~12 months
+momentum_skip: 0                 # set ~21 to skip the most recent month (12-1)
+
+top_n: null                      # cap on ranked candidates kept (null = all)
+
+# Hard eligibility gates — a candidate must clear every one.
+filters:
+  min_price: 5.00                # price > $5
+  min_dollar_volume: 20000000    # >= $20M avg daily dollar volume
+  min_relative_volume: 1.0       # >= 1x its normal volume
+  max_distance_from_ath: 0.25    # within 25% of the all-time high
+  require_ema_fast_above_mid: true   # 20 EMA > 50 EMA
+  require_ema_mid_above_slow: true   # 50 EMA > 200 EMA
+  min_sector_rs: 0.50            # sector relative-strength percentile >= 0.5
+
+# Momentum-score component weights (need not sum to 1; re-normalized per symbol).
+weights:
+  momentum: 0.40                 # blended trailing return (cross-sectional rank)
+  trend: 0.20                    # EMA-stack alignment quality
+  ath_proximity: 0.15            # closeness to all-time high
+  relative_volume: 0.10          # demand / participation
+  sector_rs: 0.15                # sector relative strength

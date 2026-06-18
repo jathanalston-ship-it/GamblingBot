@@ -34,8 +34,8 @@ def create_db_engine(url: str | None = None, *, echo: bool = False) -> Engine:
     if engine.url.get_backend_name() == "sqlite":
 
         @event.listens_for(engine, "connect")
-        def _set_sqlite_pragma(dbapi_connection, _connection_record):  # noqa: ANN001
-            cursor = dbapi_connection.cursor()
+        def _set_sqlite_pragma(dbapi_connection: object, _connection_record: object) -> None:
+            cursor = dbapi_connection.cursor()  # type: ignore[attr-defined]
             cursor.execute("PRAGMA journal_mode=WAL")
             cursor.execute("PRAGMA foreign_keys=ON")
             cursor.execute("PRAGMA synchronous=NORMAL")
