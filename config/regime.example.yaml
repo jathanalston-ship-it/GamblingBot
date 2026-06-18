@@ -1,0 +1,54 @@
+# Market-regime engine: decides when aggressive momentum trading is favorable.
+# Copy to config/regime.yaml and tune. Loaded via RegimeConfig.from_yaml().
+#
+# The engine scores each input to [-1, +1] (bearish .. bullish), takes the
+# weighted mean over whichever inputs are present, then labels the composite:
+#   composite >= bull_score  -> Bullish   (full risk)
+#   composite <= bear_score  -> Bearish   (stand aside)
+#   otherwise                -> Neutral   (reduced conviction)
+
+model_version: v1
+benchmark_symbol: SPY
+ma_fast: 50                      # fast trend / 50-day participation MA
+ma_slow: 200                     # slow trend gate (the 200DMA)
+
+# How much each piece of evidence counts. Need not sum to 1 — the engine
+# re-normalizes over the factors that actually have data on a given day.
+weights:
+  spy_trend: 0.25                # S&P 500 trend structure (price vs 50/200DMA)
+  qqq_trend: 0.15                # Nasdaq-100 trend (growth/tech leadership)
+  breadth: 0.10                  # generic advance/decline breadth
+  new_high_low: 0.10             # net new highs vs new lows
+  vix: 0.15                      # implied volatility (inverted: calm = bullish)
+  participation_50: 0.10         # % of universe above its 50DMA
+  participation_200: 0.15        # % of universe above its 200DMA
+
+thresholds:
+  # composite score -> headline label
+  bull_score: 0.20
+  bear_score: -0.20
+
+  # VIX factor: calm scores +1, stressed scores -1 (low vol favors momentum)
+  vix_calm: 15.0
+  vix_stress: 28.0
+
+  # participation (% above MA), expressed as a 0..1 fraction
+  participation_bear: 0.40
+  participation_bull: 0.60
+
+  # generic breadth indicator (e.g. fraction of advancing issues, 0..1)
+  breadth_bear: 0.40
+  breadth_bull: 0.60
+
+  # net new-high/low index = (NH-NL)/(NH+NL), range -1..1
+  high_low_bear: -0.20
+  high_low_bull: 0.20
+
+  # VIX -> volatility_state component
+  vix_low: 15.0
+  vix_high: 25.0
+  vix_extreme: 35.0
+
+  # average index trend score -> trend_state component
+  trend_up: 0.34
+  trend_down: -0.34
