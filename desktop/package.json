@@ -1,9 +1,9 @@
 {
-  "name": "mrp-desktop",
+  "name": "momentum-lab-desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Momentum Research Platform — desktop application (Electron + React + FastAPI).",
-  "author": "MRP",
+  "description": "Momentum Lab — desktop application (Electron + React + FastAPI).",
+  "author": "Momentum Lab",
   "main": "dist-electron/main.js",
   "workspaces": [
     "renderer"
@@ -16,6 +16,8 @@
     "build:electron": "tsc -p electron/tsconfig.json",
     "build": "npm run build:renderer && npm run build:electron",
     "package": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win",
+    "icon": "python build/make_icon.py",
     "lint": "npm --workspace renderer run lint",
     "typecheck": "npm --workspace renderer run typecheck && tsc -p electron/tsconfig.json --noEmit"
   },

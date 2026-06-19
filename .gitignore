@@ -42,3 +42,10 @@ htmlcov/
 .DS_Store
 .idea/
 .vscode/
+
+# Desktop installer assets: track the build sources (icon, spec, scripts) and the
+# Vite entry HTML, but ignore generated build output. (Overrides build/ and *.html.)
+!desktop/build/
+desktop/build/backend/
+desktop/build/.pyiwork/
+!desktop/renderer/index.html

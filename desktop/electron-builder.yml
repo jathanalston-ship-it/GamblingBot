@@ -1,22 +1,70 @@
-appId: com.mrp.desktop
-productName: Momentum Research Platform
+appId: com.momentumlab.desktop
+productName: Momentum Lab
+copyright: Copyright © Momentum Lab
+
 directories:
   output: release
-  buildResources: build
+  buildResources: build # electron-builder auto-discovers build/icon.* here
+
+# What gets packed into the app bundle (asar).
 files:
   - dist-electron/**/*
   - renderer/dist/**/*
-# Ship the FastAPI backend as a PyInstaller one-file binary built into
-# build/backend/ (see docs/DESKTOP_APP.md §Packaging).
+
+# The frozen FastAPI backend (PyInstaller one-file binary) is shipped alongside
+# the app and spawned by the Electron main process. Built into build/backend/
+# by scripts/build_windows.ps1 before packaging (see docs/WINDOWS_INSTALLER.md).
 extraResources:
   - from: build/backend
     to: backend
     filter: ["**/*"]
+
+# IMPORTANT: no update feed configured yet — auto-updates are intentionally out
+# of scope. The installer is a standalone, manually-distributed artifact.
+publish: null
+
+# --------------------------------------------------------------------------- #
+# Windows (primary target)
+# --------------------------------------------------------------------------- #
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.ico
+  artifactName: MomentumLab-Setup-${version}.${ext}
+
+nsis:
+  # A tiny, friendly wizard (Welcome → Install location → Install → Finish).
+  oneClick: false
+  perMachine: false # per-user install → NO administrator prompt
+  allowElevation: false
+  allowToChangeInstallationDirectory: true
+  runAfterFinish: true # tick "Launch Momentum Lab" on the final page
+
+  # Shortcuts.
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: Momentum Lab
+
+  # Icons throughout the installer/uninstaller chrome.
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
+
+  # Uninstall behaviour. Keep the user's data (trade ledger / DB) on uninstall so
+  # a reinstall preserves history; the data lives in %APPDATA%\Momentum Lab and
+  # can be deleted manually. Set true to wipe it on uninstall.
+  deleteAppDataOnUninstall: false
+
+# --------------------------------------------------------------------------- #
+# macOS / Linux (secondary; generated from the same icon)
+# --------------------------------------------------------------------------- #
 mac:
   target: [dmg]
   category: public.app-category.finance
-win:
-  target: [nsis]
+  icon: build/icon.png
+
 linux:
   target: [AppImage]
   category: Office
+  icon: build/icon.png

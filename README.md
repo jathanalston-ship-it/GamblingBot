@@ -78,6 +78,7 @@ metrics above.
 | **[docs/CLI.md](docs/CLI.md)** | The `mrp` CLI: `serve` / `paper-run` / `scan` / `health` / `replay`, logging, and usage examples (implemented). |
 | **[docs/SETUP.md](docs/SETUP.md)** | Fresh-machine setup: dependencies, env vars, database + migrations, backend/frontend startup, verification, troubleshooting. |
 | **[docs/DEMO_DATA.md](docs/DEMO_DATA.md)** | Demo dataset seeder: 50 trades, 100 signals, snapshots, regimes, replay data — explore the UI without the scanner. |
+| **[docs/WINDOWS_INSTALLER.md](docs/WINDOWS_INSTALLER.md)** | Momentum Lab Windows 11 installer: architecture, one-command build, NSIS packaging, shortcuts, icon, uninstall, startup checklist. |
 | **[docs/ROADMAP.md](docs/ROADMAP.md)** | Phased implementation order. |
 
 ## Tech stack

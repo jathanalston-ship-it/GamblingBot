@@ -149,6 +149,16 @@ trading platform for US equities. Python 3.12, strictly typed. See
   can be demonstrated without the scanner. All rows tagged `demo`; replay-aligned
   (`mrp replay --run-id demo`). See `docs/DEMO_DATA.md`.
 
+- **Windows installer ("Momentum Lab")** (`desktop/electron-builder.yml`,
+  `desktop/build/{backend.spec,make_icon.py,icon.ico}`, `scripts/build_windows.ps1`)
+  — a production, double-click NSIS installer for Windows 11 / non-technical users
+  (no CLI). The backend is frozen to `mrp-backend.exe` (PyInstaller) and shipped as
+  an Electron `extraResource`; the main process spawns it on a free loopback port
+  and stores the DB/logs under `%APPDATA%\Momentum Lab\`. Per-user install (no
+  admin), desktop + Start-Menu shortcuts, app icon, uninstaller. Auto-updates are
+  intentionally **not** configured (`publish: null`). Build on Windows/CI (no
+  cross-compile). See `docs/WINDOWS_INSTALLER.md`.
+
 ## Philosophy (what we optimise for)
 
 Optimise for **expectancy, profit factor, average winner, largest winner, trend
