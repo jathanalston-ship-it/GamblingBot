@@ -70,3 +70,11 @@ class ExecutionError(MomentumError):
 
 class InvalidOrderStateError(ExecutionError):
     """An order was asked to make an illegal lifecycle transition."""
+
+
+class UpdateError(MomentumError):
+    """The local self-update failed (and was rolled back)."""
+
+
+class GitError(UpdateError):
+    """A git operation invoked by the updater failed."""

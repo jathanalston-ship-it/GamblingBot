@@ -14,6 +14,7 @@ The database URL comes from ``DATABASE_URL`` (default ``sqlite:///data/momentum.
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import typer
@@ -246,6 +247,100 @@ def replay(
         typer.echo(f"\n## Audit trail: {len(events)} events")
         for e in events:
             typer.echo(f"- {e.ts} {e.event_type}: {e.summary}")
+
+
+@app.command()
+def update(
+    check: bool = typer.Option(False, "--check", help="Only report status; make no changes."),
+    restart_cmd: str = typer.Option(
+        None, "--restart-cmd", help='Command to relaunch after updating, e.g. "mrp serve".'
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt."),
+    branch: str = typer.Option(None, help="Branch to track (default: current)."),
+    log_level: str = typer.Option("INFO", help="Log level."),
+) -> None:
+    """Update this installation from the remote repository (with auto-rollback)."""
+    _init(False, log_level)
+
+    from momentum.core.exceptions import UpdateError
+    from momentum.update.config import UpdateConfig
+    from momentum.update.updater import Updater
+
+    updater = Updater(UpdateConfig(branch=branch), restart=_restart_runner(restart_cmd))
+    try:
+        status = updater.check()
+    except Exception as exc:  # noqa: BLE001 - surface a clean message
+        typer.echo(f"update check failed: {exc}")
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(
+        f"branch {status.branch}: {status.current_version or '?'} "
+        f"({status.current_commit[:12]}) → {status.remote_version or '?'} "
+        f"({status.target_commit[:12]})"
+    )
+    if not status.update_available:
+        typer.echo("Already up to date.")
+        return
+    typer.echo(f"{status.behind_by} new commit(s) available.")
+    if check:
+        return
+    if not yes and not typer.confirm("Download and apply this update?"):
+        typer.echo("Aborted.")
+        raise typer.Exit(code=1)
+
+    try:
+        result = updater.update(restart=bool(restart_cmd))
+    except UpdateError as exc:
+        typer.echo(f"FAILED: {exc}")
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(f"Updated. {result.message} (backup {result.backup_id}).")
+    if result.restarted:
+        typer.echo("Application restarted.")
+    else:
+        typer.echo("Restart Momentum Lab to apply the update.")
+
+
+@app.command()
+def rollback(
+    backup_id: str = typer.Option(None, help="Backup id to restore (default: latest)."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt."),
+    log_level: str = typer.Option("INFO", help="Log level."),
+) -> None:
+    """Roll back to a previous backup (restores the code commit and the database)."""
+    _init(False, log_level)
+
+    from momentum.core.exceptions import UpdateError
+    from momentum.update.updater import Updater
+
+    updater = Updater()
+    target = updater.backups.get(backup_id) if backup_id else updater.backups.latest()
+    if target is None:
+        typer.echo("No backup available to roll back to.")
+        raise typer.Exit(code=1)
+    typer.echo(f"Rolling back to {target.backup_id} (commit {target.commit[:12]}).")
+    if not yes and not typer.confirm("Restore this backup?"):
+        typer.echo("Aborted.")
+        raise typer.Exit(code=1)
+    try:
+        record = updater.rollback(target.backup_id)
+    except UpdateError as exc:
+        typer.echo(f"FAILED: {exc}")
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"Rolled back to {record.commit[:12]}. Restart Momentum Lab to apply.")
+
+
+def _restart_runner(command: str | None) -> Callable[[], None] | None:
+    if not command:
+        return None
+
+    def _run() -> None:
+        import shlex
+        import subprocess
+
+        subprocess.Popen(shlex.split(command), close_fds=True)  # noqa: S603 - user-supplied relaunch
+
+    return _run
 
 
 def _paper_broker() -> PaperBroker:

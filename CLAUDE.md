@@ -159,6 +159,14 @@ trading platform for US equities. Python 3.12, strictly typed. See
   intentionally **not** configured (`publish: null`). Build on Windows/CI (no
   cross-compile). See `docs/WINDOWS_INSTALLER.md`.
 
+- **Local update system** (`src/momentum/update/`, `mrp update` / `mrp rollback`)
+  — a single-user self-update: check the remote → detect a newer version → back up
+  the DB + commit → fast-forward pull → `alembic upgrade head` → verify DB
+  integrity (PRAGMA + head + tables) → optional restart, with **automatic
+  rollback** (reset code + restore DB) on any failure. `Updater` wires injectable
+  `GitRunner` / `BackupManager` / migrator / integrity / restart, so it's tested
+  end-to-end against a temporary git repo (no network). See `docs/UPDATER.md`.
+
 ## Philosophy (what we optimise for)
 
 Optimise for **expectancy, profit factor, average winner, largest winner, trend

@@ -98,5 +98,13 @@ def test_serve_invokes_uvicorn(temp_db: Path, monkeypatch: pytest.MonkeyPatch) -
 def test_help_lists_commands() -> None:
     result = runner.invoke(cli.app, ["--help"])
     assert result.exit_code == 0
-    for command in ("serve", "paper-run", "scan", "health", "replay"):
+    for command in ("serve", "paper-run", "scan", "health", "replay", "update", "rollback"):
         assert command in result.output
+
+
+def test_rollback_without_backup_exits(temp_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Point the updater at an empty backups dir so nothing real is touched.
+    monkeypatch.chdir(temp_db.parent)
+    result = runner.invoke(cli.app, ["rollback", "--yes"])
+    assert result.exit_code == 1
+    assert "No backup" in result.output
