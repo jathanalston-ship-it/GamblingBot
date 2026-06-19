@@ -31,6 +31,16 @@ item into a subsystem doc when it becomes active.
 - **Live broker adapter & a real scheduler/clock loop** — the `Scheduler` is a
   serial decision point triggered by the caller, not a timed daemon.
 
+## QA findings (from docs/PRODUCTION_READINESS_TESTS.md)
+
+- **Harden the scanner against malformed bars** (FINDING-1, medium) —
+  `MomentumScanner.scan` raises `TypeError` on an un-normalized/partial frame
+  instead of skipping that symbol; normalize/validate per-frame and skip bad
+  ones (mirroring `pull_bars` provider-error isolation).
+- **Out-of-band audit channel** (FINDING-2, low) — audit rows share the business
+  transaction; write on a separate connection if a "attempted but rolled back"
+  trail is needed.
+
 ## Conventions for this file
 
 One line per item: what + where + why deferred. Keep it short; delete done items.

@@ -74,6 +74,7 @@ metrics above.
 | **[docs/ORCHESTRATION.md](docs/ORCHESTRATION.md)** | Daily orchestration engine: recover → exits → entries → persist, the `runs` registry, single source of truth & crash recovery (implemented). |
 | **[docs/AUDIT_LOGGING.md](docs/AUDIT_LOGGING.md)** | Append-only audit log: immutable, twice-timestamped, queryable, crash-safe records of every material action (implemented). |
 | **[docs/E2E_VERIFICATION.md](docs/E2E_VERIFICATION.md)** | End-to-end verification: pass/fail checklist, automated tests, and the manual testing workflow for the full paper path. |
+| **[docs/PRODUCTION_READINESS_TESTS.md](docs/PRODUCTION_READINESS_TESTS.md)** | Production-readiness QA plan: startup/corruption/missing-data/scale/memory/crash-recovery tests (manual + automated + failure injection + load) and findings. |
 | **[docs/CLI.md](docs/CLI.md)** | The `mrp` CLI: `serve` / `paper-run` / `scan` / `health` / `replay`, logging, and usage examples (implemented). |
 | **[docs/SETUP.md](docs/SETUP.md)** | Fresh-machine setup: dependencies, env vars, database + migrations, backend/frontend startup, verification, troubleshooting. |
 | **[docs/DEMO_DATA.md](docs/DEMO_DATA.md)** | Demo dataset seeder: 50 trades, 100 signals, snapshots, regimes, replay data — explore the UI without the scanner. |
