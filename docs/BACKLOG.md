@@ -21,9 +21,8 @@ item into a subsystem doc when it becomes active.
 
 ## Paper-slice / orchestration follow-ups
 
-- **Live data/scan source + `mrp paper-run` CLI** — the orchestration engine
-  consumes a caller-supplied `ScanResult` + `marks` dict; wire a data/scan source
-  and a thin CLI that runs `Scheduler.run_session` and prints the `DailyReport`.
+- **Provider selection from the CLI** — `mrp` commands use keyless Yahoo; expose
+  Alpaca/Polygon (with keys) behind the `--provider` flag.
 - **Order/position/fill persistence** — only the journal (`trades`) and the
   `runs` registry are persisted; add an orders/positions/fills schema for a full
   execution audit trail.

@@ -136,6 +136,13 @@ trading platform for US equities. Python 3.12, strictly typed. See
   crash-safe (append+flush per event, JSON-sanitised payloads). `delete` is
   overridden to raise. `AuditLogger` is wired into the orchestration engine +
   pipeline (toggle `enable_audit`). See `docs/AUDIT_LOGGING.md`.
+- **CLI + startup logging** (`src/momentum/cli/main.py`, `core/logging.py`,
+  `orchestration/session.py`) — a production Typer app (`mrp serve` / `paper-run`
+  / `scan` / `health` / `replay`). `setup_logging` gives console + size-rotating
+  file handlers, timestamped, plain or structured JSON, crash-safe.
+  `run_paper_session` is the data→scan→engine glue behind `paper-run` (pull bars
+  → scan → conviction → risk → paper orders → positions → audit → summary). See
+  `docs/CLI.md`.
 
 ## Philosophy (what we optimise for)
 
