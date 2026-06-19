@@ -1,0 +1,11 @@
+# Execution-layer configuration (paper broker cost assumptions).
+# Loaded by momentum.execution.ExecutionConfig.from_yaml. The same slippage and
+# commission models back the backtest simulator, so paper and backtest costs match.
+
+# Fixed slippage in basis points, applied against the trade direction
+# (a buy pays up, a sell receives less).
+slippage_bps: 5.0
+
+# Per-share commission and the per-order minimum (IBKR-style).
+commission_per_share: 0.005
+commission_min: 1.0

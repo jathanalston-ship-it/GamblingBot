@@ -66,3 +66,7 @@ class RiskVetoError(MomentumError):
 
 class ExecutionError(MomentumError):
     """Order routing / fill handling failed."""
+
+
+class InvalidOrderStateError(ExecutionError):
+    """An order was asked to make an illegal lifecycle transition."""
