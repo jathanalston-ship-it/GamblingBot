@@ -1,0 +1,26 @@
+# Options Qualification Engine — hard tradeability gates for option contracts.
+# Copy to config/options_qualification.yaml. Loaded via
+# OptionsQualificationConfig.from_yaml().
+#
+# A contract may back a trade only if it clears EVERY gate below. The engine
+# scores nothing and ranks nothing — it is a pass/fail filter that returns a
+# QUALIFIED / REJECTED verdict with a reason for each failed gate.
+
+model_version: v1
+
+# --- liquidity -------------------------------------------------------------
+min_open_interest: 500           # resting contracts outstanding (OI > this)
+min_volume: 100                  # contracts traded on the session (volume > this)
+max_spread_pct: 0.10             # bid/ask spread as a fraction of mid (spread < this)
+
+# --- expiry & implied volatility ------------------------------------------
+min_days_to_expiry: 7            # avoid expiration-week theta/pin risk (DTE > this)
+max_implied_vol: 1.50            # annualized ATM IV ceiling (IV < this); blow-off guard
+
+# --- gamma risk ------------------------------------------------------------
+# Gamma risk = the delta drift on a `gamma_shock_pct` underlying move:
+#   shock_delta = |gamma| * underlying_price * gamma_shock_pct
+# Acceptable while shock_delta <= max_gamma_shock_delta (scale-free across spot).
+gamma_shock_pct: 0.05            # underlying move used to size gamma risk (5%)
+max_gamma_shock_delta: 0.50      # max delta drift on that move
+require_greeks: false            # if true, a contract with no gamma/spot is rejected

@@ -67,6 +67,28 @@ class RiskVerdict(str, Enum):
         return self is not RiskVerdict.VETO
 
 
+class QualificationVerdict(str, Enum):
+    """Outcome of the options-qualification gate for a candidate contract.
+
+    A trade may only be expressed with options when the contract clears every
+    tradeability gate (liquidity, spread, expiry, IV, gamma risk). ``QUALIFIED``
+    = the option is usable; ``REJECTED`` = fall back to shares (or skip).
+    """
+
+    QUALIFIED = "qualified"
+    REJECTED = "rejected"
+
+    @property
+    def is_qualified(self) -> bool:
+        """Whether the option contract cleared every gate and may be traded."""
+        return self is QualificationVerdict.QUALIFIED
+
+    @property
+    def display(self) -> str:
+        """Title-case label for reports (e.g. ``"Qualified"``)."""
+        return self.value.capitalize()
+
+
 class RegimeState(str, Enum):
     """Headline market-regime label.
 

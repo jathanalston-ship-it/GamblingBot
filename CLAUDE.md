@@ -63,6 +63,12 @@ trading platform for US equities. Python 3.12, strictly typed. See
   shares / long calls / vertical call spreads / LEAPS from expected move, horizon,
   volatility, IV, liquidity, risk budget and exposure. See
   `docs/INSTRUMENT_SELECTION.md`.
+- **Options qualification engine** (`src/momentum/instruments/qualification.py`,
+  `qualification_config.py`) — a hard pass/fail gate that vets one option contract
+  (open interest, bid/ask spread, volume, days to expiry, implied volatility,
+  gamma risk) and returns a `QUALIFIED` / `REJECTED` verdict with a reason per
+  failed gate before any option may back a trade. See
+  `docs/OPTIONS_QUALIFICATION.md`.
 
 ## Philosophy (what we optimise for)
 
