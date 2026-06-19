@@ -38,7 +38,17 @@ class RiskManager:
         account: AccountState,
         *,
         run_id: str | None = None,
+        risk_per_trade_pct: float | None = None,
     ) -> RiskAssessment:
+        """Size, stop and vet a proposed trade.
+
+        ``risk_per_trade_pct`` overrides the configured base risk-per-trade for
+        this evaluation — pass a :class:`~momentum.risk.risk_budget.RiskBudget`'s
+        ``granted_pct`` here to drive sizing from the dynamic, conviction-aware
+        budget. The drawdown and regime throttles still apply on top; when
+        ``None`` (default) the configured ``sizing.risk_per_trade_pct`` is used,
+        preserving existing behaviour.
+        """
         cfg = self.config
         side = proposal.side
         entry = proposal.entry_ref
@@ -48,7 +58,9 @@ class RiskManager:
         existing_gross = sum(p.market_value for p in account.open_positions)
         existing_signed = sum(p.signed_market_value for p in account.open_positions)
         heat_before = account.portfolio_heat
-        base_pct = cfg.sizing.risk_per_trade_pct
+        base_pct = (
+            cfg.sizing.risk_per_trade_pct if risk_per_trade_pct is None else risk_per_trade_pct
+        )
 
         # --- stop defines R ------------------------------------------------- #
         stop = initial_stop(entry, atr, cfg.stops.initial_atr_multiple, side)

@@ -164,3 +164,22 @@ class PerformanceOut(BaseModel):
     n_trades: int
     trade_stats: dict[str, Any]
     performance: dict[str, Any] | None
+
+
+class DashboardOut(BaseModel):
+    """Aggregate snapshot powering the desktop Dashboard view."""
+
+    latest_regime: RegimeOut | None
+    latest_snapshot: PortfolioSnapshotOut | None
+    top_scans: list[ScanResultOut]
+    recent_trades: list[TradeOut]
+    open_trades: int
+    performance: PerformanceOut
+
+
+class ConfigFileOut(BaseModel):
+    """A configuration template/file for the Settings view (read-only)."""
+
+    name: str
+    content: str
+    parsed: dict[str, Any] | None = None

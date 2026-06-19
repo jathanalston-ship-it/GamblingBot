@@ -1,0 +1,22 @@
+appId: com.mrp.desktop
+productName: Momentum Research Platform
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist-electron/**/*
+  - renderer/dist/**/*
+# Ship the FastAPI backend as a PyInstaller one-file binary built into
+# build/backend/ (see docs/DESKTOP_APP.md §Packaging).
+extraResources:
+  - from: build/backend
+    to: backend
+    filter: ["**/*"]
+mac:
+  target: [dmg]
+  category: public.app-category.finance
+win:
+  target: [nsis]
+linux:
+  target: [AppImage]
+  category: Office

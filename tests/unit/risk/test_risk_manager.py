@@ -43,6 +43,19 @@ def test_worked_example(manager: RiskManager) -> None:
     assert a.approved is True
 
 
+def test_risk_per_trade_override_drives_sizing(manager: RiskManager) -> None:
+    # the dynamic risk-budget's granted_pct overrides the configured base
+    p = TradeProposal("AAPL", entry_ref=50.0, atr=1.50, sector="Tech")
+    base = manager.evaluate(p, _account())
+    bumped = manager.evaluate(p, _account(), risk_per_trade_pct=0.015)  # 1.5% vs 0.75%
+    assert bumped.base_risk_per_trade_pct == pytest.approx(0.015)
+    assert base.base_risk_per_trade_pct == pytest.approx(0.0075)
+    assert bumped.approved_shares > base.approved_shares
+    # drawdown / regime throttles still compose on top of the override
+    throttled = manager.evaluate(p, _account(regime=RegimeState.NEUTRAL), risk_per_trade_pct=0.015)
+    assert throttled.risk_per_trade_pct == pytest.approx(0.015 * 0.5)
+
+
 def test_short_side_stop_above(manager: RiskManager) -> None:
     p = TradeProposal("AAPL", entry_ref=50.0, atr=1.50, side=Side.SHORT)
     a = manager.evaluate(p, _account())

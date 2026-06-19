@@ -11,16 +11,21 @@ Run locally::
 
 from __future__ import annotations
 
+import os
+
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session, sessionmaker
 
 from momentum.api.routes import (
     backtests,
+    dashboard,
     health,
     performance,
     portfolio,
     regimes,
     risk,
+    settings,
     signals,
     trades,
     universe,
@@ -29,6 +34,7 @@ from momentum.persistence.database import create_db_engine, create_session_facto
 
 _ROUTERS = (
     health,
+    dashboard,
     signals,
     trades,
     regimes,
@@ -37,7 +43,18 @@ _ROUTERS = (
     universe,
     backtests,
     performance,
+    settings,
 )
+
+
+def _cors_origins() -> list[str]:
+    """Allowed origins for the desktop renderer (Vite dev server / packaged app).
+
+    The backend binds to ``127.0.0.1`` only (a local sidecar), so the default is
+    permissive; override with ``MRP_CORS_ORIGINS`` (comma-separated) to lock down.
+    """
+    raw = os.environ.get("MRP_CORS_ORIGINS", "*")
+    return [o.strip() for o in raw.split(",") if o.strip()]
 
 
 def create_app(session_factory: sessionmaker[Session] | None = None) -> FastAPI:
@@ -46,10 +63,17 @@ def create_app(session_factory: sessionmaker[Session] | None = None) -> FastAPI:
         title="Momentum Research Platform API",
         version="0.1.0",
         description=(
-            "Read-only API over the MRP research database: signals, trades, "
-            "regimes, portfolio snapshots, risk metrics, scans, optimizations "
-            "and performance summaries."
+            "Read-only API over the MRP research database: dashboard, signals, "
+            "trades, regimes, portfolio snapshots, risk metrics, scans, "
+            "optimizations, performance summaries and configuration."
         ),
+    )
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins(),
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     if session_factory is None:

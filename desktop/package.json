@@ -1,0 +1,30 @@
+{
+  "name": "mrp-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Momentum Research Platform — desktop application (Electron + React + FastAPI).",
+  "author": "MRP",
+  "main": "dist-electron/main.js",
+  "workspaces": [
+    "renderer"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n vite,electron -c cyan,magenta \"npm:dev:renderer\" \"npm:dev:electron\"",
+    "dev:renderer": "npm --workspace renderer run dev",
+    "dev:electron": "wait-on tcp:5173 && cross-env NODE_ENV=development electron .",
+    "build:renderer": "npm --workspace renderer run build",
+    "build:electron": "tsc -p electron/tsconfig.json",
+    "build": "npm run build:renderer && npm run build:electron",
+    "package": "npm run build && electron-builder",
+    "lint": "npm --workspace renderer run lint",
+    "typecheck": "npm --workspace renderer run typecheck && tsc -p electron/tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "cross-env": "^7.0.3",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.6.3",
+    "wait-on": "^8.0.1"
+  }
+}

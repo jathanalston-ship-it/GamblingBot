@@ -7,16 +7,21 @@ nothing here mutates state.
 
 from __future__ import annotations
 
+import os
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from sqlalchemy import select
+import yaml
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from momentum.analytics.performance import analyze_performance
 from momentum.analytics.trade_analysis import compute_trade_stats
 from momentum.api.schemas import (
+    ConfigFileOut,
+    DashboardOut,
     OptimizationResultOut,
     PerformanceOut,
     PortfolioSnapshotOut,
@@ -166,3 +171,62 @@ def performance_summary(session: Session, *, run_id: str | None = None) -> Perfo
         trade_stats=asdict(stats),
         performance=performance,
     )
+
+
+def dashboard_summary(session: Session, *, run_id: str | None = None) -> DashboardOut:
+    """One aggregate payload for the Dashboard view (regime, scans, trades, P&L)."""
+    snap_stmt = select(PortfolioSnapshot)
+    if run_id:
+        snap_stmt = snap_stmt.where(PortfolioSnapshot.run_id == run_id)
+    latest_snap = session.scalars(
+        snap_stmt.order_by(PortfolioSnapshot.session_date.desc()).limit(1)
+    ).first()
+
+    open_stmt = select(func.count()).select_from(Trade).where(Trade.status == "open")
+    if run_id:
+        open_stmt = open_stmt.where(Trade.run_id == run_id)
+    open_trades = int(session.scalar(open_stmt) or 0)
+
+    return DashboardOut(
+        latest_regime=latest_regime(session),
+        latest_snapshot=(
+            PortfolioSnapshotOut.model_validate(latest_snap) if latest_snap is not None else None
+        ),
+        top_scans=list_scans(session, run_id=run_id, passed_only=True, limit=8),
+        recent_trades=list_trades(session, run_id=run_id, limit=8),
+        open_trades=open_trades,
+        performance=performance_summary(session, run_id=run_id),
+    )
+
+
+def list_config_files() -> list[str]:
+    """Names of the available configuration templates (Settings view)."""
+    config_dir = _config_dir()
+    if not config_dir.is_dir():
+        return []
+    return sorted(p.name for p in config_dir.glob("*.yaml"))
+
+
+def read_config_file(name: str) -> ConfigFileOut | None:
+    """Read one configuration file by name (path-traversal safe)."""
+    config_dir = _config_dir()
+    target = (config_dir / name).resolve()
+    if config_dir not in target.parents or not target.is_file():
+        return None  # outside config/ or missing
+    content = target.read_text()
+    try:
+        parsed = yaml.safe_load(content)
+    except yaml.YAMLError:
+        parsed = None
+    return ConfigFileOut(
+        name=name, content=content, parsed=parsed if isinstance(parsed, dict) else None
+    )
+
+
+def _config_dir() -> Path:
+    """Resolve the repository ``config/`` directory (overridable via env)."""
+    override = os.environ.get("MRP_CONFIG_DIR")
+    if override:
+        return Path(override).resolve()
+    # src/momentum/api/services.py -> repo root is three parents up from the package
+    return (Path(__file__).resolve().parents[3] / "config").resolve()

@@ -96,8 +96,14 @@ trading platform for US equities. Python 3.12, strictly typed. See
   `risk_budget_config.py`) — sets a trade's per-trade risk budget from conviction
   (base 0.5% / high 1% / extreme 2%) with a larger Home-Run allocation (×1.5,
   per-trade-capped), then clamps it to the remaining headroom under the 5%
-  portfolio-heat ceiling (reusing `risk.heat`). Feeds the risk gateway's sizing.
-  See `docs/RISK_BUDGET.md`.
+  portfolio-heat ceiling (reusing `risk.heat`). Feeds the risk gateway's sizing
+  via `RiskManager.evaluate(..., risk_per_trade_pct=...)`. See `docs/RISK_BUDGET.md`.
+- **Desktop application** (`desktop/`) — an Electron shell + React/TypeScript/
+  Tailwind (Vite) renderer over the FastAPI/SQLite backend. Electron spawns the
+  backend as a loopback sidecar (`python -m momentum.api`); the renderer has eight
+  views (Dashboard, Scanner, Trade Journal, Market Regime, Portfolio, Settings,
+  Backtesting, Analytics) talking to the read API. The API gained CORS plus
+  `/dashboard` and `/settings/config` endpoints. See `docs/DESKTOP_APP.md`.
 
 ## Philosophy (what we optimise for)
 
