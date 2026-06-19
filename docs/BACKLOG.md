@@ -19,17 +19,18 @@ item into a subsystem doc when it becomes active.
   `orchestration/scheduler.py`, parts of `portfolio/` (`allocator`,
   `rebalancer`), `api/` and `cli/` are documented stubs.
 
-## Paper-slice follow-ups
+## Paper-slice / orchestration follow-ups
 
-- **Exit pass in the pipeline** — `DailyPaperPipeline` only opens entries;
-  `TradeJournal.close_trade` / `Portfolio` already support closing. Add a stage
-  that exits on stop/target/signal and marks-to-market each session.
-- **Order/position/fill persistence** — only the journal (`trades`) is persisted;
-  add an orders/positions/fills schema + migration `0008` for a full audit trail.
-- **`mrp paper-run` CLI** — a thin entry that loads configs + a scan and runs the
-  pipeline, printing the `PipelineReport`. Needs a scan/data source wired first.
-- **Append-only audit log, live broker adapter, scheduler/recovery** — the
-  remaining "missing layers"; the paper slice intentionally skips them.
+- **Live data/scan source + `mrp paper-run` CLI** — the orchestration engine
+  consumes a caller-supplied `ScanResult` + `marks` dict; wire a data/scan source
+  and a thin CLI that runs `Scheduler.run_session` and prints the `DailyReport`.
+- **Order/position/fill persistence** — only the journal (`trades`) and the
+  `runs` registry are persisted; add an orders/positions/fills schema for a full
+  execution audit trail.
+- **Richer exits** — partial scale-outs and trailing stops (`ExitManager`
+  currently does full-position stop/target/time exits only).
+- **Live broker adapter & a real scheduler/clock loop** — the `Scheduler` is a
+  serial decision point triggered by the caller, not a timed daemon.
 
 ## Conventions for this file
 

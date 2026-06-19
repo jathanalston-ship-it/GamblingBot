@@ -94,7 +94,9 @@ class TradeJournal:
             else None
         )
         if trade.entry_ts is not None:
-            trade.holding_days = max(0, (exit_fill.ts - trade.entry_ts).days)
+            # Use calendar dates so a naive entry_ts (SQLite drops tz on reload)
+            # and an aware exit timestamp don't clash.
+            trade.holding_days = max(0, (exit_fill.ts.date() - trade.entry_ts.date()).days)
         trade.exit_reason = exit_reason
         trade.status = "closed"
 

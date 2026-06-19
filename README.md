@@ -71,6 +71,7 @@ metrics above.
 | **[docs/RESEARCH_REPORTING.md](docs/RESEARCH_REPORTING.md)** | Automated weekly research reports: evidence only (markdown/JSON/DB), never auto-tunes (implemented). |
 | **[docs/INSTRUMENT_SELECTION.md](docs/INSTRUMENT_SELECTION.md)** | Instrument selection engine: shares / calls / spreads / LEAPS from thesis + context (implemented). |
 | **[docs/PAPER_SLICE.md](docs/PAPER_SLICE.md)** | Paper trading vertical slice: execution primitives, portfolio/position tracking, trade journal, and the daily pipeline (implemented). |
+| **[docs/ORCHESTRATION.md](docs/ORCHESTRATION.md)** | Daily orchestration engine: recover → exits → entries → persist, the `runs` registry, single source of truth & crash recovery (implemented). |
 | **[docs/ROADMAP.md](docs/ROADMAP.md)** | Phased implementation order. |
 
 ## Tech stack

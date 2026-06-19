@@ -42,6 +42,40 @@ class Position:
     closed_ts: dt.datetime | None = None
     _fills: list[Fill] = field(default_factory=list)
 
+    # -- reconstruction ----------------------------------------------------- #
+    @classmethod
+    def restore(
+        cls,
+        *,
+        symbol: str,
+        side: Side,
+        quantity: int,
+        avg_price: float,
+        last_price: float,
+        initial_stop: float | None = None,
+        stop: float | None = None,
+        entry_fees: float = 0.0,
+        sector: str | None = None,
+        opened_ts: dt.datetime | None = None,
+    ) -> Position:
+        """Rebuild an open position from persisted state (crash recovery).
+
+        Mirrors the state a single opening fill would have produced: realised P&L
+        carries the entry fees, and the mark is set to ``last_price``.
+        """
+        pos = cls(symbol=symbol, sector=sector)
+        pos.side = side
+        pos.quantity = quantity
+        pos.avg_price = avg_price
+        pos.initial_quantity = quantity
+        pos.initial_stop = initial_stop
+        pos.stop = stop if stop is not None else initial_stop
+        pos.fees_paid = entry_fees
+        pos.realized_pnl = -entry_fees
+        pos.last_price = last_price
+        pos.opened_ts = opened_ts
+        return pos
+
     # -- mutation ----------------------------------------------------------- #
     def apply_fill(self, fill: Fill) -> None:
         """Apply an execution, opening / adding / reducing the position."""

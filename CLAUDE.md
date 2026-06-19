@@ -116,6 +116,17 @@ trading platform for US equities. Python 3.12, strictly typed. See
   budget → sized/vetted order → fill → journal), emits an explainable
   `TradeDecision`/`PipelineReport`, and skips held symbols so re-runs are
   idempotent. No new tables (reuses `trades`). See `docs/PAPER_SLICE.md`.
+- **Daily orchestration engine** (`src/momentum/orchestration/engine.py`,
+  `exits.py`, `recovery.py`, `daily_report.py`, `scheduler.py`; `runs` table +
+  migration `0008`) — runs a full session as one cycle: recover the portfolio
+  from the trade ledger → manage exits (`ExitManager`: stop/target/time-stop) →
+  run entries (`DailyPaperPipeline`) → persist the run → `DailyReport`. The
+  **trades table is the single source of truth** (cash/positions are
+  reconstructed, never held only in memory); the `runs` registry persists each
+  run's lifecycle (`running`/`completed`/`failed`) for **crash recovery** —
+  incremental commits + idempotent journal/held-symbol guards make a re-run safe.
+  `Scheduler` is the single entry point (skips completed sessions, surfaces
+  interrupted runs). See `docs/ORCHESTRATION.md`.
 
 ## Philosophy (what we optimise for)
 

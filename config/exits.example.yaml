@@ -1,0 +1,12 @@
+# Exit-management configuration for the daily orchestration engine.
+# Loaded by momentum.orchestration.exits.ExitConfig.from_yaml.
+# Every rule is optional — leave one unset (null) and it never fires.
+
+# Exit when price trades through the position's protective stop.
+use_stop: true
+
+# Exit when unrealised gain reaches this many R (null = no profit target).
+target_r: 3.0
+
+# Exit after this many calendar days held (null = no time stop).
+max_holding_days: 30

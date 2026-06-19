@@ -61,7 +61,25 @@ def make_scan() -> Callable[..., ScanResult]:
                 record[col] = row.get(col, 0.8)
             records.append(record)
 
-        features = pd.DataFrame.from_records(records).set_index("symbol")
+        columns = [
+            "symbol",
+            "passed",
+            "rank",
+            "momentum_score",
+            "price",
+            "volume",
+            "dollar_volume",
+            "relative_volume",
+            "distance_from_ath",
+            "ema_fast",
+            "ema_mid",
+            "ema_slow",
+            "atr",
+            "sector",
+            "sector_rs",
+            *_COMPONENT_COLS,
+        ]
+        features = pd.DataFrame(records, columns=columns).set_index("symbol")
         return ScanResult(
             as_of=pd.Timestamp(as_of, tz="UTC"),
             features=features,
