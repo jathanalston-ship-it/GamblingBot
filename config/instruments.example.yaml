@@ -1,0 +1,62 @@
+# Instrument Selection Engine — how to express a bullish thesis.
+# Copy to config/instruments.yaml. Loaded via InstrumentSelectionConfig.from_yaml().
+#
+# The engine scores shares / long calls / vertical call spreads / LEAPS from the
+# thesis (expected move, holding period) and context (vol, IV, liquidity, risk
+# budget, portfolio exposure), applies hard liquidity gates, and picks the best.
+
+model_version: v1
+
+liquidity:                       # hard eligibility gates
+  min_share_dollar_volume: 1000000
+  min_option_open_interest: 500
+  max_option_spread_pct: 0.10
+
+# Shared decision bands
+move_small: 0.05                 # below ~ linear shares are fine
+move_large: 0.30                 # above ~ option leverage shines
+short_hold_days: 15
+medium_hold_days: 60
+long_hold_days: 180
+leaps_hold_days: 365
+iv_cheap: 0.9                    # IV/RV below => options cheap (buy premium)
+iv_rich: 1.3                     # IV/RV above => options rich (sell premium / shares)
+iv_level_low: 0.25               # absolute ATM IV
+iv_level_high: 0.60
+small_risk_budget: 500           # below => leverage (options) favoured
+large_risk_budget: 5000
+
+# Structure targets
+call_target_delta: 0.60
+spread_long_delta: 0.55
+leaps_target_delta: 0.75
+call_dte_min: 30
+call_dte_max: 120
+
+min_margin: 0.0                  # decisions below this margin are flagged "close call"
+
+# Per-instrument factor weights (need not sum to 1; re-normalized per instrument).
+shares:
+  base: 0.40
+  iv_richness: 0.30              # expensive options => shares
+  holding: 0.20                 # very long / indefinite holds
+  move: 0.15                    # small expected move
+  exposure: 0.15                # ample capital room => use it
+long_call:
+  move: 0.35                    # large expected move
+  holding: 0.25                 # short/medium horizon
+  iv_richness: 0.20             # cheap options
+  iv_level: 0.10
+  leverage: 0.20                # small risk budget
+vertical_call_spread:
+  iv_richness: 0.35             # rich options => sell premium
+  move: 0.20                    # moderate move (capped upside)
+  holding: 0.20
+  leverage: 0.15
+  exposure: 0.15                # scarce capital => efficient
+leaps:
+  holding: 0.40                 # long horizon => trend capture
+  move: 0.25
+  iv_richness: 0.15
+  iv_level: 0.10
+  leverage: 0.15

@@ -27,6 +27,33 @@ class Side(str, Enum):
         return 1 if self is Side.LONG else -1
 
 
+class InstrumentType(str, Enum):
+    """How a bullish thesis is expressed in the market.
+
+    Chosen by the instrument-selection engine from the trade thesis and market
+    context. All are *bullish* expressions with different cost / leverage /
+    decay / holding-period trade-offs.
+    """
+
+    SHARES = "shares"
+    LONG_CALL = "long_call"
+    VERTICAL_CALL_SPREAD = "vertical_call_spread"
+    LEAPS = "leaps"
+
+    @property
+    def is_option(self) -> bool:
+        return self is not InstrumentType.SHARES
+
+    @property
+    def is_defined_risk(self) -> bool:
+        """Whether max loss is capped at entry (true for all long-option structures)."""
+        return self is not InstrumentType.SHARES
+
+    @property
+    def display(self) -> str:
+        return self.value.replace("_", " ").title()
+
+
 class RiskVerdict(str, Enum):
     """Outcome of the risk gateway for a proposed trade."""
 

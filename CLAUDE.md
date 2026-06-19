@@ -58,6 +58,11 @@ trading platform for US equities. Python 3.12, strictly typed. See
   regimes and emits evidence (what worked/failed, largest winners/losers,
   improvement hypotheses) as markdown/JSON/DB record. **Read-only: never
   modifies strategy/config.** See `docs/RESEARCH_REPORTING.md`.
+- **Instrument selection engine** (`src/momentum/instruments/`,
+  `instrument_selections` table + migration `0005`) — turns a bullish thesis into
+  shares / long calls / vertical call spreads / LEAPS from expected move, horizon,
+  volatility, IV, liquidity, risk budget and exposure. See
+  `docs/INSTRUMENT_SELECTION.md`.
 
 ## Philosophy (what we optimise for)
 
