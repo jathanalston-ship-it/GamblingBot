@@ -2,9 +2,8 @@
 
 The full catalog (per docs/ARCHITECTURE.md) is ``Side``, ``OrderType``,
 ``TimeInForce``, ``OrderStatus``, ``SignalType``, ``ExitReason``, ``RunMode``,
-``RegimeState``, ``AssetClass``. The regime- and risk-related members are
-implemented here; the remaining trading-execution members are added by later
-phases.
+``RegimeState``, ``AssetClass``. The regime-, risk- and execution-related
+members are implemented here; the remaining members are added by later phases.
 
 All enums subclass ``str`` so their values serialize transparently to JSON,
 YAML and SQL string columns.
@@ -52,6 +51,74 @@ class InstrumentType(str, Enum):
     @property
     def display(self) -> str:
         return self.value.replace("_", " ").title()
+
+
+class OrderType(str, Enum):
+    """How an order's fill price is determined.
+
+    The paper slice uses ``MARKET`` (fill at the reference price adjusted for
+    slippage) and ``LIMIT`` (fill only at or better than the limit). ``STOP``
+    and ``STOP_LIMIT`` are carried for the protective-exit path.
+    """
+
+    MARKET = "market"
+    LIMIT = "limit"
+    STOP = "stop"
+    STOP_LIMIT = "stop_limit"
+
+    @property
+    def needs_limit_price(self) -> bool:
+        """Whether a limit price is required to specify the order."""
+        return self in (OrderType.LIMIT, OrderType.STOP_LIMIT)
+
+    @property
+    def needs_stop_price(self) -> bool:
+        """Whether a stop trigger price is required to specify the order."""
+        return self in (OrderType.STOP, OrderType.STOP_LIMIT)
+
+
+class TimeInForce(str, Enum):
+    """How long an unfilled order stays live."""
+
+    DAY = "day"
+    GTC = "gtc"  # good-til-cancelled
+    IOC = "ioc"  # immediate-or-cancel
+    FOK = "fok"  # fill-or-kill
+
+
+class OrderStatus(str, Enum):
+    """Lifecycle state of an order.
+
+    The legal flow is ``NEW -> SUBMITTED -> (PARTIALLY_FILLED) ->
+    FILLED | CANCELLED | REJECTED``. Terminal states accept no further
+    transition; the ``Order`` state machine enforces this.
+    """
+
+    NEW = "new"
+    SUBMITTED = "submitted"
+    PARTIALLY_FILLED = "partially_filled"
+    FILLED = "filled"
+    CANCELLED = "cancelled"
+    REJECTED = "rejected"
+
+    @property
+    def is_terminal(self) -> bool:
+        """Whether the order has reached a final state (no more transitions)."""
+        return self in (OrderStatus.FILLED, OrderStatus.CANCELLED, OrderStatus.REJECTED)
+
+    @property
+    def is_open(self) -> bool:
+        """Whether the order is still working (may yet fill or cancel)."""
+        return self in (
+            OrderStatus.NEW,
+            OrderStatus.SUBMITTED,
+            OrderStatus.PARTIALLY_FILLED,
+        )
+
+    @property
+    def is_fill(self) -> bool:
+        """Whether the order has received at least one execution."""
+        return self in (OrderStatus.PARTIALLY_FILLED, OrderStatus.FILLED)
 
 
 class RiskVerdict(str, Enum):
