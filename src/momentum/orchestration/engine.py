@@ -32,6 +32,8 @@ from momentum.orchestration.pipeline import DailyPaperPipeline
 from momentum.orchestration.recovery import reconstruct_portfolio
 from momentum.portfolio.journal import TradeJournal
 from momentum.portfolio.portfolio import Portfolio
+from momentum.persistence.audit import AuditLogger
+from momentum.persistence.repositories.audit_log import AuditLogRepository
 from momentum.persistence.repositories.runs import RunRepository
 from momentum.persistence.repositories.trades import TradeRepository
 from momentum.risk.risk_budget import DynamicRiskBudgetEngine
@@ -56,6 +58,7 @@ class DailyOrchestrationEngine:
         min_conviction_band: ConvictionBand = ConvictionBand.MEDIUM,
         mode: str = "paper",
         entry_reason: str = "momentum_breakout",
+        enable_audit: bool = True,
     ) -> None:
         self.conviction = conviction
         self.risk = risk
@@ -66,6 +69,7 @@ class DailyOrchestrationEngine:
         self.min_conviction_band = min_conviction_band
         self.mode = mode
         self.entry_reason = entry_reason
+        self.enable_audit = enable_audit
 
     def run_day(
         self,
@@ -84,6 +88,7 @@ class DailyOrchestrationEngine:
         trades = TradeRepository(session)
         runs = RunRepository(session)
         journal = TradeJournal(trades)
+        audit = AuditLogger(AuditLogRepository(session)) if self.enable_audit else None
 
         # 1-2. Recover the account from the ledger; record a durable running marker.
         portfolio = reconstruct_portfolio(trades, starting_equity=self.starting_equity, marks=marks)
@@ -100,7 +105,9 @@ class DailyOrchestrationEngine:
 
         try:
             # 3. Manage exits on the recovered book.
-            closed = self._manage_exits(portfolio, journal, trades, marks, as_of, when, run_id)
+            closed = self._manage_exits(
+                portfolio, journal, trades, audit, marks, as_of, when, run_id
+            )
             session.commit()
 
             # 4. Run entries through the paper pipeline (shares the live portfolio).
@@ -113,6 +120,7 @@ class DailyOrchestrationEngine:
                 risk_budget=self.risk_budget,
                 min_conviction_band=self.min_conviction_band,
                 entry_reason=self.entry_reason,
+                audit=audit,
             )
             report = pipeline.run(scan, run_id=run_id, regime=regime, ts=when)
             opened = [d.to_dict() for d in report.opened]
@@ -157,6 +165,7 @@ class DailyOrchestrationEngine:
         portfolio: Portfolio,
         journal: TradeJournal,
         trades: TradeRepository,
+        audit: AuditLogger | None,
         marks: dict[str, float],
         as_of: dt.date,
         ts: dt.datetime,
@@ -176,6 +185,8 @@ class DailyOrchestrationEngine:
                     ts=ts,
                 )
             )
+            if audit is not None:
+                audit.order_submitted(order, ts=ts, run_id=run_id)
             if not order.is_filled:
                 continue
             fill = order.fills[-1]
@@ -184,6 +195,9 @@ class DailyOrchestrationEngine:
             if trade is None:
                 continue
             closed_trade = journal.close_trade(trade, fill, exit_reason=signal.reason)
+            if audit is not None:
+                audit.order_filled(order, fill, run_id=run_id)
+                audit.position_closed(closed_trade, reason=signal.reason, run_id=run_id)
             closed.append(_closed_record(signal, closed_trade))
         return closed
 

@@ -23,6 +23,7 @@ from momentum.conviction.engine import ConvictionBand, ConvictionEngine, Convict
 from momentum.conviction.inputs import ConvictionInputs
 from momentum.core.enums import RegimeState, Side
 from momentum.execution.broker import Broker, OrderRequest
+from momentum.persistence.audit import AuditLogger
 from momentum.portfolio.journal import TradeJournal
 from momentum.portfolio.portfolio import Portfolio
 from momentum.risk.risk_budget import DynamicRiskBudgetEngine, RiskBudgetRequest
@@ -121,6 +122,7 @@ class DailyPaperPipeline:
         risk_budget: DynamicRiskBudgetEngine | None = None,
         min_conviction_band: ConvictionBand = ConvictionBand.MEDIUM,
         entry_reason: str = "momentum_breakout",
+        audit: AuditLogger | None = None,
     ) -> None:
         self.conviction = conviction
         self.risk = risk
@@ -130,6 +132,7 @@ class DailyPaperPipeline:
         self.risk_budget = risk_budget or DynamicRiskBudgetEngine()
         self.min_conviction_band = min_conviction_band
         self.entry_reason = entry_reason
+        self.audit = audit
 
     def run(
         self,
@@ -163,6 +166,15 @@ class DailyPaperPipeline:
             return TradeDecision(symbol=symbol, outcome="no_atr", reason="missing ATR")
 
         conv = self._score(candidate, regime)
+        if self.audit is not None:
+            self.audit.signal_generated(
+                symbol,
+                summary=f"momentum candidate rank {candidate.rank}, "
+                f"conviction {conv.band.value} {conv.score:.1f}",
+                ts=ts,
+                run_id=run_id,
+                payload={"conviction_score": round(conv.score, 4), "band": conv.band.value},
+            )
         decision = TradeDecision(
             symbol=symbol,
             outcome="opened",
@@ -206,6 +218,9 @@ class DailyPaperPipeline:
                 ts=ts,
             )
         )
+        if self.audit is not None:
+            self.audit.risk_adjustment(assessment, ts=ts, run_id=run_id)
+            self.audit.order_submitted(order, ts=ts, run_id=run_id)
         if not order.is_filled:
             return _with(decision, outcome="not_filled", reason=order.reject_reason or "unfilled")
 
@@ -222,6 +237,9 @@ class DailyPaperPipeline:
             entry_volume=candidate.volume,
             entry_relative_volume=candidate.relative_volume,
         )
+        if self.audit is not None:
+            self.audit.order_filled(order, fill, run_id=run_id)
+            self.audit.position_opened(trade, run_id=run_id)
         return _with(
             decision,
             outcome="opened",

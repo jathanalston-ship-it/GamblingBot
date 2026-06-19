@@ -194,3 +194,25 @@ class VolatilityState(str, Enum):
     NORMAL = "normal"
     HIGH = "high"
     EXTREME = "extreme"
+
+
+class AuditEvent(str, Enum):
+    """The material actions recorded in the append-only audit log.
+
+    Every state-changing decision in the platform maps to exactly one of these,
+    so the audit trail is a complete, replayable history of what happened.
+    """
+
+    SIGNAL_GENERATED = "signal_generated"
+    ORDER_SUBMITTED = "order_submitted"
+    ORDER_FILLED = "order_filled"
+    POSITION_OPENED = "position_opened"
+    POSITION_CLOSED = "position_closed"
+    RISK_ADJUSTMENT = "risk_adjustment"
+    STRATEGY_CHANGE = "strategy_change"
+    BACKTEST_RUN = "backtest_run"
+
+    @property
+    def display(self) -> str:
+        """Title-case label for reports (e.g. ``"Order Filled"``)."""
+        return self.value.replace("_", " ").title()

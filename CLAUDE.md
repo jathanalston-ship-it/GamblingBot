@@ -127,6 +127,15 @@ trading platform for US equities. Python 3.12, strictly typed. See
   incremental commits + idempotent journal/held-symbol guards make a re-run safe.
   `Scheduler` is the single entry point (skips completed sessions, surfaces
   interrupted runs). See `docs/ORCHESTRATION.md`.
+- **Audit logging** (`src/momentum/persistence/audit.py`, `models/audit_log.py`,
+  `repositories/audit_log.py`; `audit_log` table + migration `0009`) — an
+  append-only, immutable record of every material action (`AuditEvent`: signal
+  generated, order submitted/filled, position opened/closed, risk adjustment,
+  strategy change, backtest run). Twice-timestamped (logical `ts` + DB
+  `created_at`), queryable (`by_event`/`by_run`/`by_symbol`/`between`/`recent`),
+  crash-safe (append+flush per event, JSON-sanitised payloads). `delete` is
+  overridden to raise. `AuditLogger` is wired into the orchestration engine +
+  pipeline (toggle `enable_audit`). See `docs/AUDIT_LOGGING.md`.
 
 ## Philosophy (what we optimise for)
 
