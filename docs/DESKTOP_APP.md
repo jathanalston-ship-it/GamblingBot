@@ -7,6 +7,12 @@
 > everything typechecks. This document is the architecture, the full folder
 > structure, and the implementation plan to finish it.
 
+> **UX redesign:** the renderer's *screens* are being reorganized from eight
+> generic dashboards into a research→execution **workflow** (power-user, dense,
+> keyboard-first). See [`DESKTOP_UX.md`](DESKTOP_UX.md) for the user flows and
+> wireframes that drive the renderer implementation. The process/architecture
+> below (Electron + FastAPI sidecar + SQLite) is unchanged.
+
 Convert the Momentum Research Platform (a Python research backend) into a
 **desktop-first** application: a single installable app that runs the whole
 platform locally, with a rich UI over the existing engines and SQLite database.
