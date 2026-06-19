@@ -143,6 +143,11 @@ trading platform for US equities. Python 3.12, strictly typed. See
   `run_paper_session` is the data→scan→engine glue behind `paper-run` (pull bars
   → scan → conviction → risk → paper orders → positions → audit → summary). See
   `docs/CLI.md`.
+- **Demo dataset** (`scripts/seed_demo.py`, `make seed-demo`) — a deterministic,
+  idempotent seed (50 positive-skew closed trades, 100 signals, 30 portfolio
+  snapshots, 30 market regimes, a `demo` run + full audit trail) so the UI/API
+  can be demonstrated without the scanner. All rows tagged `demo`; replay-aligned
+  (`mrp replay --run-id demo`). See `docs/DEMO_DATA.md`.
 
 ## Philosophy (what we optimise for)
 

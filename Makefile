@@ -1,4 +1,4 @@
-.PHONY: install test lint format check safe-push serve scan backtest migrate migration migration-check db-history
+.PHONY: install test lint format check safe-push serve scan backtest migrate seed-demo migration migration-check db-history
 
 install:        ## install runtime + dev deps
 	pip install -r requirements.txt && pip install -e .
@@ -15,6 +15,9 @@ safe-push:      ## gate + rebase + re-gate + push (refuses a red branch)
 
 migrate:        ## apply all database migrations
 	alembic upgrade head
+
+seed-demo:      ## seed a demo dataset for the UI (50 trades, 100 signals, snapshots, regimes)
+	python scripts/seed_demo.py
 
 migration:      ## autogenerate a migration:  make migration m="add X"
 	alembic revision --autogenerate -m "$(m)"
