@@ -84,6 +84,12 @@ trading platform for US equities. Python 3.12, strictly typed. See
   outsized, positive-skew opportunities. The Home-Run tier is gated and kept rare
   (< 5% of signals), calibratable/verifiable, and every classification is stored.
   See `docs/HOME_RUN_OPPORTUNITY.md`.
+- **Dynamic risk-budget engine** (`src/momentum/risk/risk_budget.py`,
+  `risk_budget_config.py`) — sets a trade's per-trade risk budget from conviction
+  (base 0.5% / high 1% / extreme 2%) with a larger Home-Run allocation (×1.5,
+  per-trade-capped), then clamps it to the remaining headroom under the 5%
+  portfolio-heat ceiling (reusing `risk.heat`). Feeds the risk gateway's sizing.
+  See `docs/RISK_BUDGET.md`.
 
 ## Philosophy (what we optimise for)
 

@@ -25,6 +25,12 @@ from momentum.risk.risk_config import (
     StopsConfig,
     TrailingMethod,
 )
+from momentum.risk.risk_budget import (
+    DynamicRiskBudgetEngine,
+    RiskBudget,
+    RiskBudgetRequest,
+)
+from momentum.risk.risk_budget_config import RiskBudgetConfig
 from momentum.risk.risk_manager import RiskManager
 from momentum.risk.types import (
     AccountState,
@@ -42,6 +48,11 @@ __all__ = [
     "AccountState",
     "RiskVerdict",
     "Side",
+    # dynamic risk budget
+    "DynamicRiskBudgetEngine",
+    "RiskBudgetConfig",
+    "RiskBudgetRequest",
+    "RiskBudget",
     # config groups
     "SizingConfig",
     "SizingMethod",

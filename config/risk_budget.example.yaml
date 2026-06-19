@@ -1,0 +1,17 @@
+# Dynamic risk-budget engine — conviction-tiered per-trade risk with a Home-Run
+# bump, all capped by the portfolio-heat ceiling.
+# Copy to config/risk_budget.yaml. See docs/RISK_BUDGET.md.
+model_version: v1
+
+# Per-trade risk as a fraction of equity, by conviction band.
+base_risk_pct: 0.005             # low / medium conviction -> 0.5%
+high_conviction_risk_pct: 0.01   # HIGH band              -> 1.0%
+extreme_conviction_risk_pct: 0.02  # EXTREME band          -> 2.0%
+
+# Opportunity-tier multipliers (applied to the conviction base).
+enhanced_multiplier: 1.0         # Enhanced trades: no bump by default
+home_run_multiplier: 1.5         # Home-Run trades: larger allocation (e.g. 2% -> 3%)
+
+# Ceilings.
+max_trade_risk_pct: 0.03         # hard per-trade cap (also caps the Home-Run bump)
+max_portfolio_heat: 0.05         # maximum portfolio risk (heat): every budget clamps to this
