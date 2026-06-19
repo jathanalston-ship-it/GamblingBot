@@ -73,6 +73,7 @@ metrics above.
 | **[docs/PAPER_SLICE.md](docs/PAPER_SLICE.md)** | Paper trading vertical slice: execution primitives, portfolio/position tracking, trade journal, and the daily pipeline (implemented). |
 | **[docs/ORCHESTRATION.md](docs/ORCHESTRATION.md)** | Daily orchestration engine: recover → exits → entries → persist, the `runs` registry, single source of truth & crash recovery (implemented). |
 | **[docs/AUDIT_LOGGING.md](docs/AUDIT_LOGGING.md)** | Append-only audit log: immutable, twice-timestamped, queryable, crash-safe records of every material action (implemented). |
+| **[docs/E2E_VERIFICATION.md](docs/E2E_VERIFICATION.md)** | End-to-end verification: pass/fail checklist, automated tests, and the manual testing workflow for the full paper path. |
 | **[docs/ROADMAP.md](docs/ROADMAP.md)** | Phased implementation order. |
 
 ## Tech stack
