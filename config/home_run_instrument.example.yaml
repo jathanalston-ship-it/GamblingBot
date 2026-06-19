@@ -1,0 +1,73 @@
+# Home-Run instrument selector — how to express a qualified home-run trade.
+# Copy to config/home_run_instrument.yaml. See docs/HOME_RUN_INSTRUMENT.md.
+#
+# Given a qualified Home-Run trade, the selector scores Shares / ATM Calls /
+# Slightly-ITM Calls / Call Debit Spread / LEAPS from six factors (expected move,
+# time horizon, IV rank, options liquidity, account size, risk budget), applies a
+# hard options-liquidity gate, and picks the best fit.
+
+model_version: v1
+
+min_options_liquidity: 0.30        # option structures need a chain score >= this (else shares)
+
+# How each raw decision factor maps onto the [0, 1] ramps.
+bands:
+  move_small: 0.10                 # below ~ linear shares are fine
+  move_large: 0.50                 # above ~ option convexity shines (home-run move)
+  short_horizon_days: 21
+  medium_horizon_days: 90
+  long_horizon_days: 270
+  leaps_min_days: 365
+  iv_low: 0.30                     # IV rank below => options cheap (buy premium)
+  iv_high: 0.70                    # IV rank above => options rich (spread / shares)
+  budget_small: 500                # small risk budget => leverage (options) favoured
+  budget_large: 5000
+  account_small: 25000
+  account_large: 250000
+  assumed_stop_pct: 0.20           # heuristic swing stop, used only to size shares
+
+# Suggested moneyness (delta) and expiry window for each structure.
+structure:
+  atm_delta: 0.50
+  itm_delta: 0.65                  # "slightly ITM"
+  leaps_delta: 0.75
+  spread_long_delta: 0.55
+  spread_short_delta: 0.30
+  call_dte_min: 30
+  call_dte_max: 120
+
+# Per-instrument factor weights (need not sum to 1; re-normalized per instrument).
+shares:
+  base: 0.25
+  iv: 0.20                         # rich options => own the stock
+  horizon: 0.15                    # very long / indefinite hold
+  account: 0.15                    # ample capital
+  budget: 0.15                     # ample risk budget
+  move: 0.10                       # small expected move
+atm_call:
+  move: 0.30                       # large expected move
+  iv: 0.25                         # cheap options
+  budget: 0.20                     # small risk budget (leverage)
+  horizon: 0.15                    # short / medium horizon
+  liquidity: 0.10
+itm_call:
+  horizon: 0.25                    # medium horizon
+  move: 0.25
+  iv: 0.25                         # moderate IV (less extrinsic than ATM)
+  budget: 0.10
+  liquidity: 0.10
+  account: 0.05
+call_debit_spread:
+  iv: 0.35                         # rich IV => sell upside to finance
+  move: 0.20                       # moderate move (capped upside)
+  budget: 0.15
+  account: 0.15                    # scarce capital => cheap net debit
+  horizon: 0.10
+  liquidity: 0.05
+leaps:
+  horizon: 0.35                    # long horizon => trend capture
+  move: 0.25
+  iv: 0.15
+  account: 0.10
+  budget: 0.10
+  liquidity: 0.05

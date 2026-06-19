@@ -11,15 +11,34 @@ It also hosts the **options-qualification engine**
 (:class:`OptionsQualificationEngine`): a hard gate that vets a concrete option
 contract (open interest, spread, volume, days to expiry, IV, gamma risk) and
 returns a ``QUALIFIED`` / ``REJECTED`` verdict before any option may back a
-trade.
+trade; and the **Home-Run instrument selector**
+(:class:`HomeRunInstrumentSelector`): a finer-grained selector that, for a
+qualified home-run trade, chooses Shares / ATM Calls / Slightly-ITM Calls / Call
+Debit Spread / LEAPS from expected move, time horizon, IV rank, liquidity,
+account size and risk budget.
 
-See docs/INSTRUMENT_SELECTION.md and docs/OPTIONS_QUALIFICATION.md.
+See docs/INSTRUMENT_SELECTION.md, docs/OPTIONS_QUALIFICATION.md and
+docs/HOME_RUN_INSTRUMENT.md.
 """
 
 from __future__ import annotations
 
 from momentum.core.enums import InstrumentType, QualificationVerdict
 from momentum.instruments.engine import InstrumentSelectionEngine
+from momentum.instruments.home_run_config import (
+    FactorWeights,
+    HomeRunBands,
+    HomeRunInstrumentConfig,
+    StructureTargets,
+)
+from momentum.instruments.home_run_selector import (
+    HomeRunInstrument,
+    HomeRunInstrumentSelector,
+    HomeRunRecommendation,
+    HomeRunTrade,
+    InstrumentCandidate,
+    StructureSuggestion,
+)
 from momentum.instruments.qualification import (
     GateCheck,
     OptionQuote,
@@ -52,4 +71,15 @@ __all__ = [
     "OptionsQualification",
     "GateCheck",
     "QualificationVerdict",
+    # home-run instrument selection
+    "HomeRunInstrumentSelector",
+    "HomeRunInstrumentConfig",
+    "HomeRunTrade",
+    "HomeRunInstrument",
+    "HomeRunRecommendation",
+    "StructureSuggestion",
+    "InstrumentCandidate",
+    "FactorWeights",
+    "HomeRunBands",
+    "StructureTargets",
 ]
