@@ -70,6 +70,7 @@ metrics above.
 | **[docs/TRADE_INTELLIGENCE.md](docs/TRADE_INTELLIGENCE.md)** | Trade intelligence DB: per-trade storage, attribution reports, SQL queries, dashboards (implemented). |
 | **[docs/RESEARCH_REPORTING.md](docs/RESEARCH_REPORTING.md)** | Automated weekly research reports: evidence only (markdown/JSON/DB), never auto-tunes (implemented). |
 | **[docs/INSTRUMENT_SELECTION.md](docs/INSTRUMENT_SELECTION.md)** | Instrument selection engine: shares / calls / spreads / LEAPS from thesis + context (implemented). |
+| **[docs/PAPER_SLICE.md](docs/PAPER_SLICE.md)** | Paper trading vertical slice: execution primitives, portfolio/position tracking, trade journal, and the daily pipeline (implemented). |
 | **[docs/ROADMAP.md](docs/ROADMAP.md)** | Phased implementation order. |
 
 ## Tech stack

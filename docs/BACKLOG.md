@@ -15,8 +15,21 @@ item into a subsystem doc when it becomes active.
   availability) is supplied by the caller; wire a provider for these.
 - **Plotly tearsheet** — `reporting/{plots,tearsheet,report_generator}.py`
   remain stubs; the markdown dashboard + research report cover the core today.
-- **Remaining stubs** — `portfolio/`, `execution/` (broker/order/fills),
-  `orchestration/` (pipeline/scheduler), `api/`, `cli/` are documented stubs.
+- **Remaining stubs** — `execution/` (`order_manager`, `live_broker`, `fills`),
+  `orchestration/scheduler.py`, parts of `portfolio/` (`allocator`,
+  `rebalancer`), `api/` and `cli/` are documented stubs.
+
+## Paper-slice follow-ups
+
+- **Exit pass in the pipeline** — `DailyPaperPipeline` only opens entries;
+  `TradeJournal.close_trade` / `Portfolio` already support closing. Add a stage
+  that exits on stop/target/signal and marks-to-market each session.
+- **Order/position/fill persistence** — only the journal (`trades`) is persisted;
+  add an orders/positions/fills schema + migration `0008` for a full audit trail.
+- **`mrp paper-run` CLI** — a thin entry that loads configs + a scan and runs the
+  pipeline, printing the `PipelineReport`. Needs a scan/data source wired first.
+- **Append-only audit log, live broker adapter, scheduler/recovery** — the
+  remaining "missing layers"; the paper slice intentionally skips them.
 
 ## Conventions for this file
 

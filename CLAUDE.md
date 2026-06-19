@@ -104,6 +104,18 @@ trading platform for US equities. Python 3.12, strictly typed. See
   views (Dashboard, Scanner, Trade Journal, Market Regime, Portfolio, Settings,
   Backtesting, Analytics) talking to the read API. The API gained CORS plus
   `/dashboard` and `/settings/config` endpoints. See `docs/DESKTOP_APP.md`.
+- **Paper trading vertical slice** (`src/momentum/execution/`,
+  `src/momentum/portfolio/`, `src/momentum/orchestration/pipeline.py`) — the
+  end-to-end path scan → conviction → risk sizing → paper order → position
+  tracking → journal entry. `execution` adds `Order` (guarded state machine) +
+  `Fill`, the `Broker` protocol and a deterministic `PaperBroker` (reusing the
+  shared slippage/commission models) behind `ExecutionConfig`. `portfolio` adds
+  `Position`, the `Portfolio` ledger (bridges to `risk.AccountState`) and
+  `TradeJournal` (idempotent open/close into the `trades` table). The
+  `DailyPaperPipeline` wires them per candidate (conviction band → dynamic risk
+  budget → sized/vetted order → fill → journal), emits an explainable
+  `TradeDecision`/`PipelineReport`, and skips held symbols so re-runs are
+  idempotent. No new tables (reuses `trades`). See `docs/PAPER_SLICE.md`.
 
 ## Philosophy (what we optimise for)
 
