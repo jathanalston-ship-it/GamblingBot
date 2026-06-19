@@ -69,6 +69,16 @@ trading platform for US equities. Python 3.12, strictly typed. See
   gamma risk) and returns a `QUALIFIED` / `REJECTED` verdict with a reason per
   failed gate before any option may back a trade. See
   `docs/OPTIONS_QUALIFICATION.md`.
+- **Conviction scoring engine** (`src/momentum/conviction/`, `conviction_scores`
+  table + migration `0006`) — blends eight inputs into an explainable 0-100
+  conviction score and band (LOW/MEDIUM/HIGH/EXTREME). See `docs/CONVICTION.md`.
+- **Home-Run-opportunity engine** (`src/momentum/opportunity/`,
+  `opportunity_classifications` table + migration `0007`) — classifies each setup
+  into `Normal` / `Enhanced` / `Home Run` from six inputs (new ATH, relative
+  volume, sector leadership, market regime, momentum, historical analogs) to flag
+  outsized, positive-skew opportunities. The Home-Run tier is gated and kept rare
+  (< 5% of signals), calibratable/verifiable, and every classification is stored.
+  See `docs/HOME_RUN_OPPORTUNITY.md`.
 
 ## Philosophy (what we optimise for)
 

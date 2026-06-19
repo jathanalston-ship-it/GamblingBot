@@ -6,7 +6,8 @@ Alembic autogeneration to "see" the full schema.
 
 Implemented tables: market_regimes, signals, position_sizes, trades,
 portfolio_snapshots, risk_metrics, optimization_results, scan_results,
-research_reports, instrument_selections.
+research_reports, instrument_selections, conviction_scores,
+opportunity_classifications.
 """
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ from momentum.persistence.models.base import Base, IntPKMixin, TimestampMixin
 from momentum.persistence.models.conviction_score import ConvictionScore
 from momentum.persistence.models.instrument_selection import InstrumentSelection
 from momentum.persistence.models.market_regime import MarketRegime
+from momentum.persistence.models.opportunity_classification import OpportunityClassification
 from momentum.persistence.models.optimization_result import OptimizationResult
 from momentum.persistence.models.portfolio_snapshot import PortfolioSnapshot
 from momentum.persistence.models.position_size import PositionSize
@@ -38,4 +40,5 @@ __all__ = [
     "OptimizationResult",
     "ResearchReport",
     "InstrumentSelection",
+    "OpportunityClassification",
 ]

@@ -1,0 +1,44 @@
+# Home-Run-opportunity engine — weights, normalization ranges, tier cut-offs
+# and the gates that keep the Home-Run tier rare.
+# Copy to config/opportunity.yaml. See docs/HOME_RUN_OPPORTUNITY.md.
+model_version: v1
+
+# Relative weights of the six inputs (need not sum to 1; the engine normalizes).
+# The new all-time high (blue-sky breakout) leads, matching the positive-skew thesis.
+weights:
+  new_ath: 0.25
+  momentum: 0.20
+  relative_volume: 0.18
+  market_regime: 0.15
+  sector_leadership: 0.12
+  historical_analogs: 0.10
+
+# How each raw input maps onto [0, 1] (lo -> 0, hi -> 1, clamped).
+normalization:
+  regime_map: {bull: 1.0, neutral: 0.4, bear: 0.0}   # a home run needs a tailwind
+  distance_to_ath_max: 0.10        # at the high -> 1; >= 10% below -> 0 (partial credit)
+  relative_volume_lo: 1.0          # average volume -> 0
+  relative_volume_hi: 3.0          # 3x average -> 1
+  sector_leadership_lo: 0.0
+  sector_leadership_hi: 1.0
+  momentum_lo: 0.0
+  momentum_hi: 1.0
+  historical_expectancy_lo: -0.5   # mean R of similar analogs
+  historical_expectancy_hi: 1.5    # home runs need a strong realized edge
+  historical_min_sample: 20        # sample at which history is fully trusted
+  neutral: 0.5                     # value used for a missing input
+
+# Tier cut-offs (0-100) and the hard gates for the Home-Run tier.
+tiers:
+  enhanced_min_score: 70.0         # >= 70           -> Enhanced
+  home_run_min_score: 90.0         # >= 90 AND gates -> Home Run; else Normal/Enhanced
+
+  # Hard gates: a Home Run must satisfy ALL of these at once (this is what makes
+  # the tier rare). Calibrate home_run_min_score with
+  # momentum.opportunity.calibration to hold the realized rate under the target.
+  home_run_require_new_ath: true   # must be a confirmed new all-time high
+  home_run_min_regime_score: 1.0   # 1.0 => bull regime only
+  home_run_min_relative_volume: 2.0
+  home_run_min_momentum: 0.80
+
+  target_home_run_rate: 0.05       # rarity ceiling: Home Runs stay under 5% of signals
