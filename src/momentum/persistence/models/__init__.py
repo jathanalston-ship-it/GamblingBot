@@ -11,6 +11,7 @@ research_reports, instrument_selections.
 from __future__ import annotations
 
 from momentum.persistence.models.base import Base, IntPKMixin, TimestampMixin
+from momentum.persistence.models.conviction_score import ConvictionScore
 from momentum.persistence.models.instrument_selection import InstrumentSelection
 from momentum.persistence.models.market_regime import MarketRegime
 from momentum.persistence.models.optimization_result import OptimizationResult
@@ -26,6 +27,7 @@ __all__ = [
     "Base",
     "IntPKMixin",
     "TimestampMixin",
+    "ConvictionScore",
     "MarketRegime",
     "Signal",
     "ScanResult",

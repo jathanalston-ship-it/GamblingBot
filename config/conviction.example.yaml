@@ -1,0 +1,41 @@
+# Conviction scoring engine — weights, normalization ranges and band cut-offs.
+# Copy to config/conviction.yaml. See docs/CONVICTION.md.
+model_version: v1
+
+# Relative weights of the eight inputs (need not sum to 1; the engine normalizes).
+# Regime and momentum lead, matching the platform's thesis.
+weights:
+  market_regime: 0.18
+  sector_strength: 0.12
+  relative_volume: 0.10
+  distance_to_ath: 0.10
+  trend_strength: 0.12
+  breadth: 0.10
+  momentum_score: 0.18
+  historical_similar_setups: 0.10
+
+# How each raw input maps onto [0, 1] (lo -> 0, hi -> 1, clamped).
+normalization:
+  regime_map: {bull: 1.0, neutral: 0.5, bear: 0.0}
+  sector_strength_lo: 0.0
+  sector_strength_hi: 1.0
+  relative_volume_lo: 1.0          # average volume -> 0
+  relative_volume_hi: 3.0          # 3x average -> 1
+  distance_to_ath_max: 0.20        # >= 20% below ATH -> 0; at ATH -> 1
+  trend_strength_lo: 15.0          # ADX below 15 -> 0 (no trend)
+  trend_strength_hi: 40.0          # ADX 40+ -> 1 (strong trend)
+  breadth_lo: 0.30
+  breadth_hi: 0.70
+  momentum_lo: 0.0
+  momentum_hi: 1.0
+  historical_expectancy_lo: -0.5   # mean R of similar setups
+  historical_expectancy_hi: 1.0
+  historical_min_sample: 20        # sample at which history is fully trusted
+  neutral: 0.5                     # value used for a missing input
+
+# Score cut-offs for the four bands (0-100).
+bands:
+  low_max: 40.0       # [0, 40)    LOW
+  medium_max: 70.0    # [40, 70)   MEDIUM
+  high_max: 85.0      # [70, 85)   HIGH
+  #                   # [85, 100]  EXTREME
