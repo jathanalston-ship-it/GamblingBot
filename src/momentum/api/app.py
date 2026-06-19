@@ -18,9 +18,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session, sessionmaker
 
 from momentum.api.routes import (
+    analogs,
     backtests,
+    candidates,
+    conviction,
     dashboard,
     health,
+    opportunity,
     performance,
     portfolio,
     regimes,
@@ -35,12 +39,16 @@ from momentum.persistence.database import create_db_engine, create_session_facto
 _ROUTERS = (
     health,
     dashboard,
+    candidates,
     signals,
     trades,
     regimes,
     portfolio,
     risk,
     universe,
+    conviction,
+    opportunity,
+    analogs,
     backtests,
     performance,
     settings,

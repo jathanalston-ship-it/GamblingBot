@@ -12,6 +12,7 @@ export interface ScanResult {
   momentum_score: number;
   rank: number;
   passed: boolean;
+  price: number | null;
   relative_volume: number | null;
   distance_from_ath: number | null;
   sector: string | null;
@@ -29,6 +30,10 @@ export interface Trade {
   net_pnl: number | null;
   entry_ts: string | null;
   exit_ts: string | null;
+  holding_days: number | null;
+  mfe: number | null;
+  mae: number | null;
+  exit_reason: string | null;
   sector: string | null;
   [k: string]: unknown;
 }
@@ -72,4 +77,76 @@ export interface ConfigFile {
   name: string;
   content: string;
   parsed: Record<string, unknown> | null;
+}
+
+export interface Run {
+  run_id: string;
+  label: string | null;
+}
+
+export interface ConvictionComponent {
+  name: string;
+  raw: number | null;
+  normalized: number;
+  weight: number;
+  contribution: number;
+}
+
+export interface ConvictionScore {
+  id: number;
+  run_id: string | null;
+  symbol: string;
+  as_of: string;
+  score: number;
+  band: string;
+  model_version: string;
+  config_hash: string | null;
+  momentum_score: number | null;
+  breakdown: { score?: number; band?: string; components?: ConvictionComponent[] } | null;
+  [k: string]: unknown;
+}
+
+export interface Opportunity {
+  id: number;
+  symbol: string;
+  as_of: string;
+  tier: string;
+  score: number;
+  new_ath: boolean;
+  [k: string]: unknown;
+}
+
+export interface RiskBudget {
+  conviction_band: string | null;
+  opportunity_tier: string | null;
+  home_run: boolean;
+  base_pct: number;
+  requested_pct: number;
+  granted_pct: number;
+  risk_dollars: number;
+  binding_constraint: string | null;
+  portfolio_heat_used: number;
+  portfolio_heat_after: number;
+  reasons: string[];
+}
+
+export interface Analogs {
+  symbol: string | null;
+  regime: string | null;
+  sector: string | null;
+  sample_size: number;
+  expectancy_r: number | null;
+  win_rate: number | null;
+  avg_winner_r: number | null;
+  avg_loser_r: number | null;
+  trades: Trade[];
+}
+
+export interface CandidateDetail {
+  symbol: string;
+  scan: ScanResult | null;
+  conviction: ConvictionScore | null;
+  opportunity: Opportunity | null;
+  analogs: Analogs | null;
+  risk_budget: RiskBudget | null;
 }

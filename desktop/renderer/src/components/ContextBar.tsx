@@ -1,0 +1,72 @@
+import { useEffect } from "react";
+
+import type { Regime, Run } from "../api/types";
+import { useApi } from "../hooks/useApi";
+import { useWorkspace } from "../state/workspace";
+import { Badge, regimeTone } from "./Badge";
+
+/** The persistent context bar: run selector · live regime · ⌘K · selected symbol · paper/live. */
+export function ContextBar({ onOpenPalette }: { onOpenPalette: () => void }) {
+  const { runId, setRunId, symbol } = useWorkspace();
+  const runs = useApi<Run[]>("/runs");
+  const regime = useApi<Regime>("/regimes/latest");
+
+  useEffect(() => {
+    if (!runId && runs.data && runs.data.length > 0) setRunId(runs.data[0].run_id);
+  }, [runId, runs.data, setRunId]);
+
+  const adx = regime.data ? regime.data["adx"] : null;
+
+  return (
+    <header className="flex items-center gap-4 border-b border-surface-border bg-surface-raised px-4 py-2 text-sm">
+      <span className="font-semibold tracking-tight text-slate-100">MRP</span>
+
+      <label className="flex items-center gap-1.5 text-slate-400">
+        Run
+        <select
+          value={runId ?? ""}
+          onChange={(e) => setRunId(e.target.value || null)}
+          className="rounded border border-surface-border bg-surface px-2 py-1 text-slate-200"
+        >
+          {(runs.data ?? []).length === 0 ? <option value="">—</option> : null}
+          {(runs.data ?? []).map((r) => (
+            <option key={r.run_id} value={r.run_id}>
+              {r.run_id}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <span className="flex items-center gap-2">
+        {regime.data ? (
+          <Badge tone={regimeTone(regime.data.regime)}>{regime.data.regime}</Badge>
+        ) : (
+          <span className="text-slate-500">no regime</span>
+        )}
+        {adx != null ? <span className="text-xs text-slate-500">ADX {String(adx)}</span> : null}
+      </span>
+
+      <button
+        onClick={onOpenPalette}
+        className="ml-auto rounded border border-surface-border px-2 py-1 text-xs text-slate-400 hover:text-slate-200"
+      >
+        ⌘K · search / command
+      </button>
+
+      <span className="text-slate-400">
+        {symbol ? (
+          <>
+            focus <b className="text-slate-100">{symbol}</b>
+          </>
+        ) : (
+          <span className="text-slate-500">no symbol</span>
+        )}
+      </span>
+
+      <span className="flex items-center gap-2 text-xs">
+        <span className="text-bull">● PAPER</span>
+        <span className="text-slate-600">◌ LIVE 🔒</span>
+      </span>
+    </header>
+  );
+}

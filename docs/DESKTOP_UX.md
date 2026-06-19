@@ -1,9 +1,14 @@
 # Research & Execution Platform — User Flows & Wireframes
 
-> **Status: design (pre-implementation).** This is the UX spec to review *before*
-> writing UI code, per request. It supersedes the eight generic dashboards in the
-> current scaffold (`docs/DESKTOP_APP.md` covers the unchanged process/architecture
-> — Electron shell + FastAPI sidecar + SQLite; only the renderer's screens change).
+> **Status: shell + Stages 1–4 implemented.** The workflow shell (context bar with
+> run selector + live regime, numbered stage rail, status bar, ⌘K command palette,
+> global keymap, persistent symbol/run context) and the **Scan → Conviction →
+> Analogs** research loop are built in `desktop/renderer/` over new read endpoints
+> (`/runs`, `/conviction`, `/opportunity`, `/analogs`, `/candidates/{symbol}`
+> aggregate). Stages 5–8 (Backtest reuses the existing view; Replay/Paper/Live are
+> placeholders) and editable Settings follow in the next slices. This document is
+> the UX spec; it supersedes the eight generic dashboards in the original scaffold
+> (`docs/DESKTOP_APP.md` covers the unchanged process/architecture).
 
 ## 0. Reframe
 

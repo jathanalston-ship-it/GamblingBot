@@ -183,3 +183,94 @@ class ConfigFileOut(BaseModel):
     name: str
     content: str
     parsed: dict[str, Any] | None = None
+
+
+class ConvictionScoreOut(_ORMModel):
+    """A persisted conviction score (Conviction stage)."""
+
+    id: int
+    run_id: str | None
+    symbol: str
+    as_of: dt.date
+    score: float
+    band: str
+    model_version: str
+    config_hash: str | None
+    regime_score: float | None
+    sector_strength: float | None
+    relative_volume: float | None
+    distance_to_ath: float | None
+    trend_strength: float | None
+    breadth: float | None
+    momentum_score: float | None
+    historical_edge: float | None
+    breakdown: dict[str, Any] | None
+
+
+class OpportunityOut(_ORMModel):
+    """A persisted Home-Run-opportunity classification (inspector + Conviction stage)."""
+
+    id: int
+    run_id: str | None
+    symbol: str
+    as_of: dt.date
+    tier: str
+    score: float
+    new_ath: bool
+    model_version: str
+    config_hash: str | None
+    new_ath_score: float | None
+    momentum_score: float | None
+    relative_volume: float | None
+    regime_score: float | None
+    sector_leadership: float | None
+    historical_edge: float | None
+    breakdown: dict[str, Any] | None
+
+
+class AnalogsOut(BaseModel):
+    """Historical analogs for a setup (Analogs stage)."""
+
+    symbol: str | None
+    regime: str | None
+    sector: str | None
+    sample_size: int
+    expectancy_r: float | None
+    win_rate: float | None
+    avg_winner_r: float | None
+    avg_loser_r: float | None
+    trades: list[TradeOut]
+
+
+class RiskBudgetOut(BaseModel):
+    """A computed dynamic risk budget for a candidate (inspector)."""
+
+    conviction_band: str | None
+    opportunity_tier: str | None
+    home_run: bool
+    base_pct: float
+    requested_pct: float
+    granted_pct: float
+    risk_dollars: float
+    binding_constraint: str | None
+    portfolio_heat_used: float
+    portfolio_heat_after: float
+    reasons: list[str]
+
+
+class CandidateDetailOut(BaseModel):
+    """One fetch that fills the Scan inspector — the candidate aggregate."""
+
+    symbol: str
+    scan: ScanResultOut | None
+    conviction: ConvictionScoreOut | None
+    opportunity: OpportunityOut | None
+    analogs: AnalogsOut | None
+    risk_budget: RiskBudgetOut | None
+
+
+class RunOut(BaseModel):
+    """A research run/workspace (run selector)."""
+
+    run_id: str
+    label: str | None = None

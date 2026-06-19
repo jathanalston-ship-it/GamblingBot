@@ -20,19 +20,30 @@ from sqlalchemy.orm import Session
 from momentum.analytics.performance import analyze_performance
 from momentum.analytics.trade_analysis import compute_trade_stats
 from momentum.api.schemas import (
+    AnalogsOut,
+    CandidateDetailOut,
     ConfigFileOut,
+    ConvictionScoreOut,
     DashboardOut,
+    OpportunityOut,
     OptimizationResultOut,
     PerformanceOut,
     PortfolioSnapshotOut,
     RegimeOut,
+    RiskBudgetOut,
     RiskMetricOut,
+    RunOut,
     ScanResultOut,
     SignalOut,
     TradeOut,
 )
+from momentum.conviction.engine import ConvictionBand
+from momentum.conviction.similar_setups import summarize
+from momentum.opportunity.engine import OpportunityTier
 from momentum.persistence.models import (
+    ConvictionScore,
     MarketRegime,
+    OpportunityClassification,
     OptimizationResult,
     PortfolioSnapshot,
     RiskMetric,
@@ -40,7 +51,12 @@ from momentum.persistence.models import (
     Signal,
     Trade,
 )
+from momentum.persistence.repositories.conviction_scores import ConvictionScoreRepository
+from momentum.persistence.repositories.opportunity_classifications import (
+    OpportunityClassificationRepository,
+)
 from momentum.persistence.repositories.trades import TradeRepository
+from momentum.risk import DynamicRiskBudgetEngine, RiskBudgetRequest
 
 
 def list_signals(
@@ -230,3 +246,174 @@ def _config_dir() -> Path:
         return Path(override).resolve()
     # src/momentum/api/services.py -> repo root is three parents up from the package
     return (Path(__file__).resolve().parents[3] / "config").resolve()
+
+
+# --------------------------------------------------------------------------- #
+# Research workflow: runs, conviction, opportunity, analogs, candidate aggregate
+# --------------------------------------------------------------------------- #
+def list_runs(session: Session) -> list[RunOut]:
+    """Distinct research runs seen across scans and trades (run selector)."""
+    run_ids: set[str] = set()
+    for col in (ScanResult.run_id, Trade.run_id):
+        run_ids.update(r for (r,) in session.execute(select(col).distinct()) if r)
+    return [RunOut(run_id=r) for r in sorted(run_ids)]
+
+
+def list_conviction(
+    session: Session, *, symbol: str | None = None, run_id: str | None = None, limit: int = 100
+) -> list[ConvictionScoreOut]:
+    stmt = select(ConvictionScore)
+    if symbol:
+        stmt = stmt.where(ConvictionScore.symbol == symbol.upper())
+    if run_id:
+        stmt = stmt.where(ConvictionScore.run_id == run_id)
+    stmt = stmt.order_by(ConvictionScore.as_of.desc()).limit(limit)
+    return [ConvictionScoreOut.model_validate(row) for row in session.scalars(stmt)]
+
+
+def latest_conviction(
+    session: Session, symbol: str, run_id: str | None = None
+) -> ConvictionScoreOut | None:
+    rows = ConvictionScoreRepository(session).for_symbol(symbol, run_id)
+    return ConvictionScoreOut.model_validate(rows[0]) if rows else None
+
+
+def list_opportunity(
+    session: Session, *, symbol: str | None = None, run_id: str | None = None, limit: int = 100
+) -> list[OpportunityOut]:
+    stmt = select(OpportunityClassification)
+    if symbol:
+        stmt = stmt.where(OpportunityClassification.symbol == symbol.upper())
+    if run_id:
+        stmt = stmt.where(OpportunityClassification.run_id == run_id)
+    stmt = stmt.order_by(OpportunityClassification.as_of.desc()).limit(limit)
+    return [OpportunityOut.model_validate(row) for row in session.scalars(stmt)]
+
+
+def latest_opportunity(
+    session: Session, symbol: str, run_id: str | None = None
+) -> OpportunityOut | None:
+    rows = OpportunityClassificationRepository(session).for_symbol(symbol, run_id)
+    return OpportunityOut.model_validate(rows[0]) if rows else None
+
+
+def _latest_scan(session: Session, symbol: str, run_id: str | None = None) -> ScanResultOut | None:
+    stmt = select(ScanResult).where(ScanResult.symbol == symbol.upper())
+    if run_id:
+        stmt = stmt.where(ScanResult.run_id == run_id)
+    row = session.scalars(stmt.order_by(ScanResult.as_of.desc()).limit(1)).first()
+    return ScanResultOut.model_validate(row) if row is not None else None
+
+
+def analogs(
+    session: Session,
+    *,
+    symbol: str | None = None,
+    regime: str | None = None,
+    sector: str | None = None,
+    run_id: str | None = None,
+    limit: int = 50,
+) -> AnalogsOut:
+    """Closed trades from setups like this one (same regime + sector cohort)."""
+    sym = symbol.upper() if symbol else None
+    if sym and sector is None:
+        scan = _latest_scan(session, sym, run_id)
+        sector = scan.sector if scan is not None else None
+    if regime is None:
+        reg = latest_regime(session)
+        regime = reg.regime if reg is not None else None
+
+    matched = [
+        t
+        for t in TradeRepository(session).closed(run_id)
+        if t.r_multiple is not None
+        and (regime is None or t.regime_label == regime)
+        and (sector is None or t.sector == sector)
+    ]
+    stats = summarize(matched)
+    recent = sorted(matched, key=lambda t: t.exit_ts or t.entry_ts, reverse=True)[:limit]
+    return AnalogsOut(
+        symbol=sym,
+        regime=regime,
+        sector=sector,
+        sample_size=stats.sample_size,
+        expectancy_r=stats.expectancy_r,
+        win_rate=stats.win_rate,
+        avg_winner_r=stats.avg_winner_r,
+        avg_loser_r=stats.avg_loser_r,
+        trades=[TradeOut.model_validate(t) for t in recent],
+    )
+
+
+def _candidate_risk_budget(
+    session: Session,
+    conviction: ConvictionScoreOut | None,
+    opportunity: OpportunityOut | None,
+    run_id: str | None,
+) -> RiskBudgetOut | None:
+    """Size a candidate's risk budget from its conviction band + opportunity tier."""
+    if conviction is None:
+        return None
+    try:
+        band = ConvictionBand(conviction.band)
+    except ValueError:
+        return None
+    tier: OpportunityTier | None = None
+    if opportunity is not None:
+        try:
+            tier = OpportunityTier(opportunity.tier)
+        except ValueError:
+            tier = None
+
+    snap_stmt = select(PortfolioSnapshot)
+    if run_id:
+        snap_stmt = snap_stmt.where(PortfolioSnapshot.run_id == run_id)
+    snap = session.scalars(
+        snap_stmt.order_by(PortfolioSnapshot.session_date.desc()).limit(1)
+    ).first()
+    equity = snap.equity if snap is not None else 100_000.0
+    heat = snap.portfolio_heat if snap is not None else 0.0
+
+    b = DynamicRiskBudgetEngine().budget(
+        RiskBudgetRequest(
+            equity=equity,
+            portfolio_heat_used=heat,
+            conviction_band=band,
+            opportunity_tier=tier,
+            symbol=conviction.symbol,
+        )
+    )
+    return RiskBudgetOut(
+        conviction_band=b.conviction_band.value if b.conviction_band else None,
+        opportunity_tier=b.opportunity_tier.value if b.opportunity_tier else None,
+        home_run=b.home_run,
+        base_pct=b.base_pct,
+        requested_pct=b.requested_pct,
+        granted_pct=b.granted_pct,
+        risk_dollars=b.risk_dollars,
+        binding_constraint=b.binding_constraint,
+        portfolio_heat_used=b.portfolio_heat_used,
+        portfolio_heat_after=b.portfolio_heat_after,
+        reasons=list(b.reasons),
+    )
+
+
+def candidate_detail(
+    session: Session, symbol: str, run_id: str | None = None
+) -> CandidateDetailOut:
+    """One aggregate that fills the Scan inspector (steps 2-4 at a glance)."""
+    sym = symbol.upper()
+    scan = _latest_scan(session, sym, run_id)
+    conviction = latest_conviction(session, sym, run_id)
+    opportunity = latest_opportunity(session, sym, run_id)
+    sector = scan.sector if scan is not None else None
+    setup_analogs = analogs(session, symbol=sym, sector=sector, run_id=run_id)
+    risk_budget = _candidate_risk_budget(session, conviction, opportunity, run_id)
+    return CandidateDetailOut(
+        symbol=sym,
+        scan=scan,
+        conviction=conviction,
+        opportunity=opportunity,
+        analogs=setup_analogs,
+        risk_budget=risk_budget,
+    )
