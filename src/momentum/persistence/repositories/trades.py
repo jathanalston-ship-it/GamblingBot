@@ -54,6 +54,11 @@ class TradeRepository(Repository[Trade]):
     def open_positions(self, run_id: str | None = None) -> list[Trade]:
         return self._query(run_id=run_id, status="open")
 
+    def open_for_symbol(self, symbol: str, run_id: str | None = None) -> Trade | None:
+        """The single open trade for ``symbol`` in this run, if any."""
+        rows = self._query(run_id=run_id, status="open", symbol=symbol.upper())
+        return rows[0] if rows else None
+
     def for_symbol(self, symbol: str, run_id: str | None = None) -> list[Trade]:
         return self._query(run_id=run_id, symbol=symbol.upper())
 

@@ -1,5 +1,21 @@
-"""Pipeline wiring and scheduling — composes the stages into runnable flows.
+"""Pipeline wiring — composes the finished engines into runnable flows.
 
-Architecture scaffold only — interface contract described below; NO implementation yet.
-See docs/ARCHITECTURE.md for the full module catalog and diagrams.
+:class:`DailyPaperPipeline` runs the paper vertical slice (scan -> conviction ->
+risk -> paper order -> portfolio -> journal) and returns a
+:class:`PipelineReport` of per-candidate :class:`TradeDecision` outcomes.
+See docs/DAILY_PIPELINE.md.
 """
+
+from __future__ import annotations
+
+from momentum.orchestration.pipeline import (
+    DailyPaperPipeline,
+    PipelineReport,
+    TradeDecision,
+)
+
+__all__ = [
+    "DailyPaperPipeline",
+    "PipelineReport",
+    "TradeDecision",
+]
