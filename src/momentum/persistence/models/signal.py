@@ -5,6 +5,7 @@ It carries no sizing and no money — that is the job of ``position_sizes``. The
 full feature vector that produced the signal is stored for auditability and
 later analysis.
 """
+
 from __future__ import annotations
 
 import datetime as dt

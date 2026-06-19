@@ -4,6 +4,7 @@ One row per signal evaluated by the risk engine. It captures *all* sizing
 inputs and the verdict, so the question "why this many shares (or why none)?"
 is answerable for every trade. This is the persisted ``RiskAssessment``.
 """
+
 from __future__ import annotations
 
 from typing import Any, TYPE_CHECKING

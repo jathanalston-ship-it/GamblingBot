@@ -5,6 +5,7 @@ objective score and the headline performance/risk metrics for that set, plus the
 walk-forward fold and window so in-sample vs out-of-sample robustness is explicit.
 ``run_id`` links a result to the backtest records (trades, snapshots) it produced.
 """
+
 from __future__ import annotations
 
 import datetime as dt
@@ -79,7 +80,13 @@ class OptimizationResult(IntPKMixin, TimestampMixin, Base):
 
     __table_args__ = (
         # A given parameter set appears once per study / sample / fold.
-        UniqueConstraint("study_name", "param_hash", "sample", "fold", name="uq_optresult_study_param_sample_fold"),
+        UniqueConstraint(
+            "study_name",
+            "param_hash",
+            "sample",
+            "fold",
+            name="uq_optresult_study_param_sample_fold",
+        ),
         # "Best parameter sets in this study" leaderboard queries.
         Index("ix_optimization_results_study_objective", "study_name", "objective_value"),
     )

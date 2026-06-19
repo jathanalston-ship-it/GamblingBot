@@ -6,6 +6,7 @@ the scanner and regime engines. Three groups: :class:`ConvictionWeights` (how th
 eight inputs blend), :class:`ConvictionNormalization` (how each raw input maps to
 [0, 1]) and :class:`ConvictionBands` (the score cut-offs).
 """
+
 from __future__ import annotations
 
 import hashlib

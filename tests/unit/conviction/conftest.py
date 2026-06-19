@@ -1,4 +1,5 @@
 """Fixtures for conviction tests: an in-memory DB and a trade factory."""
+
 from __future__ import annotations
 
 import datetime as dt
@@ -40,12 +41,20 @@ def make_trade() -> Callable[..., Trade]:
         status: str = "closed",
     ) -> Trade:
         return Trade(
-            run_id=run_id, symbol=symbol, direction="long", status=status,
+            run_id=run_id,
+            symbol=symbol,
+            direction="long",
+            status=status,
             entry_ts=dt.datetime(2024, 1, 2, 15, tzinfo=UTC),
             exit_ts=dt.datetime(2024, 1, 10, 21, tzinfo=UTC) if status == "closed" else None,
-            entry_price=50.0, exit_price=58.0 if status == "closed" else None, quantity=100,
-            r_multiple=r, net_pnl=(r * 375.0 if r is not None else None),
-            regime_label=regime, sector=sector, exit_reason="stop",
+            entry_price=50.0,
+            exit_price=58.0 if status == "closed" else None,
+            quantity=100,
+            r_multiple=r,
+            net_pnl=(r * 375.0 if r is not None else None),
+            regime_label=regime,
+            sector=sector,
+            exit_reason="stop",
         )
 
     return _make

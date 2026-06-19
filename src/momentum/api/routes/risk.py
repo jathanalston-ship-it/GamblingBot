@@ -1,4 +1,5 @@
 """Risk-metric endpoints."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
@@ -19,4 +20,6 @@ def get_risk_metrics(
     limit: int = Query(100, ge=1, le=1000),
     session: Session = Depends(get_session),
 ) -> list[RiskMetricOut]:
-    return services.list_risk_metrics(session, scope=scope, window=window, run_id=run_id, limit=limit)
+    return services.list_risk_metrics(
+        session, scope=scope, window=window, run_id=run_id, limit=limit
+    )

@@ -4,6 +4,7 @@ Read-only by design: the API surfaces signals, trades, regimes, portfolio
 snapshots, risk metrics, scans, optimization results and performance summaries,
 but never mutates strategy, config or stored research.
 """
+
 from __future__ import annotations
 
 from momentum.api.app import create_app

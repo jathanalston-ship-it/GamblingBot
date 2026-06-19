@@ -5,6 +5,7 @@ component scores (as queryable columns), the full explainable breakdown (JSON),
 and links to the originating trade / signal. ``from_result`` maps a
 :class:`~momentum.conviction.engine.ConvictionResult` onto a row.
 """
+
 from __future__ import annotations
 
 import datetime as dt

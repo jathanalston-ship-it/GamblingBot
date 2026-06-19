@@ -10,6 +10,7 @@ Bands (lower-inclusive on the upper boundary):
     HIGH     [70, 85)
     EXTREME  [85, 100]
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -44,10 +45,10 @@ class ComponentScore:
     """One input's contribution to the conviction score."""
 
     name: str
-    raw: float | None        # the raw input (mapped value for the regime label)
-    normalized: float        # mapped to [0, 1]
-    weight: float            # configured weight
-    contribution: float      # points added to the final 0-100 score
+    raw: float | None  # the raw input (mapped value for the regime label)
+    normalized: float  # mapped to [0, 1]
+    weight: float  # configured weight
+    contribution: float  # points added to the final 0-100 score
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -117,12 +118,20 @@ class ConvictionEngine:
         # (name, raw, normalized) for each of the eight inputs.
         normalized: dict[str, float] = {
             "market_regime": regime_raw,
-            "sector_strength": _linear(inputs.sector_strength, n.sector_strength_lo, n.sector_strength_hi, n.neutral),
-            "relative_volume": _linear(inputs.relative_volume, n.relative_volume_lo, n.relative_volume_hi, n.neutral),
+            "sector_strength": _linear(
+                inputs.sector_strength, n.sector_strength_lo, n.sector_strength_hi, n.neutral
+            ),
+            "relative_volume": _linear(
+                inputs.relative_volume, n.relative_volume_lo, n.relative_volume_hi, n.neutral
+            ),
             "distance_to_ath": _inverted(inputs.distance_to_ath, n.distance_to_ath_max, n.neutral),
-            "trend_strength": _linear(inputs.trend_strength, n.trend_strength_lo, n.trend_strength_hi, n.neutral),
+            "trend_strength": _linear(
+                inputs.trend_strength, n.trend_strength_lo, n.trend_strength_hi, n.neutral
+            ),
             "breadth": _linear(inputs.breadth, n.breadth_lo, n.breadth_hi, n.neutral),
-            "momentum_score": _linear(inputs.momentum_score, n.momentum_lo, n.momentum_hi, n.neutral),
+            "momentum_score": _linear(
+                inputs.momentum_score, n.momentum_lo, n.momentum_hi, n.neutral
+            ),
             "historical_similar_setups": self._historical(inputs, n),
         }
         raws: dict[str, float | None] = {

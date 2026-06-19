@@ -1,7 +1,17 @@
-.PHONY: install test lint format serve scan backtest migrate migration migration-check db-history
+.PHONY: install test lint format check safe-push serve scan backtest migrate migration migration-check db-history
 
 install:        ## install runtime + dev deps
 	pip install -r requirements.txt && pip install -e .
+
+check:          ## the full quality gate (format-check + lint + types + tests + migration drift)
+	ruff format --check src tests
+	ruff check src tests
+	MYPYPATH=src python -m mypy --strict src/momentum
+	PYTHONPATH=src python -m pytest tests -q
+	@tmp=$$(mktemp -u --suffix=.db); DATABASE_URL="sqlite:///$$tmp" PYTHONPATH=src alembic upgrade head >/dev/null && DATABASE_URL="sqlite:///$$tmp" PYTHONPATH=src alembic check; rm -f "$$tmp"
+
+safe-push:      ## gate + rebase + re-gate + push (refuses a red branch)
+	bash scripts/safe-push.sh
 
 migrate:        ## apply all database migrations
 	alembic upgrade head
@@ -19,7 +29,7 @@ test:           ## run the test suite
 	pytest
 
 lint:           ## static checks
-	ruff check src tests && mypy src
+	ruff check src tests && python -m mypy src
 
 format:         ## auto-format
 	ruff format src tests

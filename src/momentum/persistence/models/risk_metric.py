@@ -5,12 +5,23 @@ strategy or symbol) over a measurement window (rolling or inception). Decoupled
 from ``portfolio_snapshots`` so metrics can be recomputed/backfilled without
 touching the raw equity curve. Optional metrics are nullable.
 """
+
 from __future__ import annotations
 
 import datetime as dt
 from typing import Any, TYPE_CHECKING
 
-from sqlalchemy import Date, DateTime, Float, ForeignKey, Index, Integer, JSON, String, UniqueConstraint
+from sqlalchemy import (
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    JSON,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from momentum.persistence.models.base import Base, IntPKMixin, TimestampMixin
@@ -94,7 +105,13 @@ class RiskMetric(IntPKMixin, TimestampMixin, Base):
 
     __table_args__ = (
         # One metrics row per run / scope / window / date.
-        UniqueConstraint("run_id", "scope", "window", "session_date", name="uq_risk_metrics_run_scope_window_date"),
+        UniqueConstraint(
+            "run_id",
+            "scope",
+            "window",
+            "session_date",
+            name="uq_risk_metrics_run_scope_window_date",
+        ),
         # Time-series scans by scope.
         Index("ix_risk_metrics_scope_date", "scope", "session_date"),
     )

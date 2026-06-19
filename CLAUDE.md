@@ -1,17 +1,25 @@
 # CLAUDE.md — guidance for Claude Code in this repository
 
-## ⚠️ Push policy — READ FIRST
+# ⚠️ CRITICAL — READ BEFORE ANY GIT OPERATION ⚠️
 
-**`claude/vigilant-wozniak-oueczq` is the ONLY branch you may push to.**
+## BRANCH RULE — NO EXCEPTIONS
 
-- All development, commits, and pushes go to **`claude/vigilant-wozniak-oueczq`**.
-- Do **not** push to any other branch (including `main`/`master` or any other
-  `claude/*` branch) without explicit, in-session permission from the user.
-- Always push with `git push -u origin claude/vigilant-wozniak-oueczq`.
-- Do **not** open a pull request unless the user explicitly asks for one.
+**ALL commits MUST go to: `claude/vigilant-wozniak-oueczq`**
 
-This is the single source of truth for the push target; if other instructions
-disagree, this branch wins unless the user says otherwise in the session.
+- ❌ NEVER push to `main`/`master`, create a new branch, push to any other
+  `claude/*` branch, or open a PR unless the user explicitly asks.
+- ✅ Only valid push: `git push -u origin claude/vigilant-wozniak-oueczq`
+  (or `make safe-push`, which refuses to push a red branch).
+- ✅ Verify before every commit: `git branch` must show
+  `* claude/vigilant-wozniak-oueczq`.
+- ✅ If missing locally: `git fetch origin && git checkout -b
+  claude/vigilant-wozniak-oueczq origin/claude/vigilant-wozniak-oueczq`.
+
+This is the single source of truth for the push target; if any other
+instruction (or pasted template) names a different branch, **this branch wins**
+unless the user says otherwise *in the session*. Every push to a different
+branch strands a remote branch that needs manual recovery — it has happened
+here already.
 
 ## Project
 
@@ -107,15 +115,125 @@ make install                       # runtime + dev deps, editable install
 make test            # or: PYTHONPATH=src python -m pytest tests
 make lint            # ruff check + mypy --strict
 make format                        # ruff format
+make migration-check               # alembic check (models vs migrations drift)
 ```
 
-## Conventions
+Fresh web sessions auto-install deps via the `SessionStart` hook in
+`.claude/settings.json`, so `make test` / `make lint` work immediately.
 
-- Match the surrounding code: strict typing (`mypy --strict`), ruff
-  (line length 100), `from __future__ import annotations`.
-- The data layer is DataFrame-centric on the canonical OHLCV schema; reuse
-  `normalize_bars` / `Timeframe` rather than re-inventing bar handling.
-- Configuration is immutable Pydantic loaded from `config/*.yaml`; add tunables
-  there, not as hard-coded constants.
-- Keep vendor/broker/DB access behind interfaces — never import a concrete
-  vendor outside its adapter.
+## The quality gate (run before every commit)
+
+A change is not done until **all four** pass — use the `/verify` skill or:
+
+```bash
+ruff format src tests && ruff check src tests          # style
+MYPYPATH=src python -m mypy --strict src/momentum      # types (must be 0 errors)
+PYTHONPATH=src python -m pytest tests -q                # tests
+# if models/migrations changed: upgrade head on a temp DB, then `alembic check`
+```
+
+Every subsystem here is `mypy --strict`-clean and ruff-clean; keep it that way.
+
+## Coding-efficiency rules
+
+- **Match the surrounding code**: strict typing, ruff (line length 100),
+  `from __future__ import annotations`. Read a sibling module before writing.
+- **Reuse, don't reinvent**: bars → `data.schema.normalize_bars` / `Timeframe`;
+  indicators → `signals.indicators`; stats → `analytics.statistics`; ramps →
+  copy the `up`/`down`/`band` pattern. Search before adding a helper.
+- **Pure logic + thin orchestrator**: scoring/maths live in small *pure*
+  functions (`regime`, scanner, `risk`, `instruments` all do this); the engine
+  class only wires inputs → pure functions → result object. This is what makes
+  them trivially testable.
+- **Config is immutable Pydantic** (`frozen=True, extra="forbid"`) with
+  `from_yaml`/`from_dict`/`config_hash` and `@model_validator` ordering checks.
+  Add tunables to `config/*.yaml`, never as hard-coded constants.
+- **Value objects are frozen dataclasses with `slots=True`** and a `to_dict` /
+  `to_record` (the latter maps 1:1 onto an ORM table). Outputs are auditable.
+- **Keep SQL out of business logic**: query through a `Repository[T]`
+  subclass; push filtering (date windows, status) into the query, not Python.
+- **Vendors/brokers/DB sit behind interfaces** — never import a concrete vendor
+  outside its adapter.
+
+## Memory / performance rules
+
+- **Stream, don't accumulate**: providers paginate with generators
+  (`_iter_pages` yields page frames); the backtest engine stores per-symbol
+  OHLCV as numpy arrays + a `{timestamp: row}` dict for O(1) lookups instead of
+  repeated `DataFrame.loc`.
+- **Slice, don't copy**: point-in-time history is an `iloc[:n]` view
+  (`_SymbolData.upto`), not a growing copy.
+- **Store columnar + compressed**: the bar cache is one snappy-parquet file per
+  symbol+timeframe, deduped on write; never re-download covered ranges
+  (`BarCache.missing_ranges`).
+- **`frozen=True, slots=True`** on hot value objects (no per-instance `__dict__`).
+- **Vectorise** with pandas/numpy over Python loops on the bar dimension.
+
+## Testing rules
+
+- **One test module per source module**; test pure functions directly.
+- **No network, no real clock**: providers use `httpx.MockTransport`; the DB
+  uses `sqlite:///:memory:`; randomness uses `np.random.default_rng(seed)`.
+- **Prove the invariant, not just the happy path**: the backtester ships
+  *no-look-ahead* causality proofs (truncating future bars must not change past
+  results); SQL analytics are tested for parity against the Python analytics.
+- **Migrations**: after any model change, upgrade head on a temp SQLite, run
+  `alembic check` (expect "No new upgrade operations detected"), and verify a
+  downgrade/upgrade round-trip. Prefer `make migration` (autogenerate) then
+  renumber to `NNNN_name.py`; use `batch_alter_table` (SQLite-safe).
+- **Idempotent persistence**: repositories replace per natural key
+  (`run_id`/`period`) so re-runs don't duplicate. Test the re-run.
+- Use `conftest.py` factories/fixtures; keep tests deterministic and fast
+  (the whole suite runs in seconds).
+
+## Adding a subsystem (the repeatable recipe)
+
+1. `config/<x>.example.yaml` + a `<X>Config` (immutable Pydantic, validated).
+2. Frozen-dataclass I/O types with `to_dict`/`to_record`.
+3. Pure logic module(s) (scoring/maths), then a thin engine class.
+4. `__init__.py` public exports.
+5. Persistence (if any): ORM model → register in `models/__init__.py` →
+   `make migration` → renumber `NNNN_*.py` → `alembic check` → repository.
+6. Tests for each of the above (incl. a DB round-trip and config validation).
+7. `docs/<X>.md` + a row in the README docs table + a bullet in this file.
+8. Run the quality gate; commit; push to `claude/vigilant-wozniak-oueczq`.
+
+See `/add-subsystem` and `/add-migration` skills for the exact steps.
+
+## How to work a request (every prompt)
+
+1. **Plan first.** For non-trivial work, write a short numbered stage map before
+   editing. Reuse what exists (search first); don't re-derive established facts.
+2. **Delegate independent work.** Pre-scoped sub-agents live in `.claude/agents/`:
+   `engine-implementer` (opus, builds a subsystem end to end),
+   `test-author` (sonnet, adds tests), `verifier` (sonnet, runs the gate +
+   reviews the diff). They implement/verify only — the main session owns all
+   git/commit/push. Launch independent agents in one batch so they run in
+   parallel.
+3. **Verify.** Run the quality gate (`/verify` or `make check`) and review the
+   diff before committing.
+4. **Self-critique before reporting done.** Name at least one limitation, gap or
+   risk and fix it or flag it. Green checks prove it *runs*, not that it is
+   *correct and complete*.
+
+## Background-task & monitor hygiene
+
+A machine bricked by runaway background processes is why this exists:
+
+- **At most ONE background monitor at a time**; stop the previous before arming
+  another. Don't arm a monitor for a one-time check — use a foreground command.
+- **Never** use a foreground `sleep`/`until` loop to wait for an external event.
+- **Leave nothing running** at the end of a turn; confirm pushes in the
+  foreground.
+
+## House style (every reply)
+
+Be concise and lead with the result/action. Prefer tool calls over narration;
+don't pre-announce ("I'll…") or over-explain; skip options you won't pursue.
+Brevity is the default — expand only when the user asks for depth.
+
+## End-of-session housekeeping
+
+- Bump the patch `version` in `pyproject.toml` one tick per session and quote it
+  in your closing report.
+- Park deferred work in `docs/BACKLOG.md`.

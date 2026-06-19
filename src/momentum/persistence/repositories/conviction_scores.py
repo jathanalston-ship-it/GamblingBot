@@ -1,4 +1,5 @@
 """Data access for persisted conviction scores."""
+
 from __future__ import annotations
 
 import datetime as dt
@@ -57,4 +58,6 @@ class ConvictionScoreRepository(Repository[ConvictionScore]):
         stmt = select(ConvictionScore)
         if run_id is not None:
             stmt = stmt.where(ConvictionScore.run_id == run_id)
-        return list(self.session.scalars(stmt.order_by(ConvictionScore.score.desc()).limit(n)).all())
+        return list(
+            self.session.scalars(stmt.order_by(ConvictionScore.score.desc()).limit(n)).all()
+        )

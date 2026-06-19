@@ -4,6 +4,7 @@ One row per session per run: the account's equity, cash, exposure, open risk
 ("heat") and drawdown. This is the time series that drives performance analytics
 and the drawdown-throttle risk control.
 """
+
 from __future__ import annotations
 
 import datetime as dt

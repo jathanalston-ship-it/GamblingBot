@@ -9,6 +9,7 @@ portfolio_snapshots, risk_metrics, optimization_results, scan_results,
 research_reports, instrument_selections, conviction_scores,
 opportunity_classifications.
 """
+
 from __future__ import annotations
 
 from momentum.persistence.models.base import Base, IntPKMixin, TimestampMixin

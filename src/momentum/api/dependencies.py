@@ -4,6 +4,7 @@ The session factory is stored on ``app.state`` by :func:`create_app`, so tests
 can inject an in-memory database simply by passing their own factory. The
 request-scoped session is read-only here — it is never committed.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator

@@ -5,6 +5,7 @@ environment. Signals, trades and portfolio snapshots reference the regime in
 force at their time, so performance can later be attributed by regime and the
 strategy's regime filter is fully auditable.
 """
+
 from __future__ import annotations
 
 import datetime as dt
@@ -22,7 +23,9 @@ class MarketRegime(IntPKMixin, TimestampMixin, Base):
     # --- identity of the classification -------------------------------------
     as_of: Mapped[dt.date] = mapped_column(Date, nullable=False, index=True)
     # Trading date this classification applies to.
-    benchmark_symbol: Mapped[str] = mapped_column(String(16), nullable=False, default="SPY", index=True)
+    benchmark_symbol: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="SPY", index=True
+    )
     # Index used to characterise the market (e.g. SPY, QQQ, IWM).
     model_version: Mapped[str] = mapped_column(String(32), nullable=False, default="v1")
     # Version of the regime model that produced the row (reproducibility).
@@ -57,7 +60,9 @@ class MarketRegime(IntPKMixin, TimestampMixin, Base):
 
     __table_args__ = (
         # At most one classification per date / benchmark / model version.
-        UniqueConstraint("as_of", "benchmark_symbol", "model_version", name="uq_regime_asof_benchmark_model"),
+        UniqueConstraint(
+            "as_of", "benchmark_symbol", "model_version", name="uq_regime_asof_benchmark_model"
+        ),
         # Fast "what regime were we in on date X / over range" lookups.
         Index("ix_market_regimes_asof_regime", "as_of", "regime"),
     )

@@ -4,6 +4,7 @@ Keeps query logic out of the HTTP handlers and returns API schema objects, so
 routes are trivial and fully typed. Every function takes an explicit ``Session``;
 nothing here mutates state.
 """
+
 from __future__ import annotations
 
 from dataclasses import asdict
@@ -79,7 +80,9 @@ def latest_regime(session: Session) -> RegimeOut | None:
     return RegimeOut.model_validate(row) if row is not None else None
 
 
-def list_snapshots(session: Session, *, run_id: str | None = None, limit: int = 1000) -> list[PortfolioSnapshotOut]:
+def list_snapshots(
+    session: Session, *, run_id: str | None = None, limit: int = 1000
+) -> list[PortfolioSnapshotOut]:
     stmt = select(PortfolioSnapshot)
     if run_id:
         stmt = stmt.where(PortfolioSnapshot.run_id == run_id)

@@ -1,4 +1,5 @@
 """Market-regime query endpoints."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query

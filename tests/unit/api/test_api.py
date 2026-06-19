@@ -1,4 +1,5 @@
 """End-to-end tests for the read API via FastAPI TestClient."""
+
 from __future__ import annotations
 
 

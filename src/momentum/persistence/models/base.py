@@ -11,6 +11,7 @@ unique constraints and foreign keys receive deterministic names. This is
 essential for (a) clean Alembic autogeneration and (b) SQLite "batch" migrations,
 which recreate a table to emulate ``ALTER`` and need named constraints to do so.
 """
+
 from __future__ import annotations
 
 import datetime as dt

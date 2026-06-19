@@ -6,6 +6,7 @@ score and historical similar setups — and assigns a band (LOW / MEDIUM / HIGH 
 EXTREME). Fully explainable (per-component contributions) and persisted to the
 ``conviction_scores`` table. See docs/CONVICTION.md.
 """
+
 from __future__ import annotations
 
 from momentum.conviction.config import (

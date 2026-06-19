@@ -3,6 +3,7 @@
 Every field is optional: a missing input contributes a *neutral* score rather
 than zero, so partial evidence neither inflates nor unfairly tanks conviction.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -18,15 +19,15 @@ if TYPE_CHECKING:
 class ConvictionInputs:
     """Raw inputs for one conviction assessment (all optional)."""
 
-    market_regime: str | None = None          # "bull" | "neutral" | "bear"
-    sector_strength: float | None = None       # sector relative-strength percentile, 0..1
-    relative_volume: float | None = None       # volume vs trailing average (1.0 = average)
-    distance_to_ath: float | None = None        # fractional gap below the all-time high (>= 0)
-    trend_strength: float | None = None         # ADX (or equivalent trend-strength reading)
-    breadth: float | None = None                # fraction of the market above its 200DMA, 0..1
-    momentum_score: float | None = None         # the scanner's momentum score, 0..1
+    market_regime: str | None = None  # "bull" | "neutral" | "bear"
+    sector_strength: float | None = None  # sector relative-strength percentile, 0..1
+    relative_volume: float | None = None  # volume vs trailing average (1.0 = average)
+    distance_to_ath: float | None = None  # fractional gap below the all-time high (>= 0)
+    trend_strength: float | None = None  # ADX (or equivalent trend-strength reading)
+    breadth: float | None = None  # fraction of the market above its 200DMA, 0..1
+    momentum_score: float | None = None  # the scanner's momentum score, 0..1
     historical_expectancy_r: float | None = None  # mean R of similar past setups
-    historical_sample_size: int = 0             # how many similar setups backed that expectancy
+    historical_sample_size: int = 0  # how many similar setups backed that expectancy
 
     @classmethod
     def from_sources(

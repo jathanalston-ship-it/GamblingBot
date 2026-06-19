@@ -4,6 +4,7 @@ These are the API contract, intentionally decoupled from the SQLAlchemy ORM
 models. ``from_attributes`` lets FastAPI serialize ORM rows directly against
 them. Read-only — the API never accepts write payloads.
 """
+
 from __future__ import annotations
 
 import datetime as dt

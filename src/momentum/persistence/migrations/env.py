@@ -9,6 +9,7 @@ and applied. Key choices:
   * ``DATABASE_URL`` (env var) overrides the ini URL, so the same migrations run
     against research SQLite and production Postgres unchanged.
 """
+
 from __future__ import annotations
 
 import os

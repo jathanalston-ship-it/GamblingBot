@@ -7,6 +7,7 @@ durability; the same code points at Postgres in production by changing the URL.
 In production the schema is owned by Alembic migrations. ``create_all`` is a
 convenience for tests and quick local research only.
 """
+
 from __future__ import annotations
 
 import os

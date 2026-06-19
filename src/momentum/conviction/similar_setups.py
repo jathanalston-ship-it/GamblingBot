@@ -5,6 +5,7 @@ how did they pay off?" Looks at closed trades matching a setup's regime / sector
 (optionally symbol) and summarizes their realized edge in R, with the sample size
 so the engine can shrink low-evidence reads toward neutral.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -20,8 +21,8 @@ class SimilarSetupStats:
     """Realized performance of historically similar setups."""
 
     sample_size: int
-    expectancy_r: float | None       # mean R per trade (None when no samples)
-    win_rate: float | None           # fraction with R > 0
+    expectancy_r: float | None  # mean R per trade (None when no samples)
+    win_rate: float | None  # fraction with R > 0
     avg_winner_r: float | None
     avg_loser_r: float | None
 

@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -c 'import pandas, numpy, pydantic, sqlalchemy, httpx, pyarrow, yaml' 2>/dev/null || { pip install -q -r requirements.txt && pip install -q -e . ; } >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ]
+  }
+}

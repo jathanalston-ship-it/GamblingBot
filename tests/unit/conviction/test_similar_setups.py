@@ -1,16 +1,19 @@
 """Tests for the historical similar-setups analyzer."""
+
 from __future__ import annotations
 
 from momentum.conviction.similar_setups import SimilarSetupAnalyzer, SimilarSetupStats, summarize
 
 
 def test_analyze_matches_regime_and_sector(session, make_trade):
-    session.add_all([
-        make_trade(symbol="AAPL", r=2.0, regime="bull", sector="Technology"),
-        make_trade(symbol="MSFT", r=-1.0, regime="bull", sector="Technology"),
-        make_trade(symbol="XOM", r=1.0, regime="bull", sector="Energy"),
-        make_trade(symbol="JPM", r=0.5, regime="bear", sector="Financials"),
-    ])
+    session.add_all(
+        [
+            make_trade(symbol="AAPL", r=2.0, regime="bull", sector="Technology"),
+            make_trade(symbol="MSFT", r=-1.0, regime="bull", sector="Technology"),
+            make_trade(symbol="XOM", r=1.0, regime="bull", sector="Energy"),
+            make_trade(symbol="JPM", r=0.5, regime="bear", sector="Financials"),
+        ]
+    )
     session.commit()
 
     stats = SimilarSetupAnalyzer(session).analyze(regime="bull", sector="Technology")
@@ -29,10 +32,12 @@ def test_analyze_no_match_returns_empty(session, make_trade):
 
 
 def test_open_trades_excluded(session, make_trade):
-    session.add_all([
-        make_trade(symbol="AAPL", r=1.0, status="closed"),
-        make_trade(symbol="MSFT", r=5.0, status="open"),  # not counted
-    ])
+    session.add_all(
+        [
+            make_trade(symbol="AAPL", r=1.0, status="closed"),
+            make_trade(symbol="MSFT", r=5.0, status="open"),  # not counted
+        ]
+    )
     session.commit()
     stats = SimilarSetupAnalyzer(session).analyze(regime="bull", sector="Technology")
     assert stats.sample_size == 1 and stats.expectancy_r == 1.0

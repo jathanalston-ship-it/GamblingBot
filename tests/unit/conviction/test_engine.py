@@ -1,4 +1,5 @@
 """Tests for the conviction scoring engine (pure, no DB)."""
+
 from __future__ import annotations
 
 import math
@@ -11,17 +12,29 @@ from momentum.conviction.config import ConvictionBands, ConvictionWeights
 
 def _perfect() -> ConvictionInputs:
     return ConvictionInputs(
-        market_regime="bull", sector_strength=1.0, relative_volume=3.0, distance_to_ath=0.0,
-        trend_strength=40.0, breadth=0.70, momentum_score=1.0,
-        historical_expectancy_r=1.0, historical_sample_size=20,
+        market_regime="bull",
+        sector_strength=1.0,
+        relative_volume=3.0,
+        distance_to_ath=0.0,
+        trend_strength=40.0,
+        breadth=0.70,
+        momentum_score=1.0,
+        historical_expectancy_r=1.0,
+        historical_sample_size=20,
     )
 
 
 def _worst() -> ConvictionInputs:
     return ConvictionInputs(
-        market_regime="bear", sector_strength=0.0, relative_volume=1.0, distance_to_ath=0.20,
-        trend_strength=15.0, breadth=0.30, momentum_score=0.0,
-        historical_expectancy_r=-0.5, historical_sample_size=20,
+        market_regime="bear",
+        sector_strength=0.0,
+        relative_volume=1.0,
+        distance_to_ath=0.20,
+        trend_strength=15.0,
+        breadth=0.30,
+        momentum_score=0.0,
+        historical_expectancy_r=-0.5,
+        historical_sample_size=20,
     )
 
 
@@ -48,8 +61,16 @@ def test_contributions_sum_to_score():
 
 @pytest.mark.parametrize(
     "score,band",
-    [(0, "low"), (39.9, "low"), (40, "medium"), (69.9, "medium"),
-     (70, "high"), (84.9, "high"), (85, "extreme"), (100, "extreme")],
+    [
+        (0, "low"),
+        (39.9, "low"),
+        (40, "medium"),
+        (69.9, "medium"),
+        (70, "high"),
+        (84.9, "high"),
+        (85, "extreme"),
+        (100, "extreme"),
+    ],
 )
 def test_band_boundaries(score, band):
     assert ConvictionBand.from_score(score, ConvictionBands()).value == band

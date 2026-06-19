@@ -3,6 +3,7 @@
 Combines trade statistics (always) with return-based performance metrics
 (when an equity curve exists for the run), built from the analytics package.
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends

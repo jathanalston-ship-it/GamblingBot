@@ -1,4 +1,5 @@
 """Tests for conviction configuration (validation, hashing, loading)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -35,8 +36,14 @@ def test_from_yaml_example_loads():
 def test_all_zero_weights_rejected():
     with pytest.raises(ValidationError):
         ConvictionWeights(
-            market_regime=0.0, sector_strength=0.0, relative_volume=0.0, distance_to_ath=0.0,
-            trend_strength=0.0, breadth=0.0, momentum_score=0.0, historical_similar_setups=0.0,
+            market_regime=0.0,
+            sector_strength=0.0,
+            relative_volume=0.0,
+            distance_to_ath=0.0,
+            trend_strength=0.0,
+            breadth=0.0,
+            momentum_score=0.0,
+            historical_similar_setups=0.0,
         )
 
 

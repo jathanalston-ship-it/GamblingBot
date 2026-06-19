@@ -8,6 +8,7 @@ Run locally::
 
     uvicorn momentum.api.app:create_app --factory --reload
 """
+
 from __future__ import annotations
 
 from fastapi import FastAPI
