@@ -1,32 +1,34 @@
 name: Release
 
-# Build the Momentum Lab Windows 11 installer and publish a GitHub Release when a
-# version tag (e.g. v0.0.21) is pushed. The quality gate (ruff + mypy + tests +
-# desktop typecheck/build) must pass first; if it fails, no release is created.
-#
-#   git tag v0.0.21 && git push origin v0.0.21
-#
-# Manual re-runs are possible via "Run workflow" (provide an existing tag).
+# Build the Momentum Lab Windows 11 installer and publish a GitHub Release.
+# Two ways to trigger it:
+#   1. Push a version tag:        git tag v0.0.23 && git push origin v0.0.23
+#   2. Run it from the Actions tab ("Run workflow") on a branch — no tag needed;
+#      the version comes from the optional input or pyproject.toml, and the tag +
+#      release are created from the selected commit.
+# The quality gate (ruff + mypy + tests + desktop build) must pass first; if it
+# fails, no release is created.
 on:
   push:
     tags:
       - "v*"
   workflow_dispatch:
     inputs:
-      tag:
-        description: "Existing tag to (re)build and release, e.g. v0.0.21"
-        required: true
+      version:
+        description: "Version to release, e.g. 0.0.23 (blank = use pyproject.toml). A tag v<version> is created."
+        required: false
 
 permissions:
-  contents: write # create releases + upload assets
+  contents: write # create releases + tags + upload assets
 
 concurrency:
-  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  group: release-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   # --------------------------------------------------------------------------- #
   # Gate: the release is blocked unless tests, mypy and the desktop build pass.
+  # Runs on the triggering ref (the tag for a tag push, the branch for a dispatch).
   # --------------------------------------------------------------------------- #
   quality:
     name: Quality gate (ruff · mypy · tests · desktop build)
@@ -34,8 +36,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -90,17 +90,26 @@ jobs:
       - name: Checkout (full history for release notes)
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Resolve version from tag
+      - name: Resolve version + tag
         id: ver
         shell: bash
         run: |
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAG="${{ github.ref_name }}"          # e.g. v0.0.23
+            VERSION="${TAG#v}"
+          else
+            VERSION="${{ github.event.inputs.version }}"
+            if [ -z "$VERSION" ]; then
+              VERSION="$(grep -m1 '^version = ' pyproject.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+            fi
+            TAG="v${VERSION}"
+          fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing $TAG (version $VERSION) from ${GITHUB_SHA}"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -112,7 +121,7 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Sync desktop version to the tag
+      - name: Sync desktop version
         shell: bash
         env:
           VERSION: ${{ steps.ver.outputs.version }}
@@ -133,7 +142,9 @@ jobs:
           TAG: ${{ steps.ver.outputs.tag }}
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          PREV=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || echo "")
+          # Most recent existing tag reachable from HEAD, excluding this release's
+          # tag (which may not exist yet on a workflow_dispatch run).
+          PREV="$(git describe --tags --abbrev=0 --exclude="$TAG" HEAD 2>/dev/null || echo "")"
           {
             echo "## Momentum Lab ${TAG}"
             echo
@@ -143,9 +154,9 @@ jobs:
             if [ -n "$PREV" ]; then
               echo "_Commits since ${PREV}:_"
               echo
-              git log --no-merges --pretty=format:'- %s (%h)' "${PREV}..${TAG}"
+              git log --no-merges --pretty=format:'- %s (%h)' "${PREV}..HEAD"
             else
-              git log --no-merges --pretty=format:'- %s (%h)' "${TAG}"
+              git log --no-merges --pretty=format:'- %s (%h)' -n 50 HEAD
             fi
             echo
           } > release_notes.md
@@ -160,6 +171,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
+          target_commitish: ${{ github.sha }} # create the tag here if it doesn't exist
           name: Momentum Lab ${{ steps.ver.outputs.tag }}
           body_path: release_notes.md
           draft: false

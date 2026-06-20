@@ -150,28 +150,34 @@ After installing on a clean Windows 11 machine, verify:
 
 ## 10. Automated releases (GitHub Releases CI/CD)
 
-`.github/workflows/release.yml` builds and publishes the installer automatically
-when a version tag is pushed:
+`.github/workflows/release.yml` builds and publishes the installer. Trigger it
+**either** way:
+
+**A — push a version tag** (creates the release for that tag):
 
 ```bash
 # bump the version first (pyproject.toml + desktop/package.json), commit, then:
-git tag v0.0.21
-git push origin v0.0.21
+git tag v0.0.23
+git push origin v0.0.23
 ```
+
+**B — run it from the Actions tab** (no tag needed): open **Actions → Release →
+Run workflow**, pick the branch, and optionally enter a version (blank = use
+`pyproject.toml`). The workflow creates the `v<version>` tag and the release from
+that branch's latest commit. (This is the easy path if you're not working from a
+local clone — don't pass a tag that doesn't exist yet, or checkout will fail.)
 
 The workflow:
 
 1. **Quality gate** (Ubuntu) — `ruff` + `mypy --strict` + `pytest` + the desktop
    `typecheck`/`build`. **If any fail, no release is produced.**
 2. **Build** (Windows) — runs `scripts/build_windows.ps1` (the same one-command
-   build), after syncing `desktop/package.json` to the tag version so the
-   installer and the version baked into the app match the tag.
-3. **Publish** — creates the GitHub Release, generates notes from the git commits
-   since the previous tag, and uploads `MomentumLab-Setup-<version>.exe` (plus
-   `latest.yml` + `*.blockmap` for auto-update).
-
-Re-run manually from the Actions tab ("Run workflow" → enter an existing tag).
-The tag must be on a commit that contains `release.yml`.
+   build), after syncing `desktop/package.json` to the release version so the
+   installer and the version baked into the app match.
+3. **Publish** — creates the tag (if needed) + GitHub Release, generates notes
+   from the git commits since the previous tag, and uploads
+   `MomentumLab-Setup-<version>.exe` (plus `latest.yml` + `*.blockmap` for
+   auto-update).
 
 ## Notes / known limitations
 
