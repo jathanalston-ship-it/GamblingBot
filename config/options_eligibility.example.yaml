@@ -1,0 +1,51 @@
+# Options-eligibility thresholds. Copy to options_eligibility.yaml to override.
+#
+# Decides whether a SETUP is suitable for options leverage (vs shares) — a go/no-go
+# gate, not an actual option recommendation. Six factors are scored and weighted
+# into a 0-100 confidence; a hard fail on liquidity / volatility / expected move
+# forces "Shares Preferred".
+model_version: v1
+
+# Eligible when confidence >= this AND no hard-required factor fails.
+eligible_confidence: 55.0
+
+# Factor weights (re-normalized over the factors that have data).
+weights:
+  liquidity: 0.25
+  volatility: 0.20
+  expected_move: 0.20
+  time_horizon: 0.15
+  spread_quality: 0.10
+  market_regime: 0.10
+
+# Liquidity — average daily dollar volume of the underlying.
+liquidity_floor: 5000000 # below this options are untradeable (hard fail)
+liquidity_good: 50000000
+
+# Volatility — ATR / price (daily). Too quiet => premium isn't worth it (hard fail);
+# a sweet spot in the middle; extreme vol is pricey (soft warn).
+vol_min: 0.012
+vol_ideal_lo: 0.018
+vol_ideal_hi: 0.06
+vol_max: 0.12
+
+# Expected move over the hold (ATR-derived). Must clear the premium (hard fail).
+move_min: 0.04
+move_target: 0.12
+
+# Time horizon (trading days) — short/medium favours options; long favours shares.
+horizon_min: 4
+horizon_ideal_lo: 8
+horizon_ideal_hi: 45
+horizon_max: 120
+default_horizon_days: 21 # used when no holding estimate is available
+
+# Spread-quality proxy (no chain data): higher price + liquidity => tighter spreads.
+spread_min_price: 15.0
+spread_good_adv: 20000000
+
+# Market-regime favourability (directional leverage likes trends).
+regime_favor:
+  bull: 1.0
+  neutral: 0.6
+  bear: 0.3

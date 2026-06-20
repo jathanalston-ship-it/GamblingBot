@@ -267,6 +267,25 @@ export interface LifecycleSummary {
   states: LifecycleStateCount[];
 }
 
+export interface EligibilityFactor {
+  name: string;
+  label: string;
+  status: string; // pass / warn / fail
+  score: number;
+  weight: number;
+  detail: string;
+}
+
+export interface OptionsEligibility {
+  symbol: string;
+  eligible: boolean;
+  confidence: number;
+  recommendation: string; // "Shares Preferred" | "Leverage Eligible"
+  expected_move_pct: number | null;
+  factors: EligibilityFactor[];
+  summary: string;
+}
+
 export interface TradeTarget {
   label: string;
   price: number;

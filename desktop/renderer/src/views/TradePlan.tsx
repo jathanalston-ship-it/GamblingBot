@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 
-import type { TradePlan as Plan } from "../api/types";
+import type { OptionsEligibility, TradePlan as Plan } from "../api/types";
 import { Card } from "../components/Card";
 import { ErrorBox, Loading, PageTitle } from "../components/Page";
 import { Stat } from "../components/Stat";
@@ -82,6 +82,8 @@ function Body({ symbol, runId }: { symbol: string; runId: string | null }) {
         </span>
       </div>
 
+      <OptionsEligibilityCard symbol={data.symbol} runId={runId} />
+
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         {/* trade plan: targets + sizing */}
         <Card title="Trade Plan">
@@ -152,6 +154,52 @@ function Body({ symbol, runId }: { symbol: string; runId: string | null }) {
 
       <p className="text-xs text-slate-500">{data.methodology.join(" · ")}</p>
     </div>
+  );
+}
+
+const STATUS_DOT: Record<string, string> = {
+  pass: "bg-bull",
+  warn: "bg-amber-400",
+  fail: "bg-bear",
+};
+
+function OptionsEligibilityCard({ symbol, runId }: { symbol: string; runId: string | null }) {
+  const { data, error, loading } = useApi<OptionsEligibility>(
+    `/options-eligibility/${symbol}${runId ? `?run_id=${runId}` : ""}`,
+  );
+  if (loading || error || !data) return null; // optional panel — stay quiet if unavailable
+
+  const lev = data.eligible;
+  return (
+    <Card title="Options Eligibility">
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <span
+            className={`rounded px-2.5 py-1 text-sm font-semibold ${
+              lev ? "bg-bull/20 text-bull" : "bg-slate-600/30 text-slate-300"
+            }`}
+          >
+            {data.recommendation}
+          </span>
+          <span className="text-sm text-slate-400">
+            confidence <span className="tabular-nums text-slate-100">{num(data.confidence, 0)}</span>
+            /100
+          </span>
+          <span className="text-sm text-slate-500">{data.summary}</span>
+        </div>
+        <div className="grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3">
+          {data.factors.map((f) => (
+            <div key={f.name} className="flex items-center gap-2 text-sm">
+              <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[f.status] ?? "bg-slate-500"}`} />
+              <span className="w-28 shrink-0 text-slate-300">{f.label}</span>
+              <span className="truncate text-xs text-slate-500" title={f.detail}>
+                {f.detail}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Card>
   );
 }
 

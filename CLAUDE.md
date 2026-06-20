@@ -184,6 +184,17 @@ trading platform for US equities. Python 3.12, strictly typed. See
   history date selector, generate, over-time comparison). Demo seeds two dated
   watchlists. See `docs/WATCHLISTS.md`.
 
+- **Options-eligibility engine** (`src/momentum/options_eligibility/`,
+  `api/options_eligibility_service.py`) — read-only go/no-go gate: is a setup
+  suitable for options **leverage** or should it be traded as **shares**? Scores six
+  factors (liquidity, volatility, expected move, time horizon, spread-quality proxy,
+  market regime) into a 0-100 confidence + a `Leverage Eligible` / `Shares Preferred`
+  verdict, with a hard-fail veto on liquidity/volatility/expected-move. Pure engine;
+  no persistence (inputs from scan + trade-plan hold + regime). `GET
+  /options-eligibility/{symbol}`; an Options Eligibility card on the desktop Trade
+  Plan view. **No contract recommendations** (distinct from the contract-level
+  options-qualification gate). See `docs/OPTIONS_ELIGIBILITY.md`.
+
 - **Signal evaluation system** (`src/momentum/signaleval/`, `api/signal_eval_service.py`)
   — grades every generated signal against its realised outcome (the trade it
   produced via `entry_signal_id`): tracks outcome / MFE / MAE / holding / return /

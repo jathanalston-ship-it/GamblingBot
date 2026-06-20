@@ -168,6 +168,24 @@ def test_lifecycle_endpoints(client, session_factory):
     assert client.get("/lifecycles/NOPE", params={"run_id": "bt1"}).status_code == 404
 
 
+def test_options_eligibility_endpoint(client):
+    body = client.get("/options-eligibility/AAPL").json()
+    assert body["symbol"] == "AAPL"
+    assert body["recommendation"] in {"Shares Preferred", "Leverage Eligible"}
+    assert isinstance(body["eligible"], bool)
+    assert 0 <= body["confidence"] <= 100
+    names = {f["name"] for f in body["factors"]}
+    assert names == {
+        "liquidity",
+        "volatility",
+        "expected_move",
+        "time_horizon",
+        "spread_quality",
+        "market_regime",
+    }
+    assert client.get("/options-eligibility/NOPE").status_code == 404
+
+
 def test_trade_plan_endpoint(client):
     body = client.get("/tradeplan/AAPL").json()
     assert body["symbol"] == "AAPL"

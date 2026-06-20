@@ -462,6 +462,29 @@ class LifecycleSummaryOut(BaseModel):
     states: list[LifecycleStateCount]
 
 
+class EligibilityFactorOut(BaseModel):
+    """One scored options-eligibility factor."""
+
+    name: str
+    label: str
+    status: str  # pass / warn / fail
+    score: float
+    weight: float
+    detail: str
+
+
+class OptionsEligibilityOut(BaseModel):
+    """Whether a setup is suitable for options leverage (no contract is chosen)."""
+
+    symbol: str
+    eligible: bool
+    confidence: float
+    recommendation: str  # "Shares Preferred" | "Leverage Eligible"
+    expected_move_pct: float | None
+    factors: list[EligibilityFactorOut]
+    summary: str
+
+
 class TargetLevelOut(BaseModel):
     """One scale-out target in a trade plan."""
 

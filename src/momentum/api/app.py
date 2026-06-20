@@ -28,6 +28,7 @@ from momentum.api.routes import (
     dashboard,
     health,
     opportunity,
+    options_eligibility,
     performance,
     portfolio,
     regimes,
@@ -71,6 +72,7 @@ _ROUTERS = (
     lifecycles,
     command_center,
     signal_eval,
+    options_eligibility,
 )
 
 
