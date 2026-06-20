@@ -22,7 +22,14 @@ import { mkdirSync } from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
 
-import { app, BrowserWindow, dialog, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  Menu,
+  type MenuItemConstructorOptions,
+  shell,
+} from "electron";
 
 const API_HOST = "127.0.0.1";
 const isDev = process.env.NODE_ENV === "development";
@@ -106,6 +113,53 @@ async function waitForBackend(timeoutMs = 60_000): Promise<void> {
   throw new Error("backend did not become healthy in time");
 }
 
+/** Application menu, including "Check for Updates…" which routes the renderer. */
+function buildMenu(target: BrowserWindow): Menu {
+  const isMac = process.platform === "darwin";
+  const checkForUpdates: MenuItemConstructorOptions = {
+    label: "Check for Updates…",
+    click: () => target.webContents.send("mrp:navigate", "/updates"),
+  };
+
+  const template: MenuItemConstructorOptions[] = [
+    ...(isMac
+      ? [
+          {
+            label: "Momentum Lab",
+            submenu: [
+              { role: "about" as const },
+              checkForUpdates,
+              { type: "separator" as const },
+              { role: "quit" as const },
+            ],
+          },
+        ]
+      : []),
+    {
+      label: "View",
+      submenu: [
+        { role: "reload" },
+        { role: "togglefullscreen" },
+        { type: "separator" },
+        { role: "resetZoom" },
+        { role: "zoomIn" },
+        { role: "zoomOut" },
+      ],
+    },
+    {
+      label: "Help",
+      submenu: [
+        ...(isMac ? [] : [checkForUpdates, { type: "separator" as const }]),
+        {
+          label: "Learn More",
+          click: () => void shell.openExternal("https://code.claude.com/docs"),
+        },
+      ],
+    },
+  ];
+  return Menu.buildFromTemplate(template);
+}
+
 async function createWindow(): Promise<void> {
   win = new BrowserWindow({
     width: 1440,
@@ -121,6 +175,8 @@ async function createWindow(): Promise<void> {
       nodeIntegration: false,
     },
   });
+
+  Menu.setApplicationMenu(buildMenu(win));
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);

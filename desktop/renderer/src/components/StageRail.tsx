@@ -15,6 +15,7 @@ const UTILITIES: { to: string; label: string }[] = [
   { to: "/portfolio", label: "Portfolio" },
   { to: "/analytics", label: "Analytics" },
   { to: "/settings", label: "Settings" },
+  { to: "/updates", label: "Updates" },
 ];
 
 function itemClass({ isActive }: { isActive: boolean }): string {

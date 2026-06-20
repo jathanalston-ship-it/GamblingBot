@@ -5,6 +5,8 @@ export interface MrpBridge {
   apiBaseUrl: string;
   platform: string;
   version: string;
+  /** Subscribe to navigation requests from the Electron menu; returns an unsubscribe fn. */
+  onNavigate?: (cb: (path: string) => void) => () => void;
 }
 
 declare global {

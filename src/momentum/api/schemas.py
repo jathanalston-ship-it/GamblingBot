@@ -23,6 +23,32 @@ class HealthOut(BaseModel):
     version: str
 
 
+class UpdateStatusOut(BaseModel):
+    """Whether an update is supported here and, if so, whether one is available."""
+
+    supported: bool
+    update_available: bool
+    current_version: str | None = None
+    remote_version: str | None = None
+    branch: str | None = None
+    behind_by: int = 0
+    reason: str | None = None
+
+
+class UpdateResultOut(BaseModel):
+    updated: bool
+    message: str
+    backup_id: str | None = None
+    from_commit: str | None = None
+    to_commit: str | None = None
+
+
+class RollbackResultOut(BaseModel):
+    backup_id: str
+    commit: str
+    version: str | None = None
+
+
 class SignalOut(_ORMModel):
     id: int
     run_id: str | None

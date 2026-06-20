@@ -33,6 +33,7 @@ from momentum.api.routes import (
     signals,
     trades,
     universe,
+    update,
 )
 from momentum.persistence.database import create_db_engine, create_session_factory
 
@@ -52,6 +53,7 @@ _ROUTERS = (
     backtests,
     performance,
     settings,
+    update,
 )
 
 

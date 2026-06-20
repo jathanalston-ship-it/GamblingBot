@@ -55,6 +55,24 @@ restores the database from the backup**, then reports the failure (non-zero exit
 The git runner, migrator, integrity check and restart hook are all injectable, so
 the flow is tested end-to-end against a temporary git repository (no network).
 
+## Desktop integration (no terminal needed)
+
+The updater is reachable from inside Momentum Lab:
+
+- **API:** `GET /update/status`, `POST /update/apply`, `POST /update/rollback`
+  (`src/momentum/api/routes/update.py`) wrap the `Updater`.
+- **UI:** the **Updates** view (left rail → *Updates*) shows the installed vs
+  latest version and offers **Update now** / **Roll back** buttons.
+- **Menu:** *Check for Updates…* (Help menu / app menu on macOS) routes the
+  renderer to the Updates view via the preload `onNavigate` bridge.
+
+**Packaged builds.** The installed Windows app ships a *frozen* backend with **no
+git repository**, so in-place git updates don't apply there. On such a build the
+endpoints report `supported: false` and the UI explains that updating means
+installing a newer download (the auto-update path is still deliberately
+deferred). In-app update is for **source installs** (a cloned repo running the
+real Python backend).
+
 ## Notes & limitations
 
 - **Single-user / local only.** It updates the working copy in place; it is not a

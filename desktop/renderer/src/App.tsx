@@ -1,4 +1,5 @@
-import { Route, Routes } from "react-router-dom";
+import { useEffect } from "react";
+import { Route, Routes, useNavigate } from "react-router-dom";
 
 import { AppShell } from "./components/AppShell";
 import { Placeholder } from "./components/Placeholder";
@@ -9,8 +10,17 @@ import Conviction from "./views/Conviction";
 import Portfolio from "./views/Portfolio";
 import Scan from "./views/Scan";
 import Settings from "./views/Settings";
+import Updates from "./views/Updates";
 
 export default function App() {
+  const navigate = useNavigate();
+
+  // The Electron menu ("Check for Updates…") asks the renderer to navigate.
+  useEffect(() => {
+    const off = window.mrp?.onNavigate?.((path) => navigate(path));
+    return () => off?.();
+  }, [navigate]);
+
   return (
     <Routes>
       <Route element={<AppShell />}>
@@ -34,6 +44,7 @@ export default function App() {
         <Route path="portfolio" element={<Portfolio />} />
         <Route path="analytics" element={<Analytics />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="updates" element={<Updates />} />
       </Route>
     </Routes>
   );

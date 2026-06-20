@@ -150,3 +150,28 @@ export interface CandidateDetail {
   analogs: Analogs | null;
   risk_budget: RiskBudget | null;
 }
+
+// Update / self-update endpoints (src/momentum/api/routes/update.py).
+export interface UpdateStatus {
+  supported: boolean;
+  update_available: boolean;
+  current_version: string | null;
+  remote_version: string | null;
+  branch: string | null;
+  behind_by: number;
+  reason: string | null;
+}
+
+export interface UpdateResult {
+  updated: boolean;
+  message: string;
+  backup_id: string | null;
+  from_commit: string | null;
+  to_commit: string | null;
+}
+
+export interface RollbackResult {
+  backup_id: string;
+  commit: string;
+  version: string | null;
+}
