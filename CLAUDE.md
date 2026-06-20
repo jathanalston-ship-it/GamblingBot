@@ -184,6 +184,18 @@ trading platform for US equities. Python 3.12, strictly typed. See
   history date selector, generate, over-time comparison). Demo seeds two dated
   watchlists. See `docs/WATCHLISTS.md`.
 
+- **Signal evaluation system** (`src/momentum/signaleval/`, `api/signal_eval_service.py`)
+  — grades every generated signal against its realised outcome (the trade it
+  produced via `entry_signal_id`): tracks outcome / MFE / MAE / holding / return /
+  reward:risk, compares predicted move vs actual and predicted conviction vs
+  outcome, and computes **calibration** (5 conviction buckets), **signal quality**
+  (win rate, expectancy, profit factor, E-ratio = avg MFE/|MAE|; overall + by
+  source/type) and **conviction accuracy** (rank AUC, Pearson, Brier, monotonic).
+  Pure engine (reuses `analytics.statistics`), derived on demand (no new table),
+  non-finite-sanitised. `GET /signal-evaluation[/signals]`; desktop **Signal Eval**
+  dashboard (calibration plot + tables). Demo links an entry signal per trade.
+  See `docs/SIGNAL_EVALUATION.md`.
+
 - **Market Command Center** (`src/momentum/api/command_center.py`,
   `routes/command_center.py`, `desktop/.../views/CommandCenter.tsx`) — the **default
   landing page**. One read-only aggregate (`GET /command-center`) reusing every

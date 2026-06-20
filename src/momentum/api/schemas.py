@@ -336,6 +336,81 @@ class LifecycleOut(_ORMModel):
     model_version: str
 
 
+class SignalQualityOut(BaseModel):
+    """Signal-quality metrics for a group (overall / by source / by type)."""
+
+    key: str
+    n_signals: int
+    n_evaluated: int
+    win_rate: float | None
+    expectancy_r: float | None
+    profit_factor: float | None
+    avg_mfe: float | None
+    avg_mae: float | None
+    e_ratio: float | None
+    payoff_ratio: float | None
+    avg_holding_days: float | None
+    avg_return_pct: float | None
+
+
+class CalibrationBucketOut(BaseModel):
+    label: str
+    lo: float
+    hi: float
+    count: int
+    avg_predicted: float | None
+    actual_win_rate: float | None
+    avg_r: float | None
+
+
+class ConvictionAccuracyOut(BaseModel):
+    pearson_conviction_r: float | None
+    rank_auc: float | None
+    brier_score: float | None
+    monotonic_win_rate: bool
+
+
+class MoveAccuracyOut(BaseModel):
+    n: int
+    mean_predicted: float | None
+    mean_actual: float | None
+    mean_abs_error: float | None
+    bias: float | None
+
+
+class EvaluatedSignalOut(BaseModel):
+    """One generated signal joined to its outcome + predictions."""
+
+    signal_id: int
+    symbol: str
+    ts: dt.datetime
+    signal_type: str
+    direction: str
+    source: str
+    conviction: float | None
+    band: str | None
+    predicted_move_pct: float | None
+    closed: bool
+    outcome: str  # win / loss / open / none
+    r_multiple: float | None
+    return_pct: float | None
+    mfe: float | None
+    mae: float | None
+    holding_days: int | None
+
+
+class SignalEvaluationOut(BaseModel):
+    """The signal-evaluation dashboard payload."""
+
+    run_id: str | None
+    overall: SignalQualityOut
+    calibration: list[CalibrationBucketOut]
+    conviction_accuracy: ConvictionAccuracyOut
+    move_accuracy: MoveAccuracyOut
+    by_source: list[SignalQualityOut]
+    by_type: list[SignalQualityOut]
+
+
 class SectorHighlightOut(BaseModel):
     """The most attractive sector right now (by average conviction)."""
 

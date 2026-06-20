@@ -107,6 +107,22 @@ def test_performance_summary(client):
     assert "sharpe" in body["performance"] and "objective" in body["performance"]
 
 
+def test_signal_evaluation_endpoint(client):
+    body = client.get("/signal-evaluation", params={"run_id": "bt1"}).json()
+    # shape: overall quality + 5 calibration buckets + accuracy blocks
+    assert "overall" in body and body["overall"]["n_signals"] >= 1
+    assert len(body["calibration"]) == 5
+    for key in ("pearson_conviction_r", "rank_auc", "brier_score", "monotonic_win_rate"):
+        assert key in body["conviction_accuracy"]
+    assert "n" in body["move_accuracy"]
+    assert isinstance(body["by_source"], list)
+    # strict-JSON safe (no Infinity/NaN from inf profit factor / empty groups)
+    assert "Infinity" not in client.get("/signal-evaluation", params={"run_id": "bt1"}).text
+
+    rows = client.get("/signal-evaluation/signals", params={"run_id": "bt1"}).json()
+    assert all("outcome" in r and r["outcome"] in {"win", "loss", "open", "none"} for r in rows)
+
+
 def test_command_center_aggregate(client, session_factory):
     # Populate watchlists + lifecycles so the aggregate has cross-subsystem data.
     from momentum.api.lifecycle_service import refresh_lifecycles

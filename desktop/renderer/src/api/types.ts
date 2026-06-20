@@ -134,6 +134,75 @@ export interface ConfigFile {
   parsed: Record<string, unknown> | null;
 }
 
+export interface SignalQuality {
+  key: string;
+  n_signals: number;
+  n_evaluated: number;
+  win_rate: number | null;
+  expectancy_r: number | null;
+  profit_factor: number | null;
+  avg_mfe: number | null;
+  avg_mae: number | null;
+  e_ratio: number | null;
+  payoff_ratio: number | null;
+  avg_holding_days: number | null;
+  avg_return_pct: number | null;
+}
+
+export interface CalibrationBucket {
+  label: string;
+  lo: number;
+  hi: number;
+  count: number;
+  avg_predicted: number | null;
+  actual_win_rate: number | null;
+  avg_r: number | null;
+}
+
+export interface ConvictionAccuracy {
+  pearson_conviction_r: number | null;
+  rank_auc: number | null;
+  brier_score: number | null;
+  monotonic_win_rate: boolean;
+}
+
+export interface MoveAccuracy {
+  n: number;
+  mean_predicted: number | null;
+  mean_actual: number | null;
+  mean_abs_error: number | null;
+  bias: number | null;
+}
+
+export interface SignalEvaluation {
+  run_id: string | null;
+  overall: SignalQuality;
+  calibration: CalibrationBucket[];
+  conviction_accuracy: ConvictionAccuracy;
+  move_accuracy: MoveAccuracy;
+  by_source: SignalQuality[];
+  by_type: SignalQuality[];
+}
+
+export interface EvaluatedSignal {
+  signal_id: number;
+  symbol: string;
+  ts: string;
+  signal_type: string;
+  direction: string;
+  source: string;
+  conviction: number | null;
+  band: string | null;
+  predicted_move_pct: number | null;
+  closed: boolean;
+  outcome: string;
+  r_multiple: number | null;
+  return_pct: number | null;
+  mfe: number | null;
+  mae: number | null;
+  holding_days: number | null;
+}
+
 export interface SectorHighlight {
   sector: string;
   avg_conviction: number;

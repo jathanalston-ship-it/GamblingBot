@@ -34,6 +34,7 @@ from momentum.api.routes import (
     risk,
     runs,
     settings,
+    signal_eval,
     signals,
     lifecycles,
     trades,
@@ -69,6 +70,7 @@ _ROUTERS = (
     tradeplan,
     lifecycles,
     command_center,
+    signal_eval,
 )
 
 

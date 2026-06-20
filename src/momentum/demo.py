@@ -508,6 +508,7 @@ def seed_all(session: Session, *, progress: ProgressFn | None = None) -> dict[st
     _report(progress, 0.45, "trades & equity curve")
     trades = seed_trades(session, days, rng)
     session.flush()
+    seed_trade_signals(session, trades)
     seed_snapshots(session, trades, days)
     seed_runs_and_audit(session, trades)
 
@@ -539,6 +540,27 @@ def seed_all(session: Session, *, progress: ProgressFn | None = None) -> dict[st
         "setup_lifecycles": n_life,
         "runs": 1,
     }
+
+
+def seed_trade_signals(session: Session, trades: list[Trade]) -> int:
+    """Create an entry signal per trade and link it (for signal evaluation)."""
+    for t in trades:
+        sig = Signal(
+            run_id=DEMO_TAG,
+            source="backtest",
+            strategy="breakout",
+            symbol=t.symbol,
+            ts=t.entry_ts,
+            session_date=t.entry_ts.date(),
+            signal_type="entry",
+            direction=t.direction,
+            momentum_score=t.r_multiple,
+            status="filled",
+        )
+        session.add(sig)
+        session.flush()
+        t.entry_signal_id = sig.id
+    return len(trades)
 
 
 def seed_lifecycles(session: Session) -> int:
