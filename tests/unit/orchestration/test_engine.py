@@ -107,6 +107,43 @@ def test_run_day_snapshot_is_idempotent_on_rerun(session: Session, make_scan: Ma
     assert len(snaps) == 1
 
 
+def test_run_day_generates_watchlists(session: Session, make_scan: MakeScan) -> None:
+    from momentum.persistence.repositories.watchlist_entries import WatchlistRepository
+
+    engine = build_engine()
+    scan = make_scan([STRONG])
+    report = engine.run_day(
+        session,
+        scan=scan,
+        marks={"STRONG": 100.0},
+        as_of=dt.date(2026, 1, 5),
+        regime=RegimeState.BULLISH,
+    )
+    repo = WatchlistRepository(session)
+    rows = repo.for_date(dt.date(2026, 1, 5), run_id=report.run_id)
+    assert rows, "the daily cycle should generate watchlists"
+    assert {r.horizon for r in rows} == {"daily", "weekly", "monthly"}
+    assert any(r.symbol == "STRONG" for r in rows)
+
+    # Re-running the same session must not duplicate watchlist rows (idempotent).
+    before = len(rows)
+    engine.run_day(session, scan=scan, marks={"STRONG": 100.0}, as_of=dt.date(2026, 1, 5))
+    after = WatchlistRepository(session).for_date(dt.date(2026, 1, 5), run_id=report.run_id)
+    assert len(after) == before
+
+
+def test_run_day_watchlists_can_be_disabled(session: Session, make_scan: MakeScan) -> None:
+    from momentum.persistence.repositories.watchlist_entries import WatchlistRepository
+
+    engine = build_engine()
+    engine.generate_watchlists = False
+    engine.watchlist_engine = None
+    report = engine.run_day(
+        session, scan=make_scan([STRONG]), marks={"STRONG": 100.0}, as_of=dt.date(2026, 1, 5)
+    )
+    assert WatchlistRepository(session).for_date(dt.date(2026, 1, 5), run_id=report.run_id) == []
+
+
 def test_persist_portfolio_can_be_disabled(session: Session, make_scan: MakeScan) -> None:
     from momentum.persistence.repositories.portfolio_snapshots import PortfolioSnapshotRepository
 

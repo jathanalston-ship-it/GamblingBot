@@ -150,6 +150,16 @@ class DailyPaperPipeline:
         ]
         return PipelineReport(run_id=run_id, as_of=when.date(), decisions=tuple(decisions))
 
+    def score_candidates(
+        self, scan: ScanResult, regime: RegimeState | None = None
+    ) -> list[tuple[ScanCandidate, ConvictionResult]]:
+        """Conviction-score every scanned candidate (for ranking the universe).
+
+        Pure read: it does not size, vet or open anything. Used to build the
+        multi-horizon watchlists from the same scan + conviction the pipeline ran.
+        """
+        return [(c, self._score(c, regime)) for c in scan.candidates]
+
     # -- one candidate ------------------------------------------------------ #
     def _process(
         self,

@@ -58,6 +58,16 @@ thresholds are all tunables in `config/watchlist.example.yaml`.
 | `GET` | `/watchlists/compare?horizon=&base=&against=` | Diff two generations: entered / dropped / rank moves. |
 | `POST` | `/actions/generate-watchlists` | Generate + persist from current conviction (operator-console job). |
 
+## Automatic refresh
+
+The watchlists refresh **automatically every session**: the daily orchestration
+engine (`DailyOrchestrationEngine.run_day`) generates them as its final step,
+scoring the whole scanned universe with the same conviction engine the run used
+(`DailyPaperPipeline.score_candidates`) — so the desktop **Generate** button and
+the CLI `mrp paper-run` both produce fresh, dated watchlists. Generation is
+idempotent per `(as_of, run_id)` (safe under crash-recovery re-runs) and can be
+turned off with `DailyOrchestrationEngine(generate_watchlists=False)`.
+
 ## Desktop
 
 The **Watchlists** view (left rail) has three horizon tabs, a table with every

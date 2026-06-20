@@ -10,6 +10,8 @@ Each :meth:`run_day` call:
 4. **Runs entries** — delegates to :class:`DailyPaperPipeline` (scan → conviction
    → risk sizing → paper order → position tracking → journal).
 5. **Persists** the run outcome and returns a :class:`DailyReport`.
+6. **Refreshes the multi-horizon watchlists** from this session's scan +
+   conviction (idempotent per ``as_of``/``run_id``; toggle ``generate_watchlists``).
 
 State is committed incrementally and the run is flipped to ``completed`` /
 ``failed`` so a crash is recoverable: a re-run reconstructs from the committed
@@ -40,6 +42,8 @@ from momentum.persistence.repositories.portfolio_snapshots import PortfolioSnaps
 from momentum.persistence.repositories.risk_metrics import RiskMetricRepository
 from momentum.persistence.repositories.runs import RunRepository
 from momentum.persistence.repositories.trades import TradeRepository
+from momentum.persistence.repositories.watchlist_entries import WatchlistRepository
+from momentum.watchlist import WatchlistCandidate, WatchlistConfig, WatchlistEngine
 from momentum.risk.risk_budget import DynamicRiskBudgetEngine
 from momentum.risk.risk_manager import RiskManager
 from momentum.universe.screener import ScanResult
@@ -143,6 +147,8 @@ class DailyOrchestrationEngine:
         entry_reason: str = "momentum_breakout",
         enable_audit: bool = True,
         persist_portfolio: bool = True,
+        generate_watchlists: bool = True,
+        watchlist_config: WatchlistConfig | None = None,
     ) -> None:
         self.conviction = conviction
         self.risk = risk
@@ -155,6 +161,8 @@ class DailyOrchestrationEngine:
         self.entry_reason = entry_reason
         self.enable_audit = enable_audit
         self.persist_portfolio = persist_portfolio
+        self.generate_watchlists = generate_watchlists
+        self.watchlist_engine = WatchlistEngine(watchlist_config) if generate_watchlists else None
 
     def run_day(
         self,
@@ -227,6 +235,12 @@ class DailyOrchestrationEngine:
             if self.persist_portfolio:
                 self._persist_portfolio(session, portfolio, trades, as_of, when, run_id)
                 session.commit()
+
+            # 7. Refresh the multi-horizon watchlists from this session's scan +
+            #    conviction (idempotent per as_of/run_id).
+            if self.watchlist_engine is not None:
+                self._persist_watchlists(session, pipeline, scan, regime, as_of, when, run_id)
+                session.commit()
         except Exception as exc:  # record the failure durably, then re-raise
             session.rollback()
             failed = runs.get(run_id)
@@ -266,6 +280,38 @@ class DailyOrchestrationEngine:
         closed_trades = list(trades.closed(run_id))
         metric = build_risk_metric(closed_trades, snapshot, run_id=run_id, as_of=as_of, when=when)
         RiskMetricRepository(session).save(metric)
+
+    # -- watchlists --------------------------------------------------------- #
+    def _persist_watchlists(
+        self,
+        session: Session,
+        pipeline: DailyPaperPipeline,
+        scan: ScanResult,
+        regime: RegimeState | None,
+        as_of: dt.date,
+        when: dt.datetime,
+        run_id: str,
+    ) -> None:
+        """Generate + persist the Today/Week/Month watchlists from this scan."""
+        if self.watchlist_engine is None:
+            return
+        candidates = [
+            WatchlistCandidate(
+                symbol=candidate.symbol,
+                base_conviction=conv.score,
+                band=conv.band.value,
+                factors=conv.normalized_map(),
+                sector=candidate.sector,
+                price=candidate.price,
+                atr=candidate.atr,
+            )
+            for candidate, conv in pipeline.score_candidates(scan, regime)
+        ]
+        produced = self.watchlist_engine.generate(
+            candidates, as_of=as_of, run_id=run_id, generated_at=when
+        )
+        flat = [entry for entries in produced.values() for entry in entries]
+        WatchlistRepository(session).replace_for(as_of=as_of, run_id=run_id, entries=flat)
 
     # -- exits -------------------------------------------------------------- #
     def _manage_exits(
