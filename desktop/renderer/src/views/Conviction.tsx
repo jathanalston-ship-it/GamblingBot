@@ -98,20 +98,31 @@ function Body({ symbol, runId }: { symbol: string; runId: string | null }) {
         <div className="mb-4 rounded bg-surface px-3 py-2 text-sm text-slate-300">{c.narrative}</div>
       ) : null}
 
-      {comps.length > 0 ? (
+      {c.contributors.length > 0 ? (
         <div className="mb-5 rounded-lg border border-surface-border bg-surface-raised p-3">
-          <div className="mb-2 text-xs uppercase tracking-wide text-slate-400">Contributors</div>
-          <ul className="space-y-1 text-sm">
-            {comps.map((x) => {
-              const positive = x.contribution >= 0;
+          <div className="mb-2 flex items-baseline justify-between">
+            <span className="text-xs uppercase tracking-wide text-slate-400">Contributors</span>
+            <span className="text-[10px] text-slate-600" title="Each factor's signed effect versus a neutral setup (sums to score − 50).">
+              impact vs neutral
+            </span>
+          </div>
+          <ul className="space-y-1.5 text-sm">
+            {c.contributors.map((x) => {
+              const positive = x.direction === "positive";
               return (
                 <li key={x.name} className="flex items-center gap-2 tabular-nums">
-                  <span className={positive ? "text-bull" : "text-bear"}>{positive ? "+" : "−"}</span>
-                  <span className="text-slate-200">{x.name.replace(/_/g, " ")}</span>
-                  <span className="flex-1 border-b border-dotted border-surface-border/60" />
-                  <span className={positive ? "text-bull" : "text-bear"}>
-                    {signed(x.contribution, 0)}
+                  <span className={`w-3 ${positive ? "text-bull" : "text-bear"}`}>
+                    {positive ? "+" : "−"}
                   </span>
+                  <span className="text-slate-200">{x.label}</span>
+                  <span
+                    className="text-[10px] text-slate-600"
+                    title={`raw ${x.raw ?? "—"} · weight ${x.weight}`}
+                  >
+                    (raw {x.raw == null ? "—" : num(x.raw, 2)} · w {num(x.weight, 2)})
+                  </span>
+                  <span className="flex-1 border-b border-dotted border-surface-border/60" />
+                  <span className={positive ? "text-bull" : "text-bear"}>{signed(x.impact, 0)}</span>
                 </li>
               );
             })}

@@ -119,17 +119,16 @@ def test_attribution_endpoint_slices_closed_trades(client):
     assert "Infinity" not in client.get("/performance/attribution").text
 
 
-def test_conviction_narrative_built_from_breakdown():
+def _conviction_out(symbol: str, score: float, band: str, breakdown: object) -> object:
     from momentum.api.schemas import ConvictionScoreOut
-    from momentum.api.services import _with_narrative
 
-    out = ConvictionScoreOut(
+    return ConvictionScoreOut(
         id=1,
         run_id=None,
-        symbol="NVDA",
+        symbol=symbol,
         as_of=dt.date(2024, 1, 2),
-        score=87.0,
-        band="extreme",
+        score=score,
+        band=band,
         model_version="v1",
         config_hash=None,
         regime_score=None,
@@ -140,49 +139,83 @@ def test_conviction_narrative_built_from_breakdown():
         breadth=None,
         momentum_score=None,
         historical_edge=None,
-        breakdown={
+        breakdown=breakdown,
+    )
+
+
+def test_conviction_contributors_signed_and_narrative():
+    from momentum.api.services import _explain
+
+    out = _conviction_out(
+        "NVDA",
+        87.0,
+        "extreme",
+        {
             "components": [
-                {"name": "relative_volume", "contribution": 18.0},
-                {"name": "regime", "contribution": 10.0},
-                {"name": "historical_edge", "contribution": 12.0},
-                {"name": "volatility_penalty", "contribution": -7.0},
+                {
+                    "name": "relative_volume",
+                    "raw": 2.5,
+                    "normalized": 0.9,
+                    "weight": 1.0,
+                    "contribution": 18.0,
+                },
+                {
+                    "name": "market_regime",
+                    "raw": 1.0,
+                    "normalized": 0.8,
+                    "weight": 1.0,
+                    "contribution": 16.0,
+                },
+                {
+                    "name": "historical_similar_setups",
+                    "raw": 1.2,
+                    "normalized": 0.75,
+                    "weight": 1.0,
+                    "contribution": 12.0,
+                },
+                {
+                    "name": "trend_strength",
+                    "raw": 0.5,
+                    "normalized": 0.5,
+                    "weight": 1.0,
+                    "contribution": 10.0,
+                },
+                {
+                    "name": "distance_to_ath",
+                    "raw": 0.15,
+                    "normalized": 0.2,
+                    "weight": 1.0,
+                    "contribution": 4.0,
+                },
             ]
         },
     )
-    narrative = _with_narrative(out).narrative
+    explained = _explain(out)
+    contribs = explained.contributors
+    assert len(contribs) == 5
+    # sorted by signed impact, strongest driver first
+    top = contribs[0]
+    assert top.name == "relative_volume"
+    assert top.label == "relative volume"
+    assert top.raw == 2.5 and top.weight == 1.0
+    assert top.impact > 0 and top.direction == "positive"
+    # below-neutral factor is a genuine negative (the spec's "- Volatility -7")
+    ath = next(c for c in contribs if c.name == "distance_to_ath")
+    assert ath.impact < 0 and ath.direction == "negative"
+
+    narrative = explained.narrative
     assert narrative is not None
-    assert narrative.startswith("NVDA scores 87 (extreme)")
-    # top-3 positive drivers, humanized
+    assert narrative.startswith("NVDA ranks highly (87/100)")
     assert "relative volume" in narrative
-    assert "historical analog performance" in narrative
-    # the negative is called out as a brake
-    assert "held back by volatility" in narrative
+    assert "ATH proximity" in narrative  # called out as the brake
 
 
-def test_conviction_narrative_none_without_breakdown():
-    from momentum.api.schemas import ConvictionScoreOut
-    from momentum.api.services import _with_narrative
+def test_conviction_no_breakdown_yields_no_contributors():
+    from momentum.api.services import _explain
 
-    out = ConvictionScoreOut(
-        id=1,
-        run_id=None,
-        symbol="AAPL",
-        as_of=dt.date(2024, 1, 2),
-        score=50.0,
-        band="medium",
-        model_version="v1",
-        config_hash=None,
-        regime_score=None,
-        sector_strength=None,
-        relative_volume=None,
-        distance_to_ath=None,
-        trend_strength=None,
-        breadth=None,
-        momentum_score=None,
-        historical_edge=None,
-        breakdown=None,
-    )
-    assert _with_narrative(out).narrative is None
+    explained = _explain(_conviction_out("AAPL", 50.0, "medium", None))
+    assert explained.contributors == []
+    assert explained.narrative is None
 
 
 def test_data_provider_get_default(client, tmp_path, monkeypatch):

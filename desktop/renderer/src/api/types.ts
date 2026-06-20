@@ -153,6 +153,16 @@ export interface ConvictionComponent {
   contribution: number;
 }
 
+export interface ConvictionContributor {
+  name: string;
+  label: string;
+  raw: number | null;
+  weight: number;
+  contribution: number;
+  impact: number;
+  direction: "positive" | "negative" | string;
+}
+
 export interface ConvictionScore {
   id: number;
   run_id: string | null;
@@ -164,6 +174,7 @@ export interface ConvictionScore {
   config_hash: string | null;
   momentum_score: number | null;
   breakdown: { score?: number; band?: string; components?: ConvictionComponent[] } | null;
+  contributors: ConvictionContributor[];
   narrative: string | null;
   [k: string]: unknown;
 }

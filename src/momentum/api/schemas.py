@@ -275,6 +275,24 @@ class DataProviderIn(BaseModel):
     polygon_api_key: str | None = None
 
 
+class ContributorOut(BaseModel):
+    """One conviction factor's explainable contribution (Conviction stage).
+
+    ``contribution`` is the factor's additive points toward the 0-100 score (always
+    >= 0). ``impact`` is the *signed* effect relative to a neutral setup — positive
+    factors lifted the score, negative ones dragged it — so the UI can show drivers
+    and brakes (sums to ``score - neutral_baseline``).
+    """
+
+    name: str
+    label: str
+    raw: float | None
+    weight: float
+    contribution: float
+    impact: float
+    direction: str  # "positive" | "negative"
+
+
 class ConvictionScoreOut(_ORMModel):
     """A persisted conviction score (Conviction stage)."""
 
@@ -295,8 +313,9 @@ class ConvictionScoreOut(_ORMModel):
     momentum_score: float | None
     historical_edge: float | None
     breakdown: dict[str, Any] | None
-    # A plain-language summary of why the score was assigned (computed at read
-    # time from the breakdown's per-factor contributions).
+    # Explainability, computed at read time from the stored breakdown.
+    contributors: list[ContributorOut] = []
+    # A plain-language summary of why the score was assigned.
     narrative: str | None = None
 
 

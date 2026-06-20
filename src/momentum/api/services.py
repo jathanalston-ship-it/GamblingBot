@@ -28,6 +28,7 @@ from momentum.api.schemas import (
     AuditEventOut,
     CandidateDetailOut,
     ConfigFileOut,
+    ContributorOut,
     ConvictionScoreOut,
     DashboardOut,
     OpportunityOut,
@@ -43,6 +44,7 @@ from momentum.api.schemas import (
     SignalOut,
     TradeOut,
 )
+from momentum.conviction.config import ConvictionConfig
 from momentum.conviction.engine import ConvictionBand
 from momentum.conviction.similar_setups import summarize
 from momentum.opportunity.engine import OpportunityTier
@@ -303,55 +305,106 @@ def list_audit(
     return [AuditEventOut.model_validate(e) for e in events]
 
 
-def _humanize(name: str) -> str:
-    """Turn a component key (``relative_volume``) into a phrase (``relative volume``)."""
-    pretty = name.replace("_", " ").strip()
-    # A few nicer aliases for the common factors.
-    aliases = {
-        "distance to ath": "proximity to all-time highs",
-        "regime": "market regime",
-        "historical edge": "historical analog performance",
-        "sector strength": "sector leadership",
-        "trend strength": "trend quality",
-        "volatility penalty": "volatility",
-    }
-    return aliases.get(pretty, pretty)
+# Neutral normalization baseline (a 50/50 setup) — the reference an explainable
+# impact is measured against. Tracks the config default, not a magic literal.
+_NEUTRAL_NORM: float = ConvictionConfig().normalization.neutral
+
+# Nicer labels for the eight conviction factors (used by contributors + narrative).
+_FACTOR_LABELS: dict[str, str] = {
+    "market_regime": "market regime",
+    "sector_strength": "sector strength",
+    "relative_volume": "relative volume",
+    "distance_to_ath": "ATH proximity",
+    "trend_strength": "trend quality",
+    "breadth": "market breadth",
+    "momentum_score": "momentum",
+    "historical_similar_setups": "historical analogs",
+}
 
 
-def _conviction_narrative(out: ConvictionScoreOut) -> str | None:
-    """Plain-language summary built from the breakdown's per-factor contributions."""
+def _factor_label(name: str) -> str:
+    return _FACTOR_LABELS.get(name, name.replace("_", " ").strip())
+
+
+def _join_phrases(items: list[str]) -> str:
+    if len(items) == 1:
+        return items[0]
+    if len(items) == 2:
+        return f"{items[0]} and {items[1]}"
+    return f"{', '.join(items[:-1])} and {items[-1]}"
+
+
+def _contributors(out: ConvictionScoreOut) -> list[ContributorOut]:
+    """Decompose the stored breakdown into signed, explainable contributors.
+
+    ``impact`` measures each factor against a neutral setup: above-neutral factors
+    lifted the score (positive), below-neutral dragged it (negative). Ordered by
+    impact so the strongest drivers lead and the brakes trail.
+    """
     breakdown = out.breakdown or {}
     components = breakdown.get("components")
-    if not isinstance(components, list) or not components:
+    if not isinstance(components, list):
+        return []
+    comps = [c for c in components if isinstance(c, dict)]
+    total_weight = sum(float(c.get("weight", 0.0) or 0.0) for c in comps) or 1.0
+
+    result: list[ContributorOut] = []
+    for c in comps:
+        name = str(c.get("name", ""))
+        weight = float(c.get("weight", 0.0) or 0.0)
+        norm = c.get("normalized")
+        normalized = float(norm) if isinstance(norm, int | float) else _NEUTRAL_NORM
+        impact = (normalized - _NEUTRAL_NORM) * weight / total_weight * 100.0
+        raw = c.get("raw")
+        result.append(
+            ContributorOut(
+                name=name,
+                label=_factor_label(name),
+                raw=float(raw) if isinstance(raw, int | float) else None,
+                weight=weight,
+                contribution=round(float(c.get("contribution", 0.0) or 0.0), 2),
+                impact=round(impact, 2),
+                direction="positive" if impact >= 0 else "negative",
+            )
+        )
+    result.sort(key=lambda r: r.impact, reverse=True)
+    return result
+
+
+def _narrative(out: ConvictionScoreOut, contributors: list[ContributorOut]) -> str | None:
+    """One-line plain-language explanation built from the signed contributors."""
+    if not contributors:
         return None
-    comps = [
-        c
-        for c in components
-        if isinstance(c, dict) and isinstance(c.get("contribution"), int | float)
-    ]
-    if not comps:
-        return None
-    comps.sort(key=lambda c: float(c["contribution"]), reverse=True)
-    positives = [c for c in comps if float(c["contribution"]) > 0][:3]
-    negatives = [c for c in comps if float(c["contribution"]) < 0]
+    positives = [c.label for c in contributors if c.impact > 0][:3]
+    negatives = [c for c in contributors if c.impact < 0]
     if not positives:
-        return None
-    drivers = [_humanize(str(c.get("name", ""))) for c in positives]
-    if len(drivers) == 1:
-        driver_text = drivers[0]
-    elif len(drivers) == 2:
-        driver_text = f"{drivers[0]} and {drivers[1]}"
-    else:
-        driver_text = f"{drivers[0]}, {drivers[1]} and {drivers[2]}"
-    text = f"{out.symbol} scores {out.score:.0f} ({out.band}), driven by strong {driver_text}"
+        if not negatives:
+            return None
+        weak = [c.label for c in sorted(negatives, key=lambda c: c.impact)[:2]]
+        return (
+            f"{out.symbol} scores {out.score:.0f}/100 ({out.band}), "
+            f"weighed down by weak {_join_phrases(weak)}."
+        )
+    rank = (
+        "ranks highly"
+        if out.score >= 70
+        else "ranks moderately"
+        if out.score >= 45
+        else "ranks low"
+    )
+    text = f"{out.symbol} {rank} ({out.score:.0f}/100) due to strong {_join_phrases(positives)}"
     if negatives:
-        worst = min(negatives, key=lambda c: float(c["contribution"]))
-        text += f", held back by {_humanize(str(worst.get('name', '')))}"
+        worst = min(negatives, key=lambda c: c.impact)
+        text += f", partly offset by weak {worst.label}"
     return text + "."
 
 
-def _with_narrative(out: ConvictionScoreOut) -> ConvictionScoreOut:
-    return out.model_copy(update={"narrative": _conviction_narrative(out)})
+def _explain(out: ConvictionScoreOut) -> ConvictionScoreOut:
+    """Attach the explainability fields (contributors + narrative) to a score."""
+    contributors = _contributors(out)
+    return out.model_copy(
+        update={"contributors": contributors, "narrative": _narrative(out, contributors)}
+    )
 
 
 def list_conviction(
@@ -363,16 +416,14 @@ def list_conviction(
     if run_id:
         stmt = stmt.where(ConvictionScore.run_id == run_id)
     stmt = stmt.order_by(ConvictionScore.as_of.desc()).limit(limit)
-    return [
-        _with_narrative(ConvictionScoreOut.model_validate(row)) for row in session.scalars(stmt)
-    ]
+    return [_explain(ConvictionScoreOut.model_validate(row)) for row in session.scalars(stmt)]
 
 
 def latest_conviction(
     session: Session, symbol: str, run_id: str | None = None
 ) -> ConvictionScoreOut | None:
     rows = ConvictionScoreRepository(session).for_symbol(symbol, run_id)
-    return _with_narrative(ConvictionScoreOut.model_validate(rows[0])) if rows else None
+    return _explain(ConvictionScoreOut.model_validate(rows[0])) if rows else None
 
 
 def _attribution_group(key: str, stats: TradeStats) -> AttributionGroupOut:

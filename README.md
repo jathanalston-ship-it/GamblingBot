@@ -84,6 +84,7 @@ metrics above.
 | **[docs/DEMO_DATA.md](docs/DEMO_DATA.md)** | Demo dataset seeder: 50 trades, 100 signals, snapshots, regimes, 15 ranked scan/conviction/opportunity candidates, risk metrics, optimization results, replay data — every UI screen populated without the scanner. |
 | **[docs/WINDOWS_INSTALLER.md](docs/WINDOWS_INSTALLER.md)** | Momentum Lab Windows 11 installer: architecture, one-command build, NSIS packaging, shortcuts, icon, uninstall, startup checklist. |
 | **[docs/DATA_PROVIDER_SETTINGS.md](docs/DATA_PROVIDER_SETTINGS.md)** | Editable Settings: pick the market-data provider and enter API keys from the UI (provider → settings.yaml, secrets → .env, never echoed). |
+| **[docs/CONVICTION_EXPLAINABILITY.md](docs/CONVICTION_EXPLAINABILITY.md)** | Per-factor conviction explainability: signed contributors (raw · weight · impact vs neutral) + a plain-language narrative, computed at read time from the stored breakdown. |
 | **[docs/ROADMAP.md](docs/ROADMAP.md)** | Phased implementation order. |
 
 ## Tech stack
