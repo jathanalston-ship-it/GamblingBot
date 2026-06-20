@@ -1,5 +1,7 @@
 import { NavLink } from "react-router-dom";
 
+import { useUpdateStatus } from "../state/updates";
+
 const STAGES: { to: string; n: string; label: string; end?: boolean }[] = [
   { to: "/scan", n: "1", label: "Scan", end: true },
   { to: "/candidates", n: "2", label: "Candidates" },
@@ -25,6 +27,7 @@ function itemClass({ isActive }: { isActive: boolean }): string {
 }
 
 export function StageRail() {
+  const update = useUpdateStatus();
   return (
     <nav className="flex w-48 shrink-0 flex-col gap-0.5 border-r border-surface-border bg-surface-raised px-2 py-2">
       {STAGES.map((s) => (
@@ -38,6 +41,16 @@ export function StageRail() {
         <NavLink key={u.to} to={u.to} className={itemClass}>
           <span className="w-4" />
           {u.label}
+          {u.to === "/updates" && update.available ? (
+            <span
+              className="ml-auto h-2 w-2 rounded-full bg-accent"
+              title={
+                update.downloaded
+                  ? "Update downloaded — restart to install"
+                  : `Update available${update.version ? ` (v${update.version})` : ""}`
+              }
+            />
+          ) : null}
         </NavLink>
       ))}
     </nav>

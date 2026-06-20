@@ -182,7 +182,9 @@ trading platform for US equities. Python 3.12, strictly typed. See
   screen** (`views/Updates.tsx`) drives it for packaged builds (check → download
   with progress → restart & install) and falls back to the git-based `/update/*`
   self-update for source installs; the preload bridge exposes
-  `window.mrp.{packaged,updater}`. Code signing is opt-in via
+  `window.mrp.{packaged,updater}`. A shared `UpdateStatusProvider`
+  (`state/updates.tsx`) surfaces a subtle "update available" badge on the Updates
+  nav item + context bar when the launch check finds one. Code signing is opt-in via
   `CSC_LINK`/`CSC_KEY_PASSWORD` (unsigned by default; no config change needed to
   enable). See `docs/WINDOWS_INSTALLER.md` §10.
 

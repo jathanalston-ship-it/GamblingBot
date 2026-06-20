@@ -185,11 +185,13 @@ The tag must be on a commit that contains `release.yml`.
   `electron/main.ts` wires `electron-updater` (checks the feed on launch + over
   IPC), and the **Updates screen** drives it: it shows the installed/latest
   versions and a *Check again* → *Download update* (with progress) → *Restart &
-  install* flow. A downloaded update also installs on the next quit. In a
-  source/dev install the same screen falls back to the git-based self-update
-  (`/update/*`). Updates work on unsigned Windows builds (integrity is verified via
-  the sha512 in `latest.yml`); signing is still recommended to avoid SmartScreen.
-  Disable the launch check with `MRP_DISABLE_AUTOUPDATE=1`.
+  install* flow. When the launch check finds a newer version, a subtle badge
+  appears on the **Updates** nav item and in the **context bar** (click → Updates).
+  A downloaded update also installs on the next quit. In a source/dev install the
+  same screen falls back to the git-based self-update (`/update/*`). Updates work on
+  unsigned Windows builds (integrity is verified via the sha512 in `latest.yml`);
+  signing is still recommended to avoid SmartScreen. Disable the launch check with
+  `MRP_DISABLE_AUTOUPDATE=1`.
 - **First launch** is the slowest (PyInstaller unpacks the backend and the DB is
   created); subsequent launches are fast.
 - **Live trading** is out of scope — Momentum Lab is paper/research only.

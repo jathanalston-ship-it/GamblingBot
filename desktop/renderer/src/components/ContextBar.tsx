@@ -1,7 +1,9 @@
 import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 
 import type { Regime, Run } from "../api/types";
 import { useApi } from "../hooks/useApi";
+import { useUpdateStatus } from "../state/updates";
 import { useWorkspace } from "../state/workspace";
 import { ActionButton } from "./ActionButton";
 import { Badge, regimeTone } from "./Badge";
@@ -9,6 +11,8 @@ import { Badge, regimeTone } from "./Badge";
 /** The persistent context bar: run selector · live regime · ⌘K · selected symbol · paper/live. */
 export function ContextBar({ onOpenPalette }: { onOpenPalette: () => void }) {
   const { runId, setRunId, symbol } = useWorkspace();
+  const navigate = useNavigate();
+  const update = useUpdateStatus();
   const runs = useApi<Run[]>("/runs");
   const regime = useApi<Regime>("/regimes/latest");
 
@@ -62,6 +66,17 @@ export function ContextBar({ onOpenPalette }: { onOpenPalette: () => void }) {
           onDone={() => runs.reload()}
         />
       </span>
+
+      {update.available ? (
+        <button
+          onClick={() => navigate("/updates")}
+          title={update.version ? `Version ${update.version}` : "A new version is available"}
+          className="flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 px-2.5 py-1 text-xs text-accent hover:bg-accent/20"
+        >
+          <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+          {update.downloaded ? "Update ready" : "Update available"}
+        </button>
+      ) : null}
 
       <button
         onClick={onOpenPalette}

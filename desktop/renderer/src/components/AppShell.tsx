@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Outlet } from "react-router-dom";
 
 import { useGlobalKeys } from "../hooks/useGlobalKeys";
+import { UpdateStatusProvider } from "../state/updates";
 import { CommandPalette } from "./CommandPalette";
 import { ContextBar } from "./ContextBar";
 import { ShortcutsOverlay } from "./ShortcutsOverlay";
@@ -18,17 +19,19 @@ export function AppShell() {
   });
 
   return (
-    <div className="flex h-full flex-col">
-      <ContextBar onOpenPalette={() => setPalette(true)} />
-      <div className="flex min-h-0 flex-1">
-        <StageRail />
-        <main className="min-w-0 flex-1 overflow-auto">
-          <Outlet />
-        </main>
+    <UpdateStatusProvider>
+      <div className="flex h-full flex-col">
+        <ContextBar onOpenPalette={() => setPalette(true)} />
+        <div className="flex min-h-0 flex-1">
+          <StageRail />
+          <main className="min-w-0 flex-1 overflow-auto">
+            <Outlet />
+          </main>
+        </div>
+        <StatusBar />
+        {palette ? <CommandPalette onClose={() => setPalette(false)} /> : null}
+        {shortcuts ? <ShortcutsOverlay onClose={() => setShortcuts(false)} /> : null}
       </div>
-      <StatusBar />
-      {palette ? <CommandPalette onClose={() => setPalette(false)} /> : null}
-      {shortcuts ? <ShortcutsOverlay onClose={() => setShortcuts(false)} /> : null}
-    </div>
+    </UpdateStatusProvider>
   );
 }

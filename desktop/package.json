@@ -1,6 +1,6 @@
 {
   "name": "momentum-lab-desktop",
-  "version": "0.0.22",
+  "version": "0.0.23",
   "private": true,
   "description": "Momentum Lab — desktop application (Electron + React + FastAPI).",
   "author": "Momentum Lab",
