@@ -1,6 +1,7 @@
 # PyInstaller spec — freeze the FastAPI backend into a standalone one-file binary.
 #
-# Run from the REPOSITORY ROOT (paths below are repo-root relative):
+# Paths below are anchored to the repository root via SPECPATH, so it can be
+# invoked from anywhere. The canonical invocation is from the repo root:
 #
 #     pyinstaller --noconfirm \
 #         --distpath desktop/build/backend \
@@ -10,7 +11,15 @@
 # Output: desktop/build/backend/mrp-backend(.exe) — the sidecar the Electron main
 # process spawns in a packaged build. No Python is required on the user's machine.
 
+import os
+
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+
+# PyInstaller resolves relative paths in a spec relative to the spec file's own
+# directory (SPECPATH), NOT the working directory. This spec lives in
+# desktop/build/, so anchor every path to the repository root (two levels up)
+# to stay correct regardless of where pyinstaller is invoked from.
+REPO_ROOT = os.path.abspath(os.path.join(SPECPATH, "..", ".."))
 
 # The momentum package loads submodules dynamically (e.g. persistence.models
 # imports every model); uvicorn loads its loops/protocols/lifecycle lazily.
@@ -18,13 +27,13 @@ hidden = collect_submodules("momentum") + collect_submodules("uvicorn")
 
 # Ship the example YAML configs so the Settings view has defaults to read.
 datas = collect_data_files("momentum")
-datas += [("config", "config")]
+datas += [(os.path.join(REPO_ROOT, "config"), "config")]
 
 block_cipher = None
 
 a = Analysis(
-    ["src/momentum/api/__main__.py"],
-    pathex=["src"],
+    [os.path.join(REPO_ROOT, "src", "momentum", "api", "__main__.py")],
+    pathex=[os.path.join(REPO_ROOT, "src")],
     binaries=[],
     datas=datas,
     hiddenimports=hidden,
