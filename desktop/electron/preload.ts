@@ -10,14 +10,39 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 
 const API_PORT = Number(process.env.MRP_API_PORT ?? 8000);
 
+/** A single lifecycle event from the packaged auto-updater (electron-updater). */
+export interface UpdaterEvent {
+  kind: "checking" | "available" | "not-available" | "progress" | "downloaded" | "error";
+  payload: {
+    version?: string;
+    percent?: number;
+    transferred?: number;
+    total?: number;
+    message?: string;
+  } | null;
+}
+
 const bridge = {
   apiBaseUrl: `http://127.0.0.1:${API_PORT}`,
   platform: process.platform,
-  version: process.env.npm_package_version ?? "0.1.0",
+  version: process.env.MRP_APP_VERSION ?? process.env.npm_package_version ?? "0.1.0",
+  /** True only in the packaged desktop build, where electron-updater is wired. */
+  packaged: process.env.MRP_PACKAGED === "1",
   onNavigate(cb: (path: string) => void): () => void {
     const listener = (_event: IpcRendererEvent, path: string) => cb(path);
     ipcRenderer.on("mrp:navigate", listener);
     return () => ipcRenderer.removeListener("mrp:navigate", listener);
+  },
+  /** In-app auto-update controls (packaged build only). */
+  updater: {
+    check: (): Promise<{ version: string | null }> => ipcRenderer.invoke("mrp:update:check"),
+    download: (): Promise<boolean> => ipcRenderer.invoke("mrp:update:download"),
+    install: (): Promise<boolean> => ipcRenderer.invoke("mrp:update:install"),
+    onEvent(cb: (e: UpdaterEvent) => void): () => void {
+      const listener = (_event: IpcRendererEvent, data: UpdaterEvent) => cb(data);
+      ipcRenderer.on("mrp:update:event", listener);
+      return () => ipcRenderer.removeListener("mrp:update:event", listener);
+    },
   },
 };
 

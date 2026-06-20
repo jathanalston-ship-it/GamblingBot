@@ -180,12 +180,16 @@ The tag must be on a commit that contains `release.yml`.
   Signing is **opt-in and requires no config change** — set the encrypted CI
   secrets `CSC_LINK` (base64 `.pfx`) and `CSC_KEY_PASSWORD` and electron-builder
   signs automatically (placeholders documented in `electron-builder.yml`).
-- **Auto-updates:** the app is now **auto-update-ready**. `electron-builder.yml`
-  declares a GitHub `publish` feed (generates `latest.yml`), and `electron/main.ts`
-  wires `electron-updater` to check the GitHub Releases feed on launch and install
-  a newer version on quit (best-effort; disable with `MRP_DISABLE_AUTOUPDATE=1`).
-  Updates work on unsigned Windows builds (integrity is verified via the sha512 in
-  `latest.yml`); signing is still recommended to avoid SmartScreen.
+- **Auto-updates:** the packaged app has **working in-app updates**.
+  `electron-builder.yml` declares a GitHub `publish` feed (generates `latest.yml`),
+  `electron/main.ts` wires `electron-updater` (checks the feed on launch + over
+  IPC), and the **Updates screen** drives it: it shows the installed/latest
+  versions and a *Check again* → *Download update* (with progress) → *Restart &
+  install* flow. A downloaded update also installs on the next quit. In a
+  source/dev install the same screen falls back to the git-based self-update
+  (`/update/*`). Updates work on unsigned Windows builds (integrity is verified via
+  the sha512 in `latest.yml`); signing is still recommended to avoid SmartScreen.
+  Disable the launch check with `MRP_DISABLE_AUTOUPDATE=1`.
 - **First launch** is the slowest (PyInstaller unpacks the backend and the DB is
   created); subsequent launches are fast.
 - **Live trading** is out of scope — Momentum Lab is paper/research only.

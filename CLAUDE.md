@@ -175,11 +175,16 @@ trading platform for US equities. Python 3.12, strictly typed. See
   the release**), then a Windows job that syncs the version to the tag, runs
   `scripts/build_windows.ps1`, generates release notes from git commits, and
   uploads `MomentumLab-Setup-<version>.exe` (+ `latest.yml`/`*.blockmap`) to a new
-  GitHub Release. The app is now **auto-update-ready**: `electron-builder.yml`
-  declares a GitHub `publish` feed and `electron/main.ts` wires `electron-updater`
-  (best-effort, gated to packaged prod, `MRP_DISABLE_AUTOUPDATE=1` to disable).
-  Code signing is opt-in via `CSC_LINK`/`CSC_KEY_PASSWORD` (unsigned by default;
-  no config change needed to enable). See `docs/WINDOWS_INSTALLER.md` §10.
+  GitHub Release. The packaged app has **working in-app updates**:
+  `electron-builder.yml` declares a GitHub `publish` feed and `electron/main.ts`
+  wires `electron-updater` over IPC (check/download/install + event forwarding,
+  gated to packaged prod, `MRP_DISABLE_AUTOUPDATE=1` to disable). The **Updates
+  screen** (`views/Updates.tsx`) drives it for packaged builds (check → download
+  with progress → restart & install) and falls back to the git-based `/update/*`
+  self-update for source installs; the preload bridge exposes
+  `window.mrp.{packaged,updater}`. Code signing is opt-in via
+  `CSC_LINK`/`CSC_KEY_PASSWORD` (unsigned by default; no config change needed to
+  enable). See `docs/WINDOWS_INSTALLER.md` §10.
 
 - **Local update system** (`src/momentum/update/`, `mrp update` / `mrp rollback`)
   — a single-user self-update: check the remote → detect a newer version → back up

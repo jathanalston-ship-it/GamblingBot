@@ -63,7 +63,7 @@ returns, so "demo data" simply means the DB was seeded with `make seed-demo`.
 | **Portfolio** | `/portfolio` | ✅ display | `GET /portfolio/snapshots`, `/risk/metrics` | Live | ✅ equity curve (30 snapshots) + 3 `risk_metrics` windows |
 | **Analytics** | `/analytics` | ✅ display | `GET /performance` (computed from trades) | Live | ✅ (50 demo trades → real metrics) |
 | **Settings** | `/settings` | ✅ functional (read) | `GET /settings/config[/{name}]` | Live (reads `config/*.yaml`) | ✅ always (repo configs) |
-| **Updates** | `/updates` | ✅ functional | `GET /update/status`, `POST /apply`, `/rollback` | Live | ✅ source install / degraded on packaged build |
+| **Updates** | `/updates` | ✅ functional | packaged: electron-updater (IPC); source: `GET /update/status`, `POST /apply`, `/rollback` | Live | ✅ packaged: GitHub-release auto-update (check → download → restart); source: git self-update |
 
 ### Key findings
 
@@ -152,7 +152,7 @@ seeded (`make seed-demo`) unless a test says otherwise.
 | D2 | With an upstream commit available | "Update available — N change(s)"; Update button enabled. |
 | D3 | Click **Update now** (clean tree) | Success message; advises restart. |
 | D4 | Click **Roll back last update** | Success message; advises restart. |
-| D5 | On a **packaged** build | Updates screen shows "in-app update not available — install a newer download". |
+| D5 | On a **packaged** build | Updates screen drives electron-updater: *Check again* → (if newer) *Download update* with progress → *Restart & install*; "Up to date" when current. |
 
 ### UAT-E — Resilience
 | # | Steps | Expected |

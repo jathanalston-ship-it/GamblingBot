@@ -26,6 +26,7 @@ import {
   app,
   BrowserWindow,
   dialog,
+  ipcMain,
   Menu,
   type MenuItemConstructorOptions,
   shell,
@@ -165,30 +166,67 @@ function buildMenu(target: BrowserWindow): Menu {
 }
 
 /**
- * Best-effort in-app auto-update (electron-updater).
+/** Forward an updater lifecycle event to the renderer (the Updates screen). */
+function sendUpdateEvent(kind: string, payload: unknown): void {
+  win?.webContents.send("mrp:update:event", { kind, payload });
+}
+
+let updaterReady = false;
+
+/**
+ * In-app auto-update (electron-updater), surfaced in the Updates screen.
  *
- * No-op in dev / smoke / unpackaged runs. In a packaged build it checks the
- * configured GitHub Releases feed (electron-builder.yml `publish` → app-update.yml)
- * and, if a newer version exists, downloads it and installs on quit. Any failure
- * (no release yet, offline, unsigned-build quirks) is swallowed so it can never
- * block the app. Disable with MRP_DISABLE_AUTOUPDATE=1.
+ * No-op in dev / smoke / unpackaged runs. In a packaged build it registers IPC
+ * handlers (check / download / install) and forwards updater events to the
+ * renderer, then does one silent check on launch. Downloads are user-driven from
+ * the Updates screen (`autoDownload = false`); a downloaded update installs on the
+ * next quit, or immediately via "Restart & install". Failures (no release yet,
+ * offline, unsigned-build quirks) are surfaced as events, never fatal. Disable the
+ * launch check with MRP_DISABLE_AUTOUPDATE=1.
  */
 function initAutoUpdates(): void {
-  if (isDev || isSmoke || !app.isPackaged) return;
-  if (process.env.MRP_DISABLE_AUTOUPDATE === "1") return;
+  if (isDev || isSmoke || !app.isPackaged || updaterReady) return;
+  updaterReady = true;
   const { autoUpdater } = electronUpdater;
-  autoUpdater.autoDownload = true;
+  autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.on("error", (err) => console.error("[auto-update] error:", err));
+
+  autoUpdater.on("checking-for-update", () => sendUpdateEvent("checking", null));
   autoUpdater.on("update-available", (info) =>
-    console.log("[auto-update] update available:", info.version),
+    sendUpdateEvent("available", { version: info.version }),
+  );
+  autoUpdater.on("update-not-available", (info) =>
+    sendUpdateEvent("not-available", { version: info.version }),
+  );
+  autoUpdater.on("download-progress", (p) =>
+    sendUpdateEvent("progress", { percent: p.percent, transferred: p.transferred, total: p.total }),
   );
   autoUpdater.on("update-downloaded", (info) =>
-    console.log("[auto-update] downloaded; installs on quit:", info.version),
+    sendUpdateEvent("downloaded", { version: info.version }),
   );
-  void autoUpdater.checkForUpdates().catch((err) => {
-    console.error("[auto-update] check failed:", err);
+  autoUpdater.on("error", (err) =>
+    sendUpdateEvent("error", { message: String(err?.message ?? err) }),
+  );
+
+  ipcMain.handle("mrp:update:check", async () => {
+    const r = await autoUpdater.checkForUpdates();
+    return { version: r?.updateInfo?.version ?? null };
   });
+  ipcMain.handle("mrp:update:download", async () => {
+    await autoUpdater.downloadUpdate();
+    return true;
+  });
+  ipcMain.handle("mrp:update:install", () => {
+    // Defer so the IPC reply is flushed before the app quits to install.
+    setImmediate(() => autoUpdater.quitAndInstall());
+    return true;
+  });
+
+  if (process.env.MRP_DISABLE_AUTOUPDATE !== "1") {
+    void autoUpdater.checkForUpdates().catch((err) => {
+      console.error("[auto-update] launch check failed:", err);
+    });
+  }
 }
 
 async function createWindow(): Promise<void> {
@@ -255,8 +293,11 @@ if (!app.requestSingleInstanceLock()) {
     }
 
     apiPort = isDev ? Number(process.env.MRP_API_PORT ?? 8000) : await freePort();
-    // The preload reads MRP_API_PORT to build the API base URL — keep them in sync.
+    // The preload reads these to build the API base URL and to know whether the
+    // packaged auto-updater (electron-updater) is available — keep them in sync.
     process.env.MRP_API_PORT = String(apiPort);
+    process.env.MRP_APP_VERSION = app.getVersion();
+    process.env.MRP_PACKAGED = app.isPackaged ? "1" : "0";
 
     startBackend();
     try {
