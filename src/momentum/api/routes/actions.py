@@ -101,15 +101,30 @@ def start_scan(request: Request, params: ActionParams | None = None) -> JobOut:
 @router.post("/backtest", response_model=JobOut, status_code=202)
 def start_backtest(request: Request, params: ActionParams | None = None) -> JobOut:
     p = params or ActionParams()
+    sf = _session_factory(request)
     provider = _provider(request)
     symbols = _symbols(p)
 
     def fn(progress: Progress) -> dict[str, object]:
         return actions.run_backtest(
-            provider=provider, symbols=symbols, lookback_days=p.lookback_days, progress=progress
+            provider=provider,
+            symbols=symbols,
+            lookback_days=p.lookback_days,
+            progress=progress,
+            session_factory=sf,
         )
 
     return JobOut(**_jobs(request).submit("backtest", fn).to_dict())
+
+
+@router.post("/seed-demo", response_model=JobOut, status_code=202)
+def start_seed_demo(request: Request) -> JobOut:
+    sf = _session_factory(request)
+
+    def fn(progress: Progress) -> dict[str, object]:
+        return actions.seed_demo_data(session_factory=sf, progress=progress)
+
+    return JobOut(**_jobs(request).submit("seed-demo", fn).to_dict())
 
 
 @router.post("/paper-session", response_model=JobOut, status_code=202)

@@ -24,12 +24,15 @@ from momentum.conviction.engine import ConvictionEngine
 from momentum.data.cache import BarCache
 from momentum.data.providers.base import MarketDataProvider
 from momentum.data.schema import Timeframe, to_utc_timestamp
+from momentum.demo import seed_all
 from momentum.execution.execution_config import ExecutionConfig
 from momentum.execution.paper_broker import PaperBroker
 from momentum.execution.slippage import BpsSlippage, PerShareCommission
 from momentum.orchestration.engine import DailyOrchestrationEngine
 from momentum.orchestration.session import pull_bars, run_paper_session
+from momentum.persistence.models.optimization_result import OptimizationResult
 from momentum.persistence.repositories.audit_log import AuditLogRepository
+from momentum.persistence.repositories.optimization_results import OptimizationResultRepository
 from momentum.persistence.repositories.runs import RunRepository
 from momentum.persistence.repositories.scans import ScanResultRepository
 from momentum.persistence.repositories.trades import TradeRepository
@@ -151,8 +154,10 @@ def run_backtest(
     symbols: Sequence[str],
     lookback_days: int,
     progress: Progress,
+    session_factory: sessionmaker[Session] | None = None,
+    lookback: int = 50,
 ) -> dict[str, Any]:
-    """Pull data and run an event-driven breakout backtest; return the summary."""
+    """Pull data, run an event-driven breakout backtest, persist + return the summary."""
     progress(0.2, "pulling market data")
     bars = pull_bars(provider, symbols, end=_today(), lookback_days=lookback_days)
     if not bars:
@@ -165,9 +170,10 @@ def run_backtest(
             slippage=BpsSlippage(),
         )
     )
-    result = engine.run(bars, BreakoutStrategy(list(bars)))
-    progress(1.0, "done")
-    return {
+    result = engine.run(bars, BreakoutStrategy(list(bars), lookback=lookback))
+    run_id = _run_stamp("backtest")
+    summary = {
+        "run_id": run_id,
         "symbols": list(bars),
         "bars": int(len(result.equity_curve)),
         "final_equity": round(result.final_equity, 2),
@@ -176,6 +182,33 @@ def run_backtest(
         "profit_factor": round(result.profit_factor, 4),
         "max_drawdown": round(result.max_drawdown, 4),
     }
+
+    # Persist the run as a single-row study so the Backtesting screen shows history.
+    if session_factory is not None:
+        progress(0.9, "saving results")
+        row = OptimizationResult(
+            study_name="breakout",
+            optimizer="manual",
+            run_id=run_id,
+            param_hash=run_id,
+            parameters={"breakout_lookback": lookback, "symbols": len(bars)},
+            objective="expectancy_r",
+            objective_value=summary["expectancy_r"],
+            sample="full",
+            max_drawdown=summary["max_drawdown"],
+            profit_factor=summary["profit_factor"],
+            expectancy_r=summary["expectancy_r"],
+            num_trades=summary["num_trades"],
+            rank=1,
+            is_selected=True,
+        )
+        with session_factory() as session:
+            OptimizationResultRepository(session).save(row)
+            session.commit()
+        summary["persisted"] = True
+
+    progress(1.0, "done")
+    return summary
 
 
 # --------------------------------------------------------------------------- #
@@ -211,6 +244,26 @@ def paper_session(
         )
     progress(1.0, "done")
     return report.to_dict()
+
+
+# --------------------------------------------------------------------------- #
+# Load Sample Data (demo seed)
+# --------------------------------------------------------------------------- #
+def seed_demo_data(
+    *,
+    session_factory: sessionmaker[Session],
+    progress: Progress,
+) -> dict[str, Any]:
+    """Populate the database with the deterministic demo dataset (idempotent).
+
+    Backs the first-run "Load Sample Data" button: clears any prior demo rows and
+    regenerates a full positive-skew sample so every desktop screen has data. Safe
+    to run repeatedly — the demo rows are replaced, never duplicated.
+    """
+    with session_factory() as session:
+        counts = seed_all(session, progress=progress)
+        session.commit()
+    return {"seeded": True, **counts}
 
 
 # --------------------------------------------------------------------------- #

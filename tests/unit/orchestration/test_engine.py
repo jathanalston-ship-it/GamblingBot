@@ -72,6 +72,57 @@ def test_run_day_opens_and_records_run(session: Session, make_scan: MakeScan) ->
     assert run.equity_start == pytest.approx(100_000.0)
 
 
+def test_run_day_persists_snapshot_and_risk(session: Session, make_scan: MakeScan) -> None:
+    from momentum.persistence.repositories.portfolio_snapshots import PortfolioSnapshotRepository
+    from momentum.persistence.repositories.risk_metrics import RiskMetricRepository
+
+    engine = build_engine()
+    report = engine.run_day(
+        session,
+        scan=make_scan([STRONG]),
+        marks={"STRONG": 100.0},
+        as_of=dt.date(2026, 1, 5),
+        regime=RegimeState.BULLISH,
+    )
+    snaps = PortfolioSnapshotRepository(session).for_run(report.run_id)
+    risks = RiskMetricRepository(session).for_run(report.run_id)
+    assert len(snaps) == 1
+    assert snaps[0].session_date == dt.date(2026, 1, 5)
+    assert snaps[0].equity == pytest.approx(report.equity_end)
+    assert snaps[0].num_positions == 1
+    assert len(risks) == 1
+    assert risks[0].scope == "portfolio"
+    assert risks[0].window == "inception"
+
+
+def test_run_day_snapshot_is_idempotent_on_rerun(session: Session, make_scan: MakeScan) -> None:
+    from momentum.persistence.repositories.portfolio_snapshots import PortfolioSnapshotRepository
+
+    engine = build_engine()
+    scan = make_scan([STRONG])
+    engine.run_day(session, scan=scan, marks={"STRONG": 100.0}, as_of=dt.date(2026, 1, 5))
+    # Re-running the same session (crash recovery) must not duplicate the snapshot.
+    report = engine.run_day(session, scan=scan, marks={"STRONG": 100.0}, as_of=dt.date(2026, 1, 5))
+    snaps = PortfolioSnapshotRepository(session).for_run(report.run_id)
+    assert len(snaps) == 1
+
+
+def test_persist_portfolio_can_be_disabled(session: Session, make_scan: MakeScan) -> None:
+    from momentum.persistence.repositories.portfolio_snapshots import PortfolioSnapshotRepository
+
+    engine = DailyOrchestrationEngine(
+        conviction=ConvictionEngine(),
+        risk=RiskManager(),
+        broker=PaperBroker(ExecutionConfig(slippage_bps=0.0, commission_min=0.0)),
+        starting_equity=100_000.0,
+        persist_portfolio=False,
+    )
+    report = engine.run_day(
+        session, scan=make_scan([STRONG]), marks={"STRONG": 100.0}, as_of=dt.date(2026, 1, 5)
+    )
+    assert PortfolioSnapshotRepository(session).for_run(report.run_id) == []
+
+
 def test_recovery_across_days_does_not_reopen(session: Session, make_scan: MakeScan) -> None:
     engine = build_engine()
     scan = make_scan([STRONG])

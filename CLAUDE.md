@@ -143,13 +143,22 @@ trading platform for US equities. Python 3.12, strictly typed. See
   `run_paper_session` is the data→scan→engine glue behind `paper-run` (pull bars
   → scan → conviction → risk → paper orders → positions → audit → summary). See
   `docs/CLI.md`.
-- **Demo dataset** (`scripts/seed_demo.py`, `make seed-demo`) — a deterministic,
-  idempotent seed (50 positive-skew closed trades, 100 signals, 30 portfolio
-  snapshots, 30 market regimes, 15 ranked scan results + matching conviction
-  scores / opportunity tiers via the real `ConvictionEngine`, 3 risk-metric
-  windows, 14 optimization rows, a `demo` run + full audit trail) so **every
-  desktop screen shows realistic data** without the scanner. All rows tagged
-  `demo`; replay-aligned (`mrp replay --run-id demo`). See `docs/DEMO_DATA.md`.
+- **Demo dataset** (`src/momentum/demo.py` = `seed_all`, `scripts/seed_demo.py`
+  CLI, `make seed-demo`, **in-app "Load sample data"** → `POST /actions/seed-demo`)
+  — a deterministic, idempotent seed (50 positive-skew closed trades, 100 signals,
+  30 portfolio snapshots, 30 market regimes, 15 ranked scan results + matching
+  conviction scores / opportunity tiers via the real `ConvictionEngine`, 3
+  risk-metric windows, 14 optimization rows, a `demo` run + full audit trail) so
+  **every desktop screen shows realistic data** without the scanner. The seeding
+  logic lives in the package (ships in the desktop build); all rows tagged `demo`;
+  replay-aligned (`mrp replay --run-id demo`). See `docs/DEMO_DATA.md`.
+- **Live persistence of derived screens** — a paper session
+  (`orchestration/engine.py`) now writes an end-of-session `portfolio_snapshots`
+  + basic `risk_metrics` row (idempotent per run/day), and `run_backtest`
+  (`api/actions.py`) persists one `optimization_results` row per run, so the
+  Portfolio and Backtesting screens populate from live activity (no schema
+  change; repos in `persistence/repositories/{portfolio_snapshots,risk_metrics,
+  optimization_results}.py`).
 
 - **Windows installer ("Momentum Lab")** (`desktop/electron-builder.yml`,
   `desktop/build/{backend.spec,make_icon.py,icon.ico}`, `scripts/build_windows.ps1`)

@@ -123,6 +123,46 @@ def test_run_backtest_returns_summary() -> None:
     assert result["bars"] > 0
 
 
+def test_run_backtest_persists_optimization_result(factory: sessionmaker[Session]) -> None:
+    from momentum.persistence.models import OptimizationResult
+
+    result = actions.run_backtest(
+        provider=StubProvider(),
+        symbols=["AAA", "BBB"],
+        lookback_days=600,
+        progress=_noop,
+        session_factory=factory,
+    )
+    assert result["persisted"] is True
+    with factory() as session:
+        rows = list(session.query(OptimizationResult))
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.study_name == "breakout"
+    assert row.run_id == result["run_id"]
+    assert row.is_selected is True
+    assert row.objective == "expectancy_r"
+
+
+def test_seed_demo_data_is_idempotent(factory: sessionmaker[Session]) -> None:
+    from momentum.persistence.models import PortfolioSnapshot, ScanResult, Trade
+
+    first = actions.seed_demo_data(session_factory=factory, progress=_noop)
+    assert first["seeded"] is True
+    assert first["trades"] == 50
+    with factory() as session:
+        trades1 = session.query(Trade).count()
+        scans1 = session.query(ScanResult).count()
+        snaps1 = session.query(PortfolioSnapshot).count()
+
+    # Running again must not duplicate (demo rows are replaced).
+    actions.seed_demo_data(session_factory=factory, progress=_noop)
+    with factory() as session:
+        assert session.query(Trade).count() == trades1
+        assert session.query(ScanResult).count() == scans1
+        assert session.query(PortfolioSnapshot).count() == snaps1
+
+
 def test_paper_session_runs(factory: sessionmaker[Session]) -> None:
     result = actions.paper_session(
         session_factory=factory,
@@ -133,6 +173,16 @@ def test_paper_session_runs(factory: sessionmaker[Session]) -> None:
         progress=_noop,
     )
     assert "run_id" in result and "num_opened" in result
+    # P1: a paper session now persists an equity snapshot + risk metric.
+    from momentum.persistence.models import PortfolioSnapshot, RiskMetric
+
+    with factory() as session:
+        snaps = list(session.query(PortfolioSnapshot).filter_by(run_id=result["run_id"]))
+        risks = list(session.query(RiskMetric).filter_by(run_id=result["run_id"]))
+    assert len(snaps) == 1
+    assert snaps[0].equity > 0
+    assert len(risks) == 1
+    assert risks[0].scope == "portfolio"
 
 
 def test_replay_summary(factory: sessionmaker[Session]) -> None:

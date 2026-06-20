@@ -5,10 +5,19 @@ scanner or pulling market data**.
 
 ## Seed it
 
+Three ways — all call the same `momentum.demo.seed_all` (deterministic, idempotent):
+
 ```bash
 alembic upgrade head        # ensure the schema exists
 make seed-demo              # or: python scripts/seed_demo.py
 ```
+
+- **From the desktop app:** click **"Load sample data"** in the context bar
+  (`POST /actions/seed-demo`) — the fastest way to populate every screen on a
+  fresh or offline install. It reloads the views when done.
+- **From code:** `from momentum.demo import seed_all; seed_all(session)`. The
+  seeding logic lives in the package (`src/momentum/demo.py`) so it ships in the
+  desktop build; `scripts/seed_demo.py` is a thin CLI wrapper over it.
 
 Seed a separate database (leaves your real one untouched):
 ```bash

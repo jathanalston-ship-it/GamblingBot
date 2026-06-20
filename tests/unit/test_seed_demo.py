@@ -1,16 +1,15 @@
-"""Tests for the demo dataset seeder (scripts/seed_demo.py)."""
+"""Tests for the demo dataset seeder (momentum.demo)."""
 
 from __future__ import annotations
 
-import importlib.util
 from collections.abc import Iterator
-from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
+from momentum import demo as seed_demo
 from momentum.persistence.database import create_session_factory
 from momentum.persistence.models import (
     AuditLog,
@@ -26,13 +25,6 @@ from momentum.persistence.models import (
     Signal,
     Trade,
 )
-
-# Load the standalone script as a module.
-_SEED_PATH = Path(__file__).resolve().parents[2] / "scripts" / "seed_demo.py"
-_spec = importlib.util.spec_from_file_location("seed_demo", _SEED_PATH)
-assert _spec and _spec.loader
-seed_demo = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(seed_demo)
 
 
 @pytest.fixture
@@ -73,6 +65,27 @@ def _seed(session: Session) -> None:
     seed_demo.seed_risk_metrics(session, as_of_dt, as_of, rng)
     seed_demo.seed_optimizations(session, rng)
     session.commit()
+
+
+def test_seed_all_returns_counts_and_populates(session: Session) -> None:
+    counts = seed_demo.seed_all(session)
+    session.commit()
+    assert counts["trades"] == 50
+    assert counts["scan_results"] == len(seed_demo.SYMBOLS)
+    assert counts["optimization_results"] > 0
+    assert _count(session, Trade) == 50
+    assert _count(session, ScanResult) == len(seed_demo.SYMBOLS)
+    assert _count(session, OptimizationResult) == counts["optimization_results"]
+
+
+def test_seed_all_is_idempotent(session: Session) -> None:
+    seed_demo.seed_all(session)
+    session.commit()
+    seed_demo.seed_all(session)  # second run must replace, not duplicate
+    session.commit()
+    assert _count(session, Trade) == 50
+    assert _count(session, ScanResult) == len(seed_demo.SYMBOLS)
+    assert _count(session, PortfolioSnapshot) == 30
 
 
 def test_seed_creates_expected_counts(session: Session) -> None:

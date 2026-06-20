@@ -5,23 +5,25 @@ import { DataTable } from "../components/DataTable";
 import { ErrorBox, Loading, PageTitle } from "../components/Page";
 import { Stat } from "../components/Stat";
 import { useApi } from "../hooks/useApi";
-import { date, money } from "../lib/format";
+import { date, money, num, pct } from "../lib/format";
 
-const str = (v: unknown): string => (v == null ? "—" : String(v));
+const nz = (v: unknown): number | null => (typeof v === "number" ? v : null);
 
 const snapCols: Column<PortfolioSnapshot>[] = [
   { key: "session_date", header: "Date", render: (s) => date(s.session_date) },
   { key: "equity", header: "Equity", align: "right", render: (s) => money(s.equity) },
-  { key: "gross_exposure", header: "Gross Exp", align: "right", render: (s) => str(s["gross_exposure"]) },
-  { key: "open_positions", header: "Positions", align: "right", render: (s) => str(s["open_positions"]) },
+  { key: "realized_pnl", header: "Realized", align: "right", render: (s) => money(nz(s["realized_pnl"])) },
+  { key: "num_positions", header: "Positions", align: "right", render: (s) => num(nz(s["num_positions"]), 0) },
+  { key: "drawdown", header: "Drawdown", align: "right", render: (s) => pct(nz(s["drawdown"]), 1) },
 ];
 
 const riskCols: Column<RiskMetric>[] = [
   { key: "as_of", header: "Date", render: (m) => date(m.as_of) },
-  { key: "scope", header: "Scope" },
   { key: "window", header: "Window", render: (m) => m.window ?? "—" },
-  { key: "name", header: "Metric", render: (m) => str(m["name"]) },
-  { key: "value", header: "Value", align: "right", render: (m) => str(m["value"]) },
+  { key: "num_trades", header: "Trades", align: "right", render: (m) => num(nz(m["num_trades"]), 0) },
+  { key: "win_rate", header: "Win %", align: "right", render: (m) => pct(nz(m["win_rate"]), 0) },
+  { key: "profit_factor", header: "Profit Factor", align: "right", render: (m) => num(nz(m["profit_factor"]), 2) },
+  { key: "expectancy_r", header: "Expectancy R", align: "right", render: (m) => num(nz(m["expectancy_r"]), 2) },
 ];
 
 export default function Portfolio() {

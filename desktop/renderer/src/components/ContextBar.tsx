@@ -48,6 +48,12 @@ export function ContextBar({ onOpenPalette }: { onOpenPalette: () => void }) {
       </span>
 
       <span className="ml-auto flex items-center gap-2">
+        <ActionButton
+          label="Load sample data"
+          path="/actions/seed-demo"
+          variant="ghost"
+          onDone={() => window.location.reload()}
+        />
         <ActionButton label="Refresh data" path="/actions/refresh-data" variant="ghost" />
         <ActionButton
           label="Paper session"

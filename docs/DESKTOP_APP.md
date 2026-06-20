@@ -263,11 +263,19 @@ shows progress and a success/failure result.
 
 | Button | Where | Endpoint | What it does |
 |---|---|---|---|
+| **Load sample data** | Context bar | `POST /actions/seed-demo` | populate the demo dataset (`momentum.demo.seed_all`) so every screen has data; idempotent, safe to re-run |
 | **Run scan** | Scan view | `POST /actions/scan` | pull data → run the momentum scanner → persist `scan_results` |
-| **Run backtest** | Backtesting view | `POST /actions/backtest` | pull data → event-driven breakout backtest → return summary |
-| **Paper session** | Context bar | `POST /actions/paper-session` | full daily session (scan → conviction → risk → paper orders → journal) |
+| **Run backtest** | Backtesting view | `POST /actions/backtest` | pull data → event-driven breakout backtest → **persist** an `optimization_results` row + return summary |
+| **Paper session** | Context bar | `POST /actions/paper-session` | full daily session (scan → conviction → risk → paper orders → journal) → **persist** an equity `portfolio_snapshots` + basic `risk_metrics` row |
 | **Refresh data** | Context bar | `POST /actions/refresh-data` | pull bars for the universe into the local cache |
 | **Replay** | (action endpoint) | `POST /actions/replay` | reconstruct a stored run (run + trades + audit) — available API; the Replay view itself now reads trades/conviction directly |
+
+The **Load sample data** button is the fastest path to a populated app on a fresh
+(or offline) install: it calls the demo seeder and reloads the views. A paper
+session now writes an end-of-session **equity snapshot + basic risk metric** (so
+the Portfolio screen fills from live activity), and each backtest persists a
+single-row study (so the Backtesting screen accumulates a run history). These are
+persistence-only additions — **no schema change**.
 
 Long-running actions return a job (HTTP 202); the UI polls `GET
 /actions/jobs/{id}` (`progress` 0..1 + `message`, then `succeeded`/`failed` with

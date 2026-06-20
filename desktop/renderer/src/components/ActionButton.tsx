@@ -12,6 +12,8 @@ function summarize(job: Job): string {
       return `opened ${String(r.num_opened ?? 0)}`;
     case "refresh-data":
       return `fetched ${String(r.fetched ?? 0)} symbols`;
+    case "seed-demo":
+      return `loaded ${String(r.trades ?? 0)} trades · ${String(r.scan_results ?? 0)} candidates`;
     default:
       return "done";
   }

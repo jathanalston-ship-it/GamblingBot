@@ -68,6 +68,22 @@ def test_backtest_action(session_factory: sessionmaker) -> None:
     job = client.post("/actions/backtest", json={"symbols": ["AAA"], "lookback_days": 600}).json()
     assert job["status"] == "succeeded"
     assert "final_equity" in job["result"]
+    assert job["result"]["persisted"] is True
+    # The persisted run shows up on the Backtesting screen's endpoint.
+    opts = client.get("/backtests/optimizations").json()
+    assert any(o["run_id"] == job["result"]["run_id"] for o in opts)
+
+
+def test_seed_demo_action(session_factory: sessionmaker) -> None:
+    client = _client(session_factory)
+    job = client.post("/actions/seed-demo").json()
+    assert job["status"] == "succeeded"
+    assert job["result"]["seeded"] is True
+    # Demo data now lights up the previously-empty screens.
+    assert len(client.get("/universe/scans").json()) > 0
+    assert len(client.get("/portfolio/snapshots").json()) > 0
+    assert len(client.get("/backtests/optimizations").json()) > 0
+    assert len(client.get("/trades?status=closed&run_id=demo").json()) == 50
 
 
 def test_paper_session_action(session_factory: sessionmaker) -> None:

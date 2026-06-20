@@ -33,7 +33,11 @@ from momentum.orchestration.recovery import reconstruct_portfolio
 from momentum.portfolio.journal import TradeJournal
 from momentum.portfolio.portfolio import Portfolio
 from momentum.persistence.audit import AuditLogger
+from momentum.persistence.models.portfolio_snapshot import PortfolioSnapshot
+from momentum.persistence.models.risk_metric import RiskMetric
 from momentum.persistence.repositories.audit_log import AuditLogRepository
+from momentum.persistence.repositories.portfolio_snapshots import PortfolioSnapshotRepository
+from momentum.persistence.repositories.risk_metrics import RiskMetricRepository
 from momentum.persistence.repositories.runs import RunRepository
 from momentum.persistence.repositories.trades import TradeRepository
 from momentum.risk.risk_budget import DynamicRiskBudgetEngine
@@ -41,6 +45,85 @@ from momentum.risk.risk_manager import RiskManager
 from momentum.universe.screener import ScanResult
 
 _EOD = dt.time(16, 0)
+
+
+def _risk_stats(closed: list[Any]) -> dict[str, float | int | None]:
+    """Basic per-session trade stats from the run's closed trades (pure)."""
+    rs = [float(t.r_multiple) for t in closed if t.r_multiple is not None]
+    n = len(rs)
+    if n == 0:
+        return {
+            "num_trades": 0,
+            "win_rate": None,
+            "profit_factor": None,
+            "expectancy_r": None,
+            "avg_win_r": None,
+            "avg_loss_r": None,
+        }
+    wins = [r for r in rs if r > 0]
+    losses = [r for r in rs if r <= 0]
+    gross_win = sum(wins)
+    gross_loss = -sum(losses)
+    return {
+        "num_trades": n,
+        "win_rate": round(len(wins) / n, 4),
+        "profit_factor": round(gross_win / gross_loss, 4) if gross_loss > 0 else None,
+        "expectancy_r": round(sum(rs) / n, 4),
+        "avg_win_r": round(sum(wins) / len(wins), 4) if wins else None,
+        "avg_loss_r": round(sum(losses) / len(losses), 4) if losses else None,
+    }
+
+
+def build_snapshot(
+    portfolio: Portfolio, *, run_id: str, as_of: dt.date, when: dt.datetime
+) -> PortfolioSnapshot:
+    """A ``portfolio_snapshots`` row from the live account state (pure)."""
+    equity = portfolio.equity
+    peak = max(portfolio.peak_equity, equity)
+    return PortfolioSnapshot(
+        run_id=run_id,
+        as_of=when,
+        session_date=as_of,
+        equity=round(equity, 2),
+        cash=round(portfolio.cash, 2),
+        positions_value=round(portfolio.positions_market_value, 2),
+        num_positions=len(portfolio.positions),
+        realized_pnl=round(portfolio.realized_pnl, 2),
+        unrealized_pnl=round(portfolio.unrealized_pnl, 2),
+        high_water_mark=round(peak, 2),
+        drawdown=round(max(0.0, 1.0 - equity / peak), 4) if peak > 0 else 0.0,
+        cumulative_return=(
+            round(equity / portfolio.starting_equity - 1.0, 4)
+            if portfolio.starting_equity > 0
+            else None
+        ),
+    )
+
+
+def build_risk_metric(
+    closed: list[Any],
+    snapshot: PortfolioSnapshot,
+    *,
+    run_id: str,
+    as_of: dt.date,
+    when: dt.datetime,
+) -> RiskMetric:
+    """A basic ``risk_metrics`` row from the run's closed trades (pure)."""
+    stats = _risk_stats(closed)
+    return RiskMetric(
+        run_id=run_id,
+        as_of=when,
+        session_date=as_of,
+        scope="portfolio",
+        window="inception",
+        num_trades=stats["num_trades"],
+        win_rate=stats["win_rate"],
+        profit_factor=stats["profit_factor"],
+        expectancy_r=stats["expectancy_r"],
+        avg_win_r=stats["avg_win_r"],
+        avg_loss_r=stats["avg_loss_r"],
+        current_drawdown=(-snapshot.drawdown if snapshot.drawdown is not None else None),
+    )
 
 
 class DailyOrchestrationEngine:
@@ -59,6 +142,7 @@ class DailyOrchestrationEngine:
         mode: str = "paper",
         entry_reason: str = "momentum_breakout",
         enable_audit: bool = True,
+        persist_portfolio: bool = True,
     ) -> None:
         self.conviction = conviction
         self.risk = risk
@@ -70,6 +154,7 @@ class DailyOrchestrationEngine:
         self.mode = mode
         self.entry_reason = entry_reason
         self.enable_audit = enable_audit
+        self.persist_portfolio = persist_portfolio
 
     def run_day(
         self,
@@ -136,6 +221,12 @@ class DailyOrchestrationEngine:
                 num_closed=len(closed),
             )
             session.commit()
+
+            # 6. Persist an end-of-session equity snapshot + basic risk metric so
+            #    the Portfolio screen populates from live activity (idempotent).
+            if self.persist_portfolio:
+                self._persist_portfolio(session, portfolio, trades, as_of, when, run_id)
+                session.commit()
         except Exception as exc:  # record the failure durably, then re-raise
             session.rollback()
             failed = runs.get(run_id)
@@ -158,6 +249,23 @@ class DailyOrchestrationEngine:
             closed=tuple(closed),
             entry_outcomes=outcomes,
         )
+
+    # -- portfolio persistence ---------------------------------------------- #
+    def _persist_portfolio(
+        self,
+        session: Session,
+        portfolio: Portfolio,
+        trades: TradeRepository,
+        as_of: dt.date,
+        when: dt.datetime,
+        run_id: str,
+    ) -> None:
+        """Write the session's equity snapshot + basic risk metric (idempotent)."""
+        snapshot = build_snapshot(portfolio, run_id=run_id, as_of=as_of, when=when)
+        PortfolioSnapshotRepository(session).save(snapshot)
+        closed_trades = list(trades.closed(run_id))
+        metric = build_risk_metric(closed_trades, snapshot, run_id=run_id, as_of=as_of, when=when)
+        RiskMetricRepository(session).save(metric)
 
     # -- exits -------------------------------------------------------------- #
     def _manage_exits(

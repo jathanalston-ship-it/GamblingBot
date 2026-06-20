@@ -16,14 +16,31 @@ the view sources, and a live run against an empty DB).
   `replay`) use a **keyless `YahooProvider`** by default → **they require internet**.
   Offline, scan/backtest/paper fail with `no market data available for the universe`.
 
-## The core finding
+## Status update (P0 + P1 implemented)
 
-The live pipeline persists **`runs`, `trades`, `audit_log`** (and `scan_results`
-via *Run Scan*). It does **not** persist `portfolio_snapshots`, `risk_metrics`,
+The shortest-path items below are now **done**:
+
+- **P0 — "Load Sample Data" button** (context bar → `POST /actions/seed-demo`):
+  one click seeds the full demo dataset (idempotent), then reloads every view.
+  Fastest path to a populated app, including offline. Seeder logic moved to the
+  importable `momentum.demo.seed_all` so it ships in the desktop build.
+- **P1 — paper session persists `portfolio_snapshots` + `risk_metrics`**: the
+  orchestration engine writes an end-of-session equity snapshot and a basic risk
+  metric, so **Portfolio now populates from live activity**.
+- **P1 — backtest persists `optimization_results`**: each run is saved as a
+  single-row study, so **Backtesting now shows a live run history**.
+
+No schema changes were needed. The remaining gaps (live `conviction_scores`,
+`market_regimes`, the Paper screen) stay as documented future work.
+
+## The core finding (pre-P1, for reference)
+
+The live pipeline persisted **`runs`, `trades`, `audit_log`** (and `scan_results`
+via *Run Scan*). It did **not** persist `portfolio_snapshots`, `risk_metrics`,
 `conviction_scores`, `opportunity_classifications`, `optimization_results`, or
-`market_regimes` — **outside `scripts/seed_demo.py`, nothing writes those tables.**
-So three of the six headline screens (Portfolio, Backtesting-table, Conviction)
-can only ever show **demo** data, even after a real session.
+`market_regimes` — outside the demo seeder. P1 closes the
+`portfolio_snapshots` / `risk_metrics` / `optimization_results` gaps;
+`conviction_scores` and `market_regimes` remain demo-only for now.
 
 | # writers (live app, excl. demo seed & tests) | table |
 |---|---|
@@ -36,9 +53,9 @@ can only ever show **demo** data, even after a real session.
 
 | Action (focus area) | Status | What works | What's broken / missing |
 |---|---|---|---|
-| **Paper Trading** | 🟡 Partially Works | "Paper session" (context bar) runs the real orchestration: scan → conviction → risk → paper order → journal; persists `runs`+`trades`+`audit`. Unblocks Replay/Analytics. | The dedicated **Paper screen (`/paper`) is a Placeholder** — no open-position monitor, no "run session" CTA there. No `portfolio_snapshots`/`risk_metrics`/`conviction_scores` written, so downstream screens stay empty. Needs internet. |
-| **Portfolio Management** | 🔴 Missing (live) | Screen + endpoints exist; equity curve + risk cards render **demo** data correctly. | **No live writer** for `portfolio_snapshots` or `risk_metrics`. After a real paper session the screen is **empty**. Highest-visibility gap. |
-| **Backtesting** | 🟡 Partially Works | "Run backtest" runs a real event-driven breakout backtest over Yahoo data and returns a summary in the **job-result popover**. | Result is **not persisted** to `optimization_results`; the screen's table (which reads that table) **stays empty** after the run. No params/objective UI. Needs internet. |
+| **Paper Trading** | 🟡 Partially Works | "Paper session" (context bar) runs the real orchestration: scan → conviction → risk → paper order → journal; persists `runs`+`trades`+`audit`, **and now an equity snapshot + risk metric (P1)**. Unblocks Replay/Analytics/Portfolio. | The dedicated **Paper screen (`/paper`) is still a Placeholder** — no open-position monitor. `conviction_scores` not persisted. Needs internet. |
+| **Portfolio Management** | 🟢 Works (P1) | Equity snapshot + basic risk metric are **written at the end of every paper session**; the Portfolio screen now fills from live activity (and the columns were fixed to real fields). | Risk metric is intentionally basic (per-session inception window); no multi-window risk analytics live yet. |
+| **Backtesting** | 🟢 Works (P1) | "Run backtest" runs a real event-driven breakout backtest **and persists an `optimization_results` row**; the screen accumulates a run history (study + objective). | Single fixed breakout strategy; no params/objective UI; `parameters` column not surfaced. Needs internet. |
 | **Scanning** | 🟢 Works (needs internet) | "Run scan" pulls data, ranks the universe, persists `scan_results`, and the Scan/Candidates screen shows ranked candidates with an empty→populated transition. | Doesn't create a `runs` row, so the scan **isn't in the run selector** (works only because a null run shows the latest scan). Conviction is **not** computed/persisted, so the Scan→**Conviction** step is dead in the live flow. |
 | **Replay** | 🟢 Works | Lists completed trades; selecting one shows entry/exit, holding period, MFE/MAE, regime, conviction, position size, exit reason + an excursion timeline. Reads `trades`+`conviction`. | Conviction shows "—" in the live flow (conviction never persisted); timeline MFE/MAE ordering is illustrative. Needs trades (paper session or demo). |
 | **Analytics** | 🟢 Works | Expectancy / profit factor / payoff / trend-capture computed **live from `trades`** via `/performance`. The positive-skew metrics are real. | Empty until at least one paper session (or demo) produces trades. The equity-curve "performance" block needs snapshots (see Portfolio). |
@@ -65,9 +82,9 @@ exist) — they are **persistence-wiring** tasks.
 
 | Pri | Change | Unblocks | Effort |
 |---|---|---|---|
-| **P0** | **First-run "Load sample data" button** (call the demo seeder from the UI / a `POST /actions/seed-demo`). | Instantly makes **every** screen explorable on a fresh, **offline** install — the fastest possible "usable" perception. | S |
-| **P1** | Write a `PortfolioSnapshot` (+ a basic `RiskMetric`) at the end of `engine.run_day`. | **Portfolio Management** live (equity curve + risk) — the headline screen. | S–M |
-| **P1** | Persist the `run_backtest` summary as an `OptimizationResult` row (single-row study). | **Backtesting** table live after a run. | S |
+| **P0 ✅** | **First-run "Load sample data" button** (`POST /actions/seed-demo` → `momentum.demo.seed_all`). | Instantly makes **every** screen explorable on a fresh, **offline** install — the fastest possible "usable" perception. | S |
+| **P1 ✅** | Write a `PortfolioSnapshot` (+ a basic `RiskMetric`) at the end of `engine.run_day`. | **Portfolio Management** live (equity curve + risk) — the headline screen. | S–M |
+| **P1 ✅** | Persist the `run_backtest` summary as an `OptimizationResult` row (single-row study). | **Backtesting** table live after a run. | S |
 | **P2** | Persist `conviction_scores` (and the paper session's `scan_results`) during the paper/scan path. | **Conviction** + the Scan→Conviction→Analogs loop + Replay's conviction field. | M |
 | **P2** | Persist one `market_regime` per session (regime is already computed for sizing). | **Market Regime** screen + the context-bar regime badge. | S |
 | **P3** | Build the **Paper screen** (`/paper`): open positions, last-session report, "Run session" CTA. | Turns Paper Trading from "a button in the bar" into a real screen. | M |
