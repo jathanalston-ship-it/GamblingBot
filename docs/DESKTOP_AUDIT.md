@@ -57,7 +57,7 @@ returns, so "demo data" simply means the DB was seeded with `make seed-demo`.
 | **Conviction** (3) | `/conviction` | ✅ display | `GET /conviction?symbol=` | Live | ✅ 15 `conviction_scores` (real engine) |
 | **Analogs** (4) | `/analogs` | ✅ display | `GET /analogs?symbol=` | Live (computed from trades) | ✅ a candidate is now selectable |
 | **Backtest** (5) | `/backtest` | ✅ display | `GET /backtests/optimizations` | Live | ✅ 14 `optimization_results` (2 studies) |
-| **Replay** (6) | `/replay` | ✅ implemented | `POST /actions/replay` | Live | ✅ 1 `demo` run |
+| **Replay** (6) | `/replay` | ✅ implemented | `GET /trades?status=closed`, `/conviction` | Live | ✅ 50 demo trades (select → detail + timeline) |
 | **Paper** (7) | `/paper` | ❌ **Placeholder** | — | — | — |
 | **Live** (8) | `/live` | ❌ **Placeholder** (gated) | — | — | — |
 | **Portfolio** | `/portfolio` | ✅ display | `GET /portfolio/snapshots`, `/risk/metrics` | Live | ✅ equity curve (30 snapshots) + 3 `risk_metrics` windows |
@@ -180,5 +180,7 @@ upstream change / packaged build to exercise fully.
    action endpoints (`POST /actions/scan|backtest|paper-session|refresh-data|replay`)
    back the buttons, tracked as background jobs with progress + success/failure.
    See `docs/DESKTOP_APP.md` § Operator console.
-4. **Replay screen** — ✅ **Done**: implemented (`views/Replay.tsx`) against
-   `POST /actions/replay`.
+4. **Replay screen** — ✅ **Done**: implemented as a trade inspector
+   (`views/Replay.tsx`) — lists completed trades and shows entry/exit, holding
+   period, MFE/MAE, regime, conviction, position size, exit reason and an SVG
+   excursion timeline, reading `GET /trades?status=closed` + `GET /conviction`.

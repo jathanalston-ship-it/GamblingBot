@@ -21,19 +21,26 @@ export interface ScanResult {
 }
 
 export interface Trade {
+  id?: number;
+  run_id?: string | null;
   symbol: string;
   status: string;
   direction: string;
   entry_price: number | null;
   exit_price: number | null;
+  quantity: number | null;
+  initial_risk: number | null;
   r_multiple: number | null;
   net_pnl: number | null;
+  return_pct: number | null;
   entry_ts: string | null;
   exit_ts: string | null;
   holding_days: number | null;
   mfe: number | null;
   mae: number | null;
   exit_reason: string | null;
+  entry_reason: string | null;
+  regime_label: string | null;
   sector: string | null;
   [k: string]: unknown;
 }

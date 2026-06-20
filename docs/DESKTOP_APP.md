@@ -88,6 +88,13 @@ the ones added in this change; the rest already existed.
 | **Settings** | `config/*.yaml` (Pydantic configs) | ✚ `GET /settings/config`, `GET /settings/config/{name}` |
 | **Backtesting** | `backtest/` → `optimization_results` | `GET /backtests/optimizations` |
 | **Analytics** | `analytics/performance` + `trade_analysis` | `GET /performance` |
+| **Replay** | closed `trades` + `conviction_scores` | `GET /trades?status=closed`, `GET /conviction?symbol=` |
+
+The **Replay** view lists completed trades and, for the selected trade, shows
+entry/exit, holding period, MFE/MAE, market regime, conviction, position size and
+exit reason, plus an SVG **excursion timeline** (entry → MAE → MFE → exit on an
+R-multiple axis). It reads the existing trade/conviction endpoints — no new
+backend — and follows the workspace run/symbol selection.
 
 The read API is intentionally side-effect free. **Command** endpoints (run a scan,
 run a backtest, write settings) are added as a separate, explicitly-guarded router
@@ -260,7 +267,7 @@ shows progress and a success/failure result.
 | **Run backtest** | Backtesting view | `POST /actions/backtest` | pull data → event-driven breakout backtest → return summary |
 | **Paper session** | Context bar | `POST /actions/paper-session` | full daily session (scan → conviction → risk → paper orders → journal) |
 | **Refresh data** | Context bar | `POST /actions/refresh-data` | pull bars for the universe into the local cache |
-| **Replay** | Replay view | `POST /actions/replay` | reconstruct a stored run (run + trades + audit) |
+| **Replay** | (action endpoint) | `POST /actions/replay` | reconstruct a stored run (run + trades + audit) — available API; the Replay view itself now reads trades/conviction directly |
 
 Long-running actions return a job (HTTP 202); the UI polls `GET
 /actions/jobs/{id}` (`progress` 0..1 + `message`, then `succeeded`/`failed` with
