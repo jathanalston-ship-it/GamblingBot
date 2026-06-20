@@ -132,7 +132,7 @@ jobs:
           node -e "const fs=require('fs');for(const f of ['desktop/package.json','desktop/package-lock.json']){const j=JSON.parse(fs.readFileSync(f));j.version=process.env.VERSION;if(j.packages&&j.packages['']){j.packages[''].version=process.env.VERSION;}fs.writeFileSync(f,JSON.stringify(j,null,2)+'\n');}"
 
       - name: Build Windows installer (scripts/build_windows.ps1)
-        shell: powershell
+        shell: pwsh
         run: ./scripts/build_windows.ps1
 
       - name: Generate release notes from git commits

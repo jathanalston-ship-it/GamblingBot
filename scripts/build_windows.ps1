@@ -4,7 +4,7 @@
     Build the Momentum Lab Windows installer end to end.
 
 .DESCRIPTION
-    Produces desktop\release\MomentumLab-Setup-<version>.exe — a double-click
+    Produces desktop\release\MomentumLab-Setup-<version>.exe - a double-click
     installer that bundles the Electron UI and a frozen FastAPI backend, so the
     end user needs neither Python nor Node.
 
@@ -26,7 +26,7 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $RepoRoot
 
-Write-Host "== Momentum Lab — Windows installer build ==" -ForegroundColor Cyan
+Write-Host "== Momentum Lab - Windows installer build ==" -ForegroundColor Cyan
 Write-Host "repo: $RepoRoot"
 
 # --------------------------------------------------------------------------- #
