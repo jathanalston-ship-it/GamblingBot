@@ -36,6 +36,7 @@ from momentum.signals.indicators import (
     ema,
     relative_volume,
     rolling_high,
+    swing_pivot_levels,
 )
 from momentum.signals.momentum import (
     blended_momentum,
@@ -81,6 +82,8 @@ class ScanCandidate:
     ema_mid: float
     ema_slow: float
     atr: float | None
+    support_level: float | None
+    resistance_level: float | None
     sector: str | None
     sector_rs: float | None
     components: dict[str, float]
@@ -136,6 +139,8 @@ class ScanResult:
             ema_mid=float(row["ema_mid"]),
             ema_slow=float(row["ema_slow"]),
             atr=_opt(row.get("atr")),
+            support_level=_opt(row.get("support_level")),
+            resistance_level=_opt(row.get("resistance_level")),
             sector=None if pd.isna(row.get("sector")) else str(row["sector"]),
             sector_rs=_opt(row.get("sector_rs")),
             components=components,  # type: ignore[arg-type]
@@ -162,6 +167,8 @@ class ScanResult:
                     "ema_mid": c.ema_mid,
                     "ema_slow": c.ema_slow,
                     "atr": c.atr,
+                    "support_level": c.support_level,
+                    "resistance_level": c.resistance_level,
                     "sector": c.sector,
                     "sector_rs": c.sector_rs,
                     "components": c.components,
@@ -247,6 +254,7 @@ class MomentumScanner:
         )
         ath = float(ath_series.iloc[-1])
         price = float(close.iloc[-1])
+        support_level, resistance_level = swing_pivot_levels(high, low, price, cfg.pivot_window)
 
         return {
             "price": price,
@@ -261,6 +269,8 @@ class MomentumScanner:
             "ema_mid": _last(ema(close, cfg.ema_mid)),
             "ema_slow": _last(ema(close, cfg.ema_slow)),
             "atr": _last(atr(high, low, close, cfg.atr_period)),
+            "support_level": support_level,
+            "resistance_level": resistance_level,
             "momentum_raw": blended_momentum(close, cfg.momentum_lookbacks, skip=cfg.momentum_skip),
             "_last_ts": close.index[-1],
         }

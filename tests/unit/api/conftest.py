@@ -231,6 +231,8 @@ def _seed(session) -> None:
             ema_fast=49.0,
             ema_mid=47.0,
             ema_slow=44.0,
+            support_level=46.0,
+            resistance_level=53.0,
             sector="Technology",
         )
     )

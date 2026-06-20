@@ -18,6 +18,8 @@ from momentum.signals.indicators import (
     roc,
     rolling_high,
     sma,
+    swing_pivot_levels,
+    swing_pivots,
     true_range,
 )
 
@@ -106,3 +108,35 @@ def test_ema_bullish_false_in_downtrend() -> None:
     stack = ema_stack(close, (20, 50, 200))
     bull = is_ema_bullish_stack(stack, (20, 50, 200))
     assert bool(bull.iloc[-1]) is False
+
+
+def test_swing_pivots_marks_local_extremes() -> None:
+    # A clear peak at index 3 (value 20) and a trough at index 7 (value 2),
+    # each the extreme of its 3-bar neighbourhood (window=2 not needed; use 1).
+    highs = pd.Series([10, 12, 15, 20, 15, 12, 11, 9, 11, 13, 14], dtype="float64")
+    lows = highs - 2.0
+    piv = swing_pivots(highs, lows, window=2)
+    assert bool(piv["swing_high"].iloc[3]) is True  # the 20 peak is confirmed
+    # The last `window` bars are never marked (unconfirmed).
+    assert bool(piv["swing_high"].iloc[-1]) is False
+    assert bool(piv["swing_low"].iloc[-1]) is False
+
+
+def test_swing_pivot_levels_nearest_support_and_resistance() -> None:
+    # Peaks ~20 (idx 3) and ~14 area; a trough ~8 (idx 7). At price 13:
+    highs = pd.Series([10, 12, 15, 20, 15, 12, 11, 9, 11, 13, 14, 13, 12], dtype="float64")
+    lows = pd.Series([9, 11, 13, 18, 13, 10, 9, 8, 9, 11, 12, 11, 10], dtype="float64")
+    support, resistance = swing_pivot_levels(highs, lows, price=13.0, window=2)
+    assert support is not None and support < 13.0
+    assert resistance is not None and resistance > 13.0
+    # support is the trough low (8); resistance is the NEAREST swing high above
+    # price — the 14 peak at index 10, not the taller 20 further back.
+    assert support == pytest.approx(8.0)
+    assert resistance == pytest.approx(14.0)
+
+
+def test_swing_pivot_levels_none_when_no_pivot_on_side() -> None:
+    # Monotone rising series: no confirmed swing high above the last price.
+    rising = pd.Series(np.arange(1.0, 30.0), dtype="float64")
+    support, resistance = swing_pivot_levels(rising, rising - 0.5, price=100.0, window=3)
+    assert resistance is None  # nothing above price 100

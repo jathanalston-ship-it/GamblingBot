@@ -1,11 +1,12 @@
 """Trade-plan generation (pure logic).
 
-Derives a complete plan from a candidate's price, ATR, support (EMAs), historical
-analogs, volatility and the market regime:
+Derives a complete plan from a candidate's price, ATR, swing-pivot support /
+resistance (EMA fallback), historical analogs, volatility and the market regime:
 
-* **Stop** — the wider of an ATR stop and just below the nearest support EMA.
+* **Stop** — the wider of an ATR stop and just below the nearest swing-low support
+  (falls back to the nearest support EMA when no pivot is available).
 * **Targets** — three scale-out levels in R, lifted toward the analogs' average
-  winner / favourable excursion when available.
+  winner / favourable excursion, with T1 snapped beneath overhead swing resistance.
 * **Sizing** — from the candidate's risk budget (risk $ / risk-per-share),
   throttled by the regime.
 * **Holding period** — from the analogs' average winner hold (regime-adjusted).
@@ -64,6 +65,8 @@ class TradePlanEngine:
             stop=stop,
             stop_pct=stop_pct,
             risk_per_share=risk_per_share,
+            structural_support=support,
+            overhead_resistance=inputs.resistance_level,
             targets=targets,
             blended_reward_risk=blended,
             final_reward_risk=final_rr,
@@ -86,12 +89,18 @@ class TradePlanEngine:
         self, inputs: TradePlanInputs, entry: float, atr: float
     ) -> tuple[float, float | None]:
         atr_stop = entry - self.config.stop_atr_mult * atr
-        supports = [
-            e for e in (inputs.ema_fast, inputs.ema_mid, inputs.ema_slow) if e and e < entry
-        ]
-        if not supports:
+        # Prefer a confirmed swing-low support (real structure); fall back to the
+        # nearest EMA below price when no pivot is available.
+        support: float | None = None
+        if inputs.support_level is not None and inputs.support_level < entry:
+            support = inputs.support_level
+        else:
+            emas = [
+                e for e in (inputs.ema_fast, inputs.ema_mid, inputs.ema_slow) if e and e < entry
+            ]
+            support = max(emas) if emas else None
+        if support is None:
             return atr_stop, None
-        support = max(supports)
         structural_stop = support * (1.0 - self.config.support_buffer_pct)
         # The wider (lower) stop respects both ATR noise and structure.
         return min(atr_stop, structural_stop), support
@@ -106,11 +115,22 @@ class TradePlanEngine:
             m2 = max(m2, round(inputs.analog_avg_winner_r, 2))
         if inputs.analog_avg_mfe_r is not None:
             m3 = max(m3, round(inputs.analog_avg_mfe_r, 2))
-        m3 = max(m3, m2 + 0.5)  # keep strictly increasing
+
+        # Snap T1 down to just below the nearest overhead swing resistance when it
+        # is the realistic first hurdle (closer than the R-based T1).
+        t1_price = entry + m1 * risk_per_share
+        res = inputs.resistance_level
+        if res is not None and entry < res < t1_price:
+            t1_price = res * (1.0 - self.config.support_buffer_pct)
+            m1 = (t1_price - entry) / risk_per_share
+        m2 = max(m2, m1 + 0.5)  # keep strictly increasing
+        m3 = max(m3, m2 + 0.5)
+
         fracs = self.config.scale_out_fractions
         labels = ("T1", "T2", "T3")
+        multiples = (m1, m2, m3)
         levels: list[TargetLevel] = []
-        for label, m, frac in zip(labels, (m1, m2, m3), fracs, strict=True):
+        for label, m, frac in zip(labels, multiples, fracs, strict=True):
             price = entry + m * risk_per_share
             levels.append(
                 TargetLevel(
@@ -195,7 +215,12 @@ class TradePlanEngine:
                     else "."
                 )
             )
-        if inputs.distance_from_ath is not None and abs(inputs.distance_from_ath) <= 0.03:
+        if inputs.resistance_level is not None:
+            lines.append(
+                f"Overhead swing resistance at {inputs.resistance_level:.2f} — the first hurdle "
+                "(T1 snaps just beneath it)."
+            )
+        elif inputs.distance_from_ath is not None and abs(inputs.distance_from_ath) <= 0.03:
             lines.append("Near all-time highs — little overhead resistance (blue-sky targets).")
         return lines
 

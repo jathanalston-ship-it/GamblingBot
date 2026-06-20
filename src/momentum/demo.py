@@ -312,6 +312,8 @@ def build_candidates(rng: np.random.Generator) -> list[dict[str, Any]]:
                 "ema_fast": round(price, 2),
                 "ema_mid": round(price * 0.97, 2),
                 "ema_slow": round(price * 0.93, 2),
+                "support_level": round(price * float(1 - rng.uniform(0.04, 0.10)), 2),
+                "resistance_level": round(price * float(1 + rng.uniform(0.02, 0.08)), 2),
                 "sector_rs": round(float(rng.uniform(0.55, 0.98)), 3),
             }
         )
@@ -340,6 +342,8 @@ def seed_scan_results(session: Session, as_of: dt.date, cands: list[dict[str, An
                 ema_mid=c["ema_mid"],
                 ema_slow=c["ema_slow"],
                 atr=c["atr"],
+                support_level=c["support_level"],
+                resistance_level=c["resistance_level"],
                 sector=c["sector"],
                 sector_rs=c["sector_rs"],
                 components={

@@ -77,6 +77,9 @@ class ScannerConfig(BaseModel):
     dollar_volume_lookback: int = Field(20, gt=0)
     relative_volume_lookback: int = Field(20, gt=0)
     atr_period: int = Field(14, gt=0)
+    pivot_window: int = Field(
+        5, gt=0, description="bars each side for a fractal swing high/low (support/resistance)"
+    )
     ath_lookback: int | None = Field(
         None, description="ATH window in bars; None = all-time (expanding) high"
     )

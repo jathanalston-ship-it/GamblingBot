@@ -10,8 +10,8 @@ places a trade.**
 | Field | How it's derived |
 |---|---|
 | Entry | candidate price (breakout reference) |
-| Stop | the **wider** of `stop_atr_mult × ATR` below entry and just below the nearest support EMA |
-| Target 1/2/3 | R multiples of the entry→stop risk; T2 lifted toward the analogs' avg winner, T3 toward their MFE |
+| Stop | the **wider** of `stop_atr_mult × ATR` below entry and just below the nearest **swing-low support** (EMA fallback when no pivot) |
+| Target 1/2/3 | R multiples of the entry→stop risk; **T1 snaps beneath the nearest swing resistance**; T2 lifted toward the analogs' avg winner, T3 toward their MFE |
 | Reward/Risk | per-target R + a scale-out-weighted **blended** R |
 | Expected Holding Period | analogs' avg winner hold, regime-adjusted (a low–high range) |
 | Suggested Position Size | `risk_budget$ × regime_factor ÷ risk-per-share` (shares) |
@@ -20,8 +20,13 @@ places a trade.**
 ## Methodology (inputs used)
 
 - **ATR** — stop distance and volatility.
-- **Support/Resistance** — EMAs (fast/mid/slow) for the structural stop; ATH
-  proximity flags "blue-sky" (low overhead) targets.
+- **Support/Resistance** — **fractal swing pivots** from the scanner
+  (`support_level` / `resistance_level`): the structural stop anchors to the
+  nearest confirmed swing low, and T1 snaps just beneath the nearest swing high.
+  EMAs are the fallback when no pivot exists; ATH proximity flags "blue-sky"
+  (low-overhead) targets. Pivots are computed by `signals.indicators.swing_pivots`
+  (a bar that is the extreme of `pivot_window` bars each side; the most recent
+  `pivot_window` bars stay unconfirmed) and persisted on `scan_results`.
 - **Historical Analogs** — same regime + sector cohort: expectancy, win rate, avg
   winner R (lifts T2), avg MFE (lifts T3), avg winner holding (sets the hold).
 - **Volatility** — `ATR/price`; wide-vol names get a wider stop and smaller size.

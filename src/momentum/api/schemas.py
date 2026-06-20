@@ -337,6 +337,8 @@ class TradePlanOut(BaseModel):
     stop: float
     stop_pct: float
     risk_per_share: float
+    structural_support: float | None
+    overhead_resistance: float | None
     targets: list[TargetLevelOut]
     blended_reward_risk: float
     final_reward_risk: float

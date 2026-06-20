@@ -20,6 +20,8 @@ class TradePlanInputs:
     ema_fast: float | None = None
     ema_mid: float | None = None
     ema_slow: float | None = None
+    support_level: float | None = None  # nearest confirmed swing low below price
+    resistance_level: float | None = None  # nearest confirmed swing high above price
     distance_from_ath: float | None = None  # signed fraction (negative = below ATH)
     relative_volume: float | None = None
     sector: str | None = None
@@ -72,6 +74,8 @@ class TradePlan:
     stop: float
     stop_pct: float  # stop distance as a fraction of entry
     risk_per_share: float
+    structural_support: float | None  # the support level the stop is anchored to
+    overhead_resistance: float | None  # nearest swing resistance above entry
     targets: tuple[TargetLevel, ...]
     blended_reward_risk: float  # scale-out-weighted R
     final_reward_risk: float  # R at the furthest target
@@ -94,6 +98,12 @@ class TradePlan:
             "stop": round(self.stop, 2),
             "stop_pct": round(self.stop_pct, 4),
             "risk_per_share": round(self.risk_per_share, 2),
+            "structural_support": (
+                round(self.structural_support, 2) if self.structural_support is not None else None
+            ),
+            "overhead_resistance": (
+                round(self.overhead_resistance, 2) if self.overhead_resistance is not None else None
+            ),
             "targets": [t.to_dict() for t in self.targets],
             "blended_reward_risk": round(self.blended_reward_risk, 2),
             "final_reward_risk": round(self.final_reward_risk, 2),

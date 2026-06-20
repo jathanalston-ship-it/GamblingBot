@@ -65,6 +65,23 @@ function Body({ symbol, runId }: { symbol: string; runId: string | null }) {
         />
       </div>
 
+      {/* structure levels driving the stop/targets */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-slate-400">
+        <span>
+          Structure:{" "}
+          <span className="text-bull">
+            support {data.structural_support != null ? money(data.structural_support) : "—"}
+          </span>{" "}
+          ·{" "}
+          <span className="text-bear">
+            resistance {data.overhead_resistance != null ? money(data.overhead_resistance) : "—"}
+          </span>
+        </span>
+        <span className="text-xs text-slate-500">
+          stops &amp; targets snap to swing pivots (EMA fallback when none)
+        </span>
+      </div>
+
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         {/* trade plan: targets + sizing */}
         <Card title="Trade Plan">

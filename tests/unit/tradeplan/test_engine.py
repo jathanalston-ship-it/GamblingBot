@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from momentum.tradeplan import TradePlanEngine, TradePlanInputs
 
 BASE = dict(
@@ -74,6 +76,30 @@ def test_bear_regime_shrinks_size():
     bear = TradePlanEngine().plan(TradePlanInputs(**{**BASE, "regime": "bear"}))
     assert bull is not None and bear is not None
     assert bear.suggested_shares < bull.suggested_shares
+
+
+def test_pivot_support_drives_stop():
+    # A real swing low at 108 sits further than the 1.8*ATR stop (112.8), so the
+    # stop snaps just below the pivot — real structure, not the EMA fallback.
+    plan = TradePlanEngine().plan(TradePlanInputs(**{**BASE, "support_level": 108.0}))
+    assert plan is not None
+    assert plan.stop == pytest.approx(108.0 * (1.0 - 0.005))
+    # Without a pivot, the EMA/ATR stop is used instead (wider 1.8*ATR = 112.8).
+    base = TradePlanEngine().plan(TradePlanInputs(**BASE))
+    assert base is not None and base.stop == pytest.approx(112.8)
+
+
+def test_resistance_snaps_t1_below_it():
+    # Overhead resistance at 124 sits below the default 1R target (127.2) → T1
+    # snaps just beneath 124.
+    plan = TradePlanEngine().plan(TradePlanInputs(**{**BASE, "resistance_level": 124.0}))
+    assert plan is not None
+    t1 = plan.targets[0]
+    assert t1.price == 124.0 * (1.0 - 0.005)
+    assert t1.r_multiple < 1.0  # pulled in below the 1R default
+    # ordering preserved
+    assert t1.price < plan.targets[1].price < plan.targets[2].price
+    assert any("resistance" in s.lower() for s in plan.reward_summary)
 
 
 def test_size_respects_risk_budget():

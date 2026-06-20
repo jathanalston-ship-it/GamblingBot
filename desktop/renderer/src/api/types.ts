@@ -148,6 +148,8 @@ export interface TradePlan {
   stop: number;
   stop_pct: number;
   risk_per_share: number;
+  structural_support: number | null;
+  overhead_resistance: number | null;
   targets: TradeTarget[];
   blended_reward_risk: number;
   final_reward_risk: number;

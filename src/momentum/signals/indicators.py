@@ -88,3 +88,40 @@ def is_ema_bullish_stack(emas: pd.DataFrame, ordered_spans: tuple[int, ...]) -> 
     for faster, slower in zip(cols, cols[1:]):
         result &= emas[faster] > emas[slower]
     return result
+
+
+def swing_pivots(high: pd.Series, low: pd.Series, window: int = 5) -> pd.DataFrame:
+    """Fractal swing highs/lows: a bar that is the extreme of ``window`` bars each side.
+
+    Returns a frame with boolean ``swing_high`` / ``swing_low`` columns aligned to
+    the input. The most recent ``window`` bars are *unconfirmed* (no future bars to
+    compare) and are therefore never marked — so a level only appears once it has
+    held, which is exactly what a structural stop/target wants.
+    """
+    n = 2 * window + 1
+    centered_high = high.rolling(n, center=True).max()
+    centered_low = low.rolling(n, center=True).min()
+    return pd.DataFrame(
+        {
+            "swing_high": high.eq(centered_high) & centered_high.notna(),
+            "swing_low": low.eq(centered_low) & centered_low.notna(),
+        }
+    )
+
+
+def swing_pivot_levels(
+    high: pd.Series, low: pd.Series, price: float, window: int = 5
+) -> tuple[float | None, float | None]:
+    """Nearest confirmed swing **support** below ``price`` and **resistance** above it.
+
+    ``(support, resistance)`` — the highest swing low under the current price and
+    the lowest swing high over it, or ``None`` when no such pivot exists.
+    """
+    pivots = swing_pivots(high, low, window)
+    lows = low[pivots["swing_low"]].to_numpy(dtype=float)
+    highs = high[pivots["swing_high"]].to_numpy(dtype=float)
+    below = lows[lows < price]
+    above = highs[highs > price]
+    support = float(below.max()) if below.size else None
+    resistance = float(above.min()) if above.size else None
+    return support, resistance
