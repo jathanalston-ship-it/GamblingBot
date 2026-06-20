@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import type { CommandCenter as CC, WatchlistEntry } from "../api/types";
 import { Badge, regimeTone } from "../components/Badge";
 import { Card } from "../components/Card";
+import { Freshness } from "../components/Freshness";
 import { ErrorBox, Loading, PageTitle } from "../components/Page";
 import { Stat } from "../components/Stat";
 import { useApi } from "../hooks/useApi";
@@ -12,15 +13,18 @@ import { useWorkspace } from "../state/workspace";
 export default function CommandCenter() {
   const { runId, setSymbol } = useWorkspace();
   const navigate = useNavigate();
-  const { data, error, loading } = useApi<CC>(`/command-center${runId ? `?run_id=${runId}` : ""}`);
+  const { data, error, loading, updatedAt } = useApi<CC>(
+    `/command-center${runId ? `?run_id=${runId}` : ""}`,
+    { refreshMs: 30_000 }, // auto-refresh every 30s; keeps showing data while polling
+  );
 
   const go = (symbol: string, to: string): void => {
     setSymbol(symbol);
     navigate(to);
   };
 
-  if (loading) return <Loading />;
-  if (error) return <ErrorBox message={error} />;
+  if (loading && !data) return <Loading />; // only block on the first load
+  if (error && !data) return <ErrorBox message={error} />;
   if (!data) return null;
 
   const perf = data.performance;
@@ -32,7 +36,12 @@ export default function CommandCenter() {
       <PageTitle
         title="Market Command Center"
         subtitle={data.as_of ? `as of ${date(data.as_of)}` : "the day at a glance"}
-      />
+      >
+        <div className="flex items-center gap-3">
+          {error ? <span className="text-xs text-bear">refresh failed</span> : null}
+          <Freshness updatedAt={updatedAt} />
+        </div>
+      </PageTitle>
 
       {/* top stats */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
