@@ -35,6 +35,7 @@ from momentum.api.routes import (
     settings,
     signals,
     trades,
+    tradeplan,
     universe,
     update,
     watchlists,
@@ -63,6 +64,7 @@ _ROUTERS = (
     runs,
     audit,
     watchlists,
+    tradeplan,
 )
 
 

@@ -86,6 +86,7 @@ metrics above.
 | **[docs/DATA_PROVIDER_SETTINGS.md](docs/DATA_PROVIDER_SETTINGS.md)** | Editable Settings: pick the market-data provider and enter API keys from the UI (provider → settings.yaml, secrets → .env, never echoed). |
 | **[docs/CONVICTION_EXPLAINABILITY.md](docs/CONVICTION_EXPLAINABILITY.md)** | Per-factor conviction explainability: signed contributors (raw · weight · impact vs neutral) + a plain-language narrative, computed at read time from the stored breakdown. |
 | **[docs/WATCHLISTS.md](docs/WATCHLISTS.md)** | Multi-horizon watchlists (Today/Week/Month): horizon-reweighted conviction ranking with expected move/risk/RR, persisted history, and over-time comparison. |
+| **[docs/TRADE_PLAN.md](docs/TRADE_PLAN.md)** | Read-only trade-plan generation: entry/stop/3 targets/sizing from ATR, support, analogs, volatility & regime, with risk/reward/failure summaries. |
 | **[docs/ROADMAP.md](docs/ROADMAP.md)** | Phased implementation order. |
 
 ## Tech stack

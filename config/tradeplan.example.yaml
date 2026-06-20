@@ -1,0 +1,28 @@
+# Trade-plan generation. Copy to tradeplan.yaml to override.
+#
+# A trade plan is DERIVED (read-only) from a candidate's price, ATR, support
+# (EMAs), historical analogs, volatility and the market regime. It never places
+# a trade — it produces entry / stop / three targets / sizing / failure rules.
+model_version: v1
+
+# Stop: the wider of (stop_atr_mult x ATR below entry) and just below the nearest
+# support (an EMA below price), so noise above structure doesn't stop us out.
+stop_atr_mult: 1.8
+support_buffer_pct: 0.005 # place a structural stop 0.5% below the support level
+
+# Three scale-out targets, in R multiples of the entry-to-stop risk. T2/T3 are
+# lifted toward the analogs' average winner / favourable excursion when available.
+target_r_multiples: [1.0, 2.0, 3.5]
+scale_out_fractions: [0.34, 0.33, 0.33] # fraction of the position taken at T1/T2/T3
+
+# Position size and aggression scale with the regime.
+regime_size_factor:
+  bull: 1.0
+  neutral: 0.7
+  bear: 0.4
+
+# Holding-period + failure tunables.
+base_holding_days: 15 # fallback when no analog holding data exists
+min_holding_days: 3
+time_stop_days: 10 # exit if T1 is not reached within this many days
+rvol_momentum_floor: 1.0 # momentum is "lost" if relative volume fades below this

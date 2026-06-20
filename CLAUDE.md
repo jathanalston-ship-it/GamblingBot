@@ -184,6 +184,14 @@ trading platform for US equities. Python 3.12, strictly typed. See
   history date selector, generate, over-time comparison). Demo seeds two dated
   watchlists. See `docs/WATCHLISTS.md`.
 
+- **Trade-plan generation** (`src/momentum/tradeplan/`, `api/tradeplan_service.py`)
+  — read-only, **no persistence**: derives entry / stop / three scale-out targets /
+  reward:risk / expected hold / suggested size + portfolio risk for a candidate from
+  ATR, support EMAs, historical analogs, volatility and regime, with Risk / Reward /
+  Failure-condition summaries. Pure `TradePlanEngine`; `GET /tradeplan/{symbol}`
+  (404 without a scan price/ATR); desktop **Trade Plan** view + a "Plan" jump from
+  the Scan inspector. **Never places a trade.** See `docs/TRADE_PLAN.md`.
+
 - **Windows installer ("Momentum Lab")** (`desktop/electron-builder.yml`,
   `desktop/build/{backend.spec,make_icon.py,icon.ico}`, `scripts/build_windows.ps1`)
   — a production, double-click NSIS installer for Windows 11 / non-technical users

@@ -107,9 +107,10 @@ function Body({ symbol }: { symbol: string }) {
       />
 
       <Divider />
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Jump onClick={() => navigate("/conviction")}>3 Conviction</Jump>
         <Jump onClick={() => navigate("/analogs")}>4 Analogs</Jump>
+        <Jump onClick={() => navigate("/tradeplan")}>Plan</Jump>
         <Jump onClick={() => navigate("/backtest")}>5 Backtest</Jump>
       </div>
     </div>

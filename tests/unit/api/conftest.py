@@ -227,6 +227,10 @@ def _seed(session) -> None:
             dollar_volume=1.0e8,
             relative_volume=1.5,
             distance_from_ath=-0.02,
+            atr=1.0,
+            ema_fast=49.0,
+            ema_mid=47.0,
+            ema_slow=44.0,
             sector="Technology",
         )
     )

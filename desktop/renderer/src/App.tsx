@@ -12,6 +12,7 @@ import Portfolio from "./views/Portfolio";
 import Replay from "./views/Replay";
 import Scan from "./views/Scan";
 import Settings from "./views/Settings";
+import TradePlan from "./views/TradePlan";
 import Updates from "./views/Updates";
 import Watchlists from "./views/Watchlists";
 
@@ -44,6 +45,7 @@ export default function App() {
             />
           }
         />
+        <Route path="tradeplan" element={<TradePlan />} />
         <Route path="watchlists" element={<Watchlists />} />
         <Route path="portfolio" element={<Portfolio />} />
         <Route path="analytics" element={<Analytics />} />

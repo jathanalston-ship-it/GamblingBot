@@ -107,6 +107,22 @@ def test_performance_summary(client):
     assert "sharpe" in body["performance"] and "objective" in body["performance"]
 
 
+def test_trade_plan_endpoint(client):
+    body = client.get("/tradeplan/AAPL").json()
+    assert body["symbol"] == "AAPL"
+    assert body["entry"] == 50.0
+    assert body["stop"] < body["entry"]
+    assert len(body["targets"]) == 3
+    assert body["targets"][0]["label"] == "T1"
+    assert body["suggested_shares"] >= 0
+    assert body["risk_summary"] and body["failure_conditions"]
+
+
+def test_trade_plan_404_without_scan(client):
+    # MSFT has signals/trades but no scan row (no price/ATR) -> no plan.
+    assert client.get("/tradeplan/MSFT").status_code == 404
+
+
 def test_watchlists_empty_shape(client):
     body = client.get("/watchlists").json()
     assert body["as_of"] is None

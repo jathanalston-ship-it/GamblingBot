@@ -319,6 +319,39 @@ class WatchlistComparisonOut(BaseModel):
     moved: list[WatchlistMoveOut]  # in both
 
 
+class TargetLevelOut(BaseModel):
+    """One scale-out target in a trade plan."""
+
+    label: str
+    price: float
+    r_multiple: float
+    gain_pct: float
+    scale_out_pct: float
+
+
+class TradePlanOut(BaseModel):
+    """A derived, read-only trade plan for a candidate (no order is placed)."""
+
+    symbol: str
+    entry: float
+    stop: float
+    stop_pct: float
+    risk_per_share: float
+    targets: list[TargetLevelOut]
+    blended_reward_risk: float
+    final_reward_risk: float
+    expected_holding_days_low: int
+    expected_holding_days_high: int
+    suggested_shares: int
+    suggested_position_value: float
+    suggested_portfolio_risk_pct: float
+    suggested_risk_dollars: float
+    risk_summary: list[str]
+    reward_summary: list[str]
+    failure_conditions: list[str]
+    methodology: list[str]
+
+
 class DataProviderOut(BaseModel):
     """The current data-provider selection (secrets reported only as present/absent)."""
 

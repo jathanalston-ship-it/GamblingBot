@@ -134,6 +134,35 @@ export interface ConfigFile {
   parsed: Record<string, unknown> | null;
 }
 
+export interface TradeTarget {
+  label: string;
+  price: number;
+  r_multiple: number;
+  gain_pct: number;
+  scale_out_pct: number;
+}
+
+export interface TradePlan {
+  symbol: string;
+  entry: number;
+  stop: number;
+  stop_pct: number;
+  risk_per_share: number;
+  targets: TradeTarget[];
+  blended_reward_risk: number;
+  final_reward_risk: number;
+  expected_holding_days_low: number;
+  expected_holding_days_high: number;
+  suggested_shares: number;
+  suggested_position_value: number;
+  suggested_portfolio_risk_pct: number;
+  suggested_risk_dollars: number;
+  risk_summary: string[];
+  reward_summary: string[];
+  failure_conditions: string[];
+  methodology: string[];
+}
+
 export interface WatchlistEntry {
   id: number;
   run_id: string | null;
