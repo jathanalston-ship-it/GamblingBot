@@ -148,15 +148,44 @@ After installing on a clean Windows 11 machine, verify:
 - [ ] Re-launching opens a single instance (no second backend; Task Manager shows one).
 - [ ] **Uninstall** removes the app + shortcuts; data folder remains (by design).
 
+## 10. Automated releases (GitHub Releases CI/CD)
+
+`.github/workflows/release.yml` builds and publishes the installer automatically
+when a version tag is pushed:
+
+```bash
+# bump the version first (pyproject.toml + desktop/package.json), commit, then:
+git tag v0.0.21
+git push origin v0.0.21
+```
+
+The workflow:
+
+1. **Quality gate** (Ubuntu) — `ruff` + `mypy --strict` + `pytest` + the desktop
+   `typecheck`/`build`. **If any fail, no release is produced.**
+2. **Build** (Windows) — runs `scripts/build_windows.ps1` (the same one-command
+   build), after syncing `desktop/package.json` to the tag version so the
+   installer and the version baked into the app match the tag.
+3. **Publish** — creates the GitHub Release, generates notes from the git commits
+   since the previous tag, and uploads `MomentumLab-Setup-<version>.exe` (plus
+   `latest.yml` + `*.blockmap` for auto-update).
+
+Re-run manually from the Actions tab ("Run workflow" → enter an existing tag).
+The tag must be on a commit that contains `release.yml`.
+
 ## Notes / known limitations
 
-- **Code signing:** these builds are unsigned, so Windows SmartScreen will warn
-  on first run ("Windows protected your PC" → *More info* → *Run anyway*). For a
-  warning-free install, sign `Momentum Lab.exe` and the installer with an
-  Authenticode (EV) certificate — configure `win.certificateFile` /
-  `certificatePassword` (or CI signing) in `electron-builder.yml`.
-- **Auto-updates:** intentionally not configured (`publish: null`). Updating means
-  downloading and running a newer installer over the top.
+- **Code signing:** initial builds are **unsigned**, so Windows SmartScreen will
+  warn on first run ("Windows protected your PC" → *More info* → *Run anyway*).
+  Signing is **opt-in and requires no config change** — set the encrypted CI
+  secrets `CSC_LINK` (base64 `.pfx`) and `CSC_KEY_PASSWORD` and electron-builder
+  signs automatically (placeholders documented in `electron-builder.yml`).
+- **Auto-updates:** the app is now **auto-update-ready**. `electron-builder.yml`
+  declares a GitHub `publish` feed (generates `latest.yml`), and `electron/main.ts`
+  wires `electron-updater` to check the GitHub Releases feed on launch and install
+  a newer version on quit (best-effort; disable with `MRP_DISABLE_AUTOUPDATE=1`).
+  Updates work on unsigned Windows builds (integrity is verified via the sha512 in
+  `latest.yml`); signing is still recommended to avoid SmartScreen.
 - **First launch** is the slowest (PyInstaller unpacks the backend and the DB is
   created); subsequent launches are fast.
 - **Live trading** is out of scope — Momentum Lab is paper/research only.

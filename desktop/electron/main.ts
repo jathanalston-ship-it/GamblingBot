@@ -30,6 +30,7 @@ import {
   type MenuItemConstructorOptions,
   shell,
 } from "electron";
+import electronUpdater from "electron-updater";
 
 const API_HOST = "127.0.0.1";
 const isDev = process.env.NODE_ENV === "development";
@@ -163,6 +164,33 @@ function buildMenu(target: BrowserWindow): Menu {
   return Menu.buildFromTemplate(template);
 }
 
+/**
+ * Best-effort in-app auto-update (electron-updater).
+ *
+ * No-op in dev / smoke / unpackaged runs. In a packaged build it checks the
+ * configured GitHub Releases feed (electron-builder.yml `publish` → app-update.yml)
+ * and, if a newer version exists, downloads it and installs on quit. Any failure
+ * (no release yet, offline, unsigned-build quirks) is swallowed so it can never
+ * block the app. Disable with MRP_DISABLE_AUTOUPDATE=1.
+ */
+function initAutoUpdates(): void {
+  if (isDev || isSmoke || !app.isPackaged) return;
+  if (process.env.MRP_DISABLE_AUTOUPDATE === "1") return;
+  const { autoUpdater } = electronUpdater;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.on("error", (err) => console.error("[auto-update] error:", err));
+  autoUpdater.on("update-available", (info) =>
+    console.log("[auto-update] update available:", info.version),
+  );
+  autoUpdater.on("update-downloaded", (info) =>
+    console.log("[auto-update] downloaded; installs on quit:", info.version),
+  );
+  void autoUpdater.checkForUpdates().catch((err) => {
+    console.error("[auto-update] check failed:", err);
+  });
+}
+
 async function createWindow(): Promise<void> {
   win = new BrowserWindow({
     width: 1440,
@@ -243,6 +271,7 @@ if (!app.requestSingleInstanceLock()) {
       return;
     }
     await createWindow();
+    initAutoUpdates();
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) void createWindow();

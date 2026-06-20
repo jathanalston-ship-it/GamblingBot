@@ -19,9 +19,16 @@ extraResources:
     to: backend
     filter: ["**/*"]
 
-# IMPORTANT: no update feed configured yet — auto-updates are intentionally out
-# of scope. The installer is a standalone, manually-distributed artifact.
-publish: null
+# Update feed for in-app auto-updates. electron-builder writes `latest.yml` +
+# `*.blockmap` next to the installer and bakes `app-update.yml` into the app, so
+# electron-updater (wired in electron/main.ts) can discover newer GitHub
+# Releases. NOTE: the build is NOT auto-published here — the release workflow
+# (.github/workflows/release.yml) runs electron-builder with `--publish never`
+# and uploads the assets to the GitHub Release itself.
+publish:
+  provider: github
+  owner: jathanalston-ship-it
+  repo: GamblingBot
 
 # --------------------------------------------------------------------------- #
 # Windows (primary target)
@@ -32,6 +39,15 @@ win:
       arch: [x64]
   icon: build/icon.ico
   artifactName: MomentumLab-Setup-${version}.${ext}
+  # --- Code signing (OPTIONAL — unsigned builds are fully supported) ----------
+  # Initial releases ship UNSIGNED; enabling signing later needs NO config change.
+  # electron-builder signs automatically when these standard environment variables
+  # are present in CI (store them as encrypted secrets, never commit them):
+  #   CSC_LINK          = base64-encoded .pfx certificate (or a path/URL to it)
+  #   CSC_KEY_PASSWORD  = the certificate password
+  # When unset (the default), the installer is built unsigned. For EV/HSM or
+  # Azure Trusted Signing, configure the relevant electron-builder fields here.
+  # signingHashAlgorithms: [sha256]
 
 nsis:
   # A tiny, friendly wizard (Welcome → Install location → Install → Finish).

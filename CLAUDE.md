@@ -166,9 +166,20 @@ trading platform for US equities. Python 3.12, strictly typed. See
   (no CLI). The backend is frozen to `mrp-backend.exe` (PyInstaller) and shipped as
   an Electron `extraResource`; the main process spawns it on a free loopback port
   and stores the DB/logs under `%APPDATA%\Momentum Lab\`. Per-user install (no
-  admin), desktop + Start-Menu shortcuts, app icon, uninstaller. Auto-updates are
-  intentionally **not** configured (`publish: null`). Build on Windows/CI (no
-  cross-compile). See `docs/WINDOWS_INSTALLER.md`.
+  admin), desktop + Start-Menu shortcuts, app icon, uninstaller. Build on
+  Windows/CI (no cross-compile). See `docs/WINDOWS_INSTALLER.md`.
+
+- **GitHub Releases pipeline** (`.github/workflows/release.yml`) — pushing a `v*`
+  tag builds & publishes the Windows installer automatically: a quality gate
+  (ruff + `mypy --strict` + pytest + desktop typecheck/build — **failing any blocks
+  the release**), then a Windows job that syncs the version to the tag, runs
+  `scripts/build_windows.ps1`, generates release notes from git commits, and
+  uploads `MomentumLab-Setup-<version>.exe` (+ `latest.yml`/`*.blockmap`) to a new
+  GitHub Release. The app is now **auto-update-ready**: `electron-builder.yml`
+  declares a GitHub `publish` feed and `electron/main.ts` wires `electron-updater`
+  (best-effort, gated to packaged prod, `MRP_DISABLE_AUTOUPDATE=1` to disable).
+  Code signing is opt-in via `CSC_LINK`/`CSC_KEY_PASSWORD` (unsigned by default;
+  no config change needed to enable). See `docs/WINDOWS_INSTALLER.md` §10.
 
 - **Local update system** (`src/momentum/update/`, `mrp update` / `mrp rollback`)
   — a single-user self-update: check the remote → detect a newer version → back up

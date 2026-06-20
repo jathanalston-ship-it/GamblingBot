@@ -1,6 +1,6 @@
 {
   "name": "momentum-lab-desktop",
-  "version": "0.1.0",
+  "version": "0.0.21",
   "private": true,
   "description": "Momentum Lab — desktop application (Electron + React + FastAPI).",
   "author": "Momentum Lab",
@@ -21,6 +21,9 @@
     "lint": "npm --workspace renderer run lint",
     "typecheck": "npm --workspace renderer run typecheck && tsc -p electron/tsconfig.json --noEmit",
     "smoke": "node scripts/smoke.cjs"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
   },
   "devDependencies": {
     "@types/node": "^20.17.6",

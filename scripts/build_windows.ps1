@@ -67,7 +67,10 @@ npm run build
 # 3. Package the NSIS installer.
 # --------------------------------------------------------------------------- #
 Write-Host "`n[3/3] Packaging Windows installer..." -ForegroundColor Cyan
-npx electron-builder --win
+# `--publish never`: only BUILD the artifacts (installer + latest.yml + blockmap
+# for auto-update). Publishing to the GitHub Release is handled by the release
+# workflow (.github/workflows/release.yml), not by this build script.
+npx electron-builder --win --publish never
 Set-Location $RepoRoot
 
 Write-Host "`nDone. Installer:" -ForegroundColor Green

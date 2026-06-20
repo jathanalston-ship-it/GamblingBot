@@ -1,0 +1,175 @@
+name: Release
+
+# Build the Momentum Lab Windows 11 installer and publish a GitHub Release when a
+# version tag (e.g. v0.0.21) is pushed. The quality gate (ruff + mypy + tests +
+# desktop typecheck/build) must pass first; if it fails, no release is created.
+#
+#   git tag v0.0.21 && git push origin v0.0.21
+#
+# Manual re-runs are possible via "Run workflow" (provide an existing tag).
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build and release, e.g. v0.0.21"
+        required: true
+
+permissions:
+  contents: write # create releases + upload assets
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  # --------------------------------------------------------------------------- #
+  # Gate: the release is blocked unless tests, mypy and the desktop build pass.
+  # --------------------------------------------------------------------------- #
+  quality:
+    name: Quality gate (ruff · mypy · tests · desktop build)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Ruff (format check + lint)
+        run: |
+          ruff format --check src tests
+          ruff check src tests
+
+      - name: Mypy (strict)
+        run: MYPYPATH=src python -m mypy --strict src/momentum
+
+      - name: Tests
+        run: PYTHONPATH=src python -m pytest tests -q
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Desktop deps
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+
+      - name: Desktop typecheck (fail on any TS error)
+        working-directory: desktop
+        run: npm run typecheck
+
+      - name: Desktop build (renderer + Electron main)
+        working-directory: desktop
+        run: npm run build
+
+  # --------------------------------------------------------------------------- #
+  # Build the Windows installer (must run on Windows: PyInstaller can't
+  # cross-compile) and publish the GitHub Release with the .exe attached.
+  # --------------------------------------------------------------------------- #
+  release:
+    name: Build Windows installer & publish release
+    needs: quality
+    runs-on: windows-latest
+    steps:
+      - name: Checkout (full history for release notes)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Resolve version from tag
+        id: ver
+        shell: bash
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Sync desktop version to the tag
+        shell: bash
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          # The installer name + the version baked into the app (for auto-update
+          # comparison) come from desktop/package.json. Keep both package.json and
+          # the lockfile in sync so `npm ci` (in build_windows.ps1) stays valid.
+          node -e "const fs=require('fs');for(const f of ['desktop/package.json','desktop/package-lock.json']){const j=JSON.parse(fs.readFileSync(f));j.version=process.env.VERSION;if(j.packages&&j.packages['']){j.packages[''].version=process.env.VERSION;}fs.writeFileSync(f,JSON.stringify(j,null,2)+'\n');}"
+
+      - name: Build Windows installer (scripts/build_windows.ps1)
+        shell: powershell
+        run: ./scripts/build_windows.ps1
+
+      - name: Generate release notes from git commits
+        id: notes
+        shell: bash
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          PREV=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || echo "")
+          {
+            echo "## Momentum Lab ${TAG}"
+            echo
+            echo "**Windows 11 installer:** \`MomentumLab-Setup-${VERSION}.exe\` — double-click to install (per-user, no admin)."
+            echo
+            echo "### Changes"
+            if [ -n "$PREV" ]; then
+              echo "_Commits since ${PREV}:_"
+              echo
+              git log --no-merges --pretty=format:'- %s (%h)' "${PREV}..${TAG}"
+            else
+              git log --no-merges --pretty=format:'- %s (%h)' "${TAG}"
+            fi
+            echo
+          } > release_notes.md
+          echo "----- release notes -----"
+          cat release_notes.md
+
+      - name: List build output
+        shell: bash
+        run: ls -la desktop/release || true
+
+      - name: Create GitHub Release & upload installer
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: Momentum Lab ${{ steps.ver.outputs.tag }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: false
+          # The .exe is the deliverable; latest.yml + *.blockmap are the
+          # electron-updater metadata that make future in-app updates work.
+          files: |
+            desktop/release/MomentumLab-Setup-*.exe
+            desktop/release/latest.yml
+            desktop/release/*.blockmap
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
