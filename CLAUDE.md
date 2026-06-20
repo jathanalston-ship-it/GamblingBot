@@ -184,6 +184,15 @@ trading platform for US equities. Python 3.12, strictly typed. See
   history date selector, generate, over-time comparison). Demo seeds two dated
   watchlists. See `docs/WATCHLISTS.md`.
 
+- **Market Command Center** (`src/momentum/api/command_center.py`,
+  `routes/command_center.py`, `desktop/.../views/CommandCenter.tsx`) — the **default
+  landing page**. One read-only aggregate (`GET /command-center`) reusing every
+  subsystem: current regime, top-5 daily/weekly/monthly opportunities (watchlists),
+  highest-conviction + best reward:risk setups, most attractive sector, portfolio
+  heat/equity/daily P&L, recent performance, daily watchlist changes and
+  recently-triggered setups. No new persistence; every symbol is click-through to
+  Trade Plan / Conviction / Lifecycle. See `docs/COMMAND_CENTER.md`.
+
 - **Setup lifecycle tracking** (`src/momentum/lifecycle/`, `api/lifecycle_service.py`,
   `setup_lifecycles` table + migration `0012`) — every candidate is auto-derived
   into exactly one state (Building → Ready → Triggered → Active → Extended →

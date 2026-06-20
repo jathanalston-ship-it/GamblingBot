@@ -33,6 +33,11 @@ export function StageRail() {
   const update = useUpdateStatus();
   return (
     <nav className="flex w-48 shrink-0 flex-col gap-0.5 border-r border-surface-border bg-surface-raised px-2 py-2">
+      <NavLink to="/" end className={itemClass}>
+        <span className="w-4 text-right text-xs text-slate-500">◎</span>
+        Command
+      </NavLink>
+      <div className="my-2 border-t border-surface-border" />
       {STAGES.map((s) => (
         <NavLink key={s.to} to={s.to} end={s.end} className={itemClass}>
           <span className="w-4 text-right text-xs text-slate-500">{s.n}</span>

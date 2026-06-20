@@ -336,6 +336,44 @@ class LifecycleOut(_ORMModel):
     model_version: str
 
 
+class SectorHighlightOut(BaseModel):
+    """The most attractive sector right now (by average conviction)."""
+
+    sector: str
+    avg_conviction: float
+    count: int
+
+
+class CommandPerformanceOut(BaseModel):
+    """Compact recent-performance headline for the command center."""
+
+    n_trades: int
+    expectancy_r: float | None
+    profit_factor: float | None
+    win_rate: float | None
+    net_pnl: float | None
+
+
+class CommandCenterOut(BaseModel):
+    """The Market Command Center: one aggregate for the landing page."""
+
+    run_id: str | None
+    as_of: dt.date | None
+    regime: RegimeOut | None
+    daily: list[WatchlistEntryOut]
+    weekly: list[WatchlistEntryOut]
+    monthly: list[WatchlistEntryOut]
+    highest_conviction: ConvictionScoreOut | None
+    best_reward_risk: WatchlistEntryOut | None
+    top_sector: SectorHighlightOut | None
+    portfolio_heat: float | None
+    equity: float | None
+    daily_pnl: float | None
+    performance: CommandPerformanceOut
+    watchlist_changes: WatchlistComparisonOut | None
+    recent_triggered: list[LifecycleOut]
+
+
 class LifecycleStateCount(BaseModel):
     state: str
     count: int

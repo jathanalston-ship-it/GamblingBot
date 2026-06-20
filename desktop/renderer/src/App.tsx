@@ -4,6 +4,7 @@ import { Route, Routes, useNavigate } from "react-router-dom";
 import { AppShell } from "./components/AppShell";
 import { Placeholder } from "./components/Placeholder";
 import Analogs from "./views/Analogs";
+import CommandCenter from "./views/CommandCenter";
 import Analytics from "./views/Analytics";
 import Backtesting from "./views/Backtesting";
 import Conviction from "./views/Conviction";
@@ -29,7 +30,8 @@ export default function App() {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route index element={<Scan />} />
+        <Route index element={<CommandCenter />} />
+        <Route path="command-center" element={<CommandCenter />} />
         <Route path="scan" element={<Scan />} />
         <Route path="candidates" element={<Scan shortlist />} />
         <Route path="conviction" element={<Conviction />} />

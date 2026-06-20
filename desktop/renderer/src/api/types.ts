@@ -134,6 +134,38 @@ export interface ConfigFile {
   parsed: Record<string, unknown> | null;
 }
 
+export interface SectorHighlight {
+  sector: string;
+  avg_conviction: number;
+  count: number;
+}
+
+export interface CommandPerformance {
+  n_trades: number;
+  expectancy_r: number | null;
+  profit_factor: number | null;
+  win_rate: number | null;
+  net_pnl: number | null;
+}
+
+export interface CommandCenter {
+  run_id: string | null;
+  as_of: string | null;
+  regime: Regime | null;
+  daily: WatchlistEntry[];
+  weekly: WatchlistEntry[];
+  monthly: WatchlistEntry[];
+  highest_conviction: ConvictionScore | null;
+  best_reward_risk: WatchlistEntry | null;
+  top_sector: SectorHighlight | null;
+  portfolio_heat: number | null;
+  equity: number | null;
+  daily_pnl: number | null;
+  performance: CommandPerformance;
+  watchlist_changes: WatchlistComparison | null;
+  recent_triggered: Lifecycle[];
+}
+
 export interface LifecycleTransition {
   state: string;
   at: string;

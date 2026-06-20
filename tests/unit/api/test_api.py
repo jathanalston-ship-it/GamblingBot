@@ -107,6 +107,29 @@ def test_performance_summary(client):
     assert "sharpe" in body["performance"] and "objective" in body["performance"]
 
 
+def test_command_center_aggregate(client, session_factory):
+    # Populate watchlists + lifecycles so the aggregate has cross-subsystem data.
+    from momentum.api.lifecycle_service import refresh_lifecycles
+    from momentum.api.watchlist_service import generate_watchlists
+
+    with session_factory() as s:
+        generate_watchlists(s, run_id="bt1")
+        refresh_lifecycles(s, run_id="bt1")
+
+    body = client.get("/command-center", params={"run_id": "bt1"}).json()
+    # regime + performance are always present
+    assert body["regime"]["regime"] == "bull"
+    assert body["performance"]["n_trades"] == 2
+    assert "expectancy_r" in body["performance"]
+    # the three horizons are present (lists, possibly capped at 5)
+    for key in ("daily", "weekly", "monthly"):
+        assert isinstance(body[key], list) and len(body[key]) <= 5
+    # heat / equity come from the seeded snapshot
+    assert body["equity"] is not None
+    # strict-JSON safe even with one-sided performance
+    assert "Infinity" not in client.get("/command-center", params={"run_id": "bt1"}).text
+
+
 def test_lifecycle_endpoints(client, session_factory):
     from momentum.api.lifecycle_service import refresh_lifecycles
 

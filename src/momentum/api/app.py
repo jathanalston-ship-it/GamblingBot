@@ -23,6 +23,7 @@ from momentum.api.routes import (
     audit,
     backtests,
     candidates,
+    command_center,
     conviction,
     dashboard,
     health,
@@ -67,6 +68,7 @@ _ROUTERS = (
     watchlists,
     tradeplan,
     lifecycles,
+    command_center,
 )
 
 
