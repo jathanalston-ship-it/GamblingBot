@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import datetime as dt
 from collections.abc import Callable
+from dataclasses import replace
 from typing import Any
 
 import numpy as np
@@ -34,6 +35,9 @@ from momentum.persistence.models.run import Run
 from momentum.persistence.models.scan_result import ScanResult
 from momentum.persistence.models.signal import Signal
 from momentum.persistence.models.trade import Trade
+from momentum.persistence.models.watchlist_entry import WatchlistEntryRow
+from momentum.persistence.repositories.watchlist_entries import WatchlistRepository
+from momentum.watchlist import WatchlistEngine
 
 DEMO_TAG = "demo"
 SEED = 7
@@ -91,6 +95,7 @@ def reset(session: Session) -> None:
     )
     session.execute(delete(RiskMetric).where(RiskMetric.run_id == DEMO_TAG))
     session.execute(delete(OptimizationResult).where(OptimizationResult.run_id == DEMO_TAG))
+    session.execute(delete(WatchlistEntryRow).where(WatchlistEntryRow.run_id == DEMO_TAG))
     session.flush()
 
 
@@ -509,6 +514,8 @@ def seed_all(session: Session, *, progress: ProgressFn | None = None) -> dict[st
     seed_opportunity(session, as_of, cands, rng)
     seed_risk_metrics(session, as_of_dt, as_of, rng)
     n_opt = seed_optimizations(session, rng)
+    session.flush()
+    n_watch = seed_watchlists(session, as_of, rng)
 
     _report(progress, 1.0, "done")
     return {
@@ -521,5 +528,38 @@ def seed_all(session: Session, *, progress: ProgressFn | None = None) -> dict[st
         "opportunity_classifications": len(cands),
         "risk_metrics": 3,
         "optimization_results": n_opt,
+        "watchlist_entries": n_watch,
         "runs": 1,
     }
+
+
+def seed_watchlists(session: Session, as_of: dt.date, rng: np.random.Generator) -> int:
+    """Generate watchlists for two dates so the screen + comparison have data.
+
+    Reuses the live engine over the just-seeded conviction/scan rows; the earlier
+    date uses lightly perturbed factors so a meaningful diff exists.
+    """
+    from momentum.api.watchlist_service import _load_candidates
+
+    candidates, _ = _load_candidates(session, DEMO_TAG)
+    if not candidates:
+        return 0
+    engine = WatchlistEngine()
+    repo = WatchlistRepository(session)
+    prior = as_of - dt.timedelta(days=7)
+    perturbed = [
+        replace(
+            c,
+            factors={
+                k: float(np.clip(v + rng.normal(0.0, 0.08), 0.0, 1.0)) for k, v in c.factors.items()
+            },
+        )
+        for c in candidates
+    ]
+    total = 0
+    for when, cs in ((prior, perturbed), (as_of, candidates)):
+        produced = engine.generate(cs, as_of=when, run_id=DEMO_TAG)
+        flat = [entry for entries in produced.values() for entry in entries]
+        repo.replace_for(as_of=when, run_id=DEMO_TAG, entries=flat)
+        total += len(flat)
+    return total

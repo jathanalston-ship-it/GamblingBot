@@ -266,6 +266,25 @@ def seed_demo_data(
     return {"seeded": True, **counts}
 
 
+def generate_watchlists(
+    *,
+    session_factory: sessionmaker[Session],
+    run_id: str | None = None,
+    progress: Progress,
+) -> dict[str, Any]:
+    """Generate + persist the multi-horizon watchlists from the latest conviction."""
+    from momentum.api import watchlist_service
+
+    progress(0.2, "loading conviction + scan context")
+    with session_factory() as session:
+        result = watchlist_service.generate_watchlists(session, run_id=run_id)
+    progress(1.0, "done")
+    counts: dict[str, Any] = {h.horizon: len(h.entries) for h in result.horizons}
+    counts["as_of"] = str(result.as_of) if result.as_of else None
+    counts["horizons"] = len(result.horizons)
+    return counts
+
+
 # --------------------------------------------------------------------------- #
 # Replay (synchronous read)
 # --------------------------------------------------------------------------- #

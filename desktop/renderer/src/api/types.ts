@@ -134,6 +134,60 @@ export interface ConfigFile {
   parsed: Record<string, unknown> | null;
 }
 
+export interface WatchlistEntry {
+  id: number;
+  run_id: string | null;
+  as_of: string;
+  generated_at: string | null;
+  horizon: string;
+  horizon_label: string;
+  rank: number;
+  symbol: string;
+  conviction: number;
+  base_conviction: number;
+  band: string | null;
+  sector: string | null;
+  risk_rating: string;
+  horizon_days: number;
+  expected_move_pct: number | null;
+  expected_risk_pct: number | null;
+  reward_risk: number | null;
+  model_version: string;
+  config_hash: string | null;
+}
+
+export interface Watchlist {
+  horizon: string;
+  label: string;
+  as_of: string | null;
+  entries: WatchlistEntry[];
+}
+
+export interface WatchlistSet {
+  run_id: string | null;
+  as_of: string | null;
+  horizons: Watchlist[];
+}
+
+export interface WatchlistMove {
+  symbol: string;
+  base_rank: number;
+  against_rank: number;
+  rank_change: number;
+  base_conviction: number;
+  against_conviction: number;
+  conviction_change: number;
+}
+
+export interface WatchlistComparison {
+  horizon: string;
+  base_date: string;
+  against_date: string;
+  added: WatchlistEntry[];
+  removed: WatchlistEntry[];
+  moved: WatchlistMove[];
+}
+
 export interface DataProviderSettings {
   provider: string;
   keys_present: Record<string, boolean>;

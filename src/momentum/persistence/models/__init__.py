@@ -27,6 +27,7 @@ from momentum.persistence.models.run import Run
 from momentum.persistence.models.scan_result import ScanResult
 from momentum.persistence.models.signal import Signal
 from momentum.persistence.models.trade import Trade
+from momentum.persistence.models.watchlist_entry import WatchlistEntryRow
 
 __all__ = [
     "Base",
@@ -46,4 +47,5 @@ __all__ = [
     "OpportunityClassification",
     "Run",
     "AuditLog",
+    "WatchlistEntryRow",
 ]

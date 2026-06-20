@@ -171,6 +171,19 @@ trading platform for US equities. Python 3.12, strictly typed. See
   from the selection (`build_provider`). `GET`/`PUT /settings/data-provider`; no
   schema change. See `docs/DATA_PROVIDER_SETTINGS.md`.
 
+- **Multi-horizon watchlists** (`src/momentum/watchlist/`, `watchlist_entries`
+  table + migration `0010`) — actionable Today / This Week / This Month watchlists.
+  Each horizon **re-weights the stored conviction factors** for its timeframe
+  (`config/watchlist.example.yaml`), ranks the universe by the resulting horizon
+  conviction, and keeps the top N with ATR-derived expected move / risk /
+  reward:risk + a Low/Medium/High risk rating. Pure engine
+  (`engine.py`), idempotent persistence (`WatchlistRepository.replace_for` per
+  `as_of`/`run_id`), `api/watchlist_service.py` (generate/read/compare), routes
+  `GET /watchlists[/{horizon}|/dates|/compare]` + `POST
+  /actions/generate-watchlists`, and a desktop **Watchlists** view (horizon tabs,
+  history date selector, generate, over-time comparison). Demo seeds two dated
+  watchlists. See `docs/WATCHLISTS.md`.
+
 - **Windows installer ("Momentum Lab")** (`desktop/electron-builder.yml`,
   `desktop/build/{backend.spec,make_icon.py,icon.ico}`, `scripts/build_windows.ps1`)
   — a production, double-click NSIS installer for Windows 11 / non-technical users

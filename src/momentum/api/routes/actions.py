@@ -32,6 +32,7 @@ class ActionParams(BaseModel):
     symbols: list[str] | None = None
     lookback_days: int = 400
     starting_equity: float = 100_000.0
+    run_id: str | None = None
 
 
 class ReplayRequest(BaseModel):
@@ -125,6 +126,17 @@ def start_seed_demo(request: Request) -> JobOut:
         return actions.seed_demo_data(session_factory=sf, progress=progress)
 
     return JobOut(**_jobs(request).submit("seed-demo", fn).to_dict())
+
+
+@router.post("/generate-watchlists", response_model=JobOut, status_code=202)
+def start_generate_watchlists(request: Request, params: ActionParams | None = None) -> JobOut:
+    p = params or ActionParams()
+    sf = _session_factory(request)
+
+    def fn(progress: Progress) -> dict[str, object]:
+        return actions.generate_watchlists(session_factory=sf, run_id=p.run_id, progress=progress)
+
+    return JobOut(**_jobs(request).submit("generate-watchlists", fn).to_dict())
 
 
 @router.post("/paper-session", response_model=JobOut, status_code=202)

@@ -37,6 +37,7 @@ from momentum.api.routes import (
     trades,
     universe,
     update,
+    watchlists,
 )
 from momentum.api.jobs import JobManager
 from momentum.persistence.database import create_db_engine, create_session_factory
@@ -61,6 +62,7 @@ _ROUTERS = (
     actions,
     runs,
     audit,
+    watchlists,
 )
 
 

@@ -107,6 +107,24 @@ def test_performance_summary(client):
     assert "sharpe" in body["performance"] and "objective" in body["performance"]
 
 
+def test_watchlists_empty_shape(client):
+    body = client.get("/watchlists").json()
+    assert body["as_of"] is None
+    horizons = {h["horizon"]: h for h in body["horizons"]}
+    assert set(horizons) == {"daily", "weekly", "monthly"}
+    assert all(h["entries"] == [] for h in horizons.values())
+    assert horizons["daily"]["label"] == "Today"
+
+
+def test_watchlist_dates_empty(client):
+    assert client.get("/watchlists/dates").json() == []
+
+
+def test_watchlist_unknown_horizon_404(client):
+    assert client.get("/watchlists/bogus").status_code == 404
+    assert client.get("/watchlists/daily").status_code == 200
+
+
 def test_attribution_endpoint_slices_closed_trades(client):
     body = client.get("/performance/attribution").json()
     sectors = {g["key"]: g for g in body["by_sector"]}

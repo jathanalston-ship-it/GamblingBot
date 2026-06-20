@@ -1,0 +1,53 @@
+# Multi-horizon watchlist generation. Copy to watchlist.yaml to override.
+#
+# Each horizon re-weights the SAME normalized conviction factors to emphasise the
+# signals that matter on that timeframe, then ranks the universe by the resulting
+# horizon conviction and keeps the top `size`. Expected move/risk are derived from
+# ATR (daily true range) scaled to the horizon.
+model_version: v1
+
+# Risk Rating thresholds on expected_risk_pct (planned stop as a fraction of price).
+risk_low_max_pct: 0.02 # <= 2%  -> Low
+risk_medium_max_pct: 0.04 # <= 4%  -> Medium, else High
+
+horizons:
+  - key: daily
+    label: Today
+    days: 1
+    size: 10
+    stop_atr_mult: 1.5 # planned stop = 1.5 x ATR
+    move_sigma: 1.0 # expected move = move_sigma x ATR x sqrt(days)
+    weights: # short term: fast flow signals dominate
+      relative_volume: 0.28
+      momentum_score: 0.24
+      market_regime: 0.18
+      breadth: 0.12
+      distance_to_ath: 0.10
+      sector_strength: 0.08
+  - key: weekly
+    label: This Week
+    days: 5
+    size: 10
+    stop_atr_mult: 1.8
+    move_sigma: 1.0
+    weights: # medium term: balanced momentum + trend + sector
+      momentum_score: 0.22
+      trend_strength: 0.20
+      sector_strength: 0.18
+      market_regime: 0.14
+      relative_volume: 0.12
+      historical_similar_setups: 0.08
+      distance_to_ath: 0.06
+  - key: monthly
+    label: This Month
+    days: 21
+    size: 10
+    stop_atr_mult: 2.2
+    move_sigma: 1.0
+    weights: # long duration: trend quality, analogs, sector leadership
+      trend_strength: 0.26
+      historical_similar_setups: 0.22
+      sector_strength: 0.18
+      distance_to_ath: 0.14
+      market_regime: 0.10
+      momentum_score: 0.10

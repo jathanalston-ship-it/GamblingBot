@@ -13,6 +13,7 @@ import Replay from "./views/Replay";
 import Scan from "./views/Scan";
 import Settings from "./views/Settings";
 import Updates from "./views/Updates";
+import Watchlists from "./views/Watchlists";
 
 export default function App() {
   const navigate = useNavigate();
@@ -43,6 +44,7 @@ export default function App() {
             />
           }
         />
+        <Route path="watchlists" element={<Watchlists />} />
         <Route path="portfolio" element={<Portfolio />} />
         <Route path="analytics" element={<Analytics />} />
         <Route path="settings" element={<Settings />} />

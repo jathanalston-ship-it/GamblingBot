@@ -255,6 +255,70 @@ class AttributionOut(BaseModel):
     by_exit_reason: list[AttributionGroupOut]
 
 
+class WatchlistEntryOut(_ORMModel):
+    """One ranked watchlist row (Watchlists stage)."""
+
+    id: int
+    run_id: str | None
+    as_of: dt.date
+    generated_at: dt.datetime | None
+    horizon: str
+    horizon_label: str
+    rank: int
+    symbol: str
+    conviction: float
+    base_conviction: float
+    band: str | None
+    sector: str | None
+    risk_rating: str
+    horizon_days: int
+    expected_move_pct: float | None
+    expected_risk_pct: float | None
+    reward_risk: float | None
+    model_version: str
+    config_hash: str | None
+
+
+class WatchlistOut(BaseModel):
+    """One horizon's ranked watchlist for a generation date."""
+
+    horizon: str
+    label: str
+    as_of: dt.date | None
+    entries: list[WatchlistEntryOut]
+
+
+class WatchlistSetOut(BaseModel):
+    """The full multi-horizon set (Today / This Week / This Month) for one date."""
+
+    run_id: str | None
+    as_of: dt.date | None
+    horizons: list[WatchlistOut]
+
+
+class WatchlistMoveOut(BaseModel):
+    """A symbol present in both compared watchlists (rank/conviction delta)."""
+
+    symbol: str
+    base_rank: int
+    against_rank: int
+    rank_change: int  # positive = moved up the list (toward rank 1)
+    base_conviction: float
+    against_conviction: float
+    conviction_change: float
+
+
+class WatchlistComparisonOut(BaseModel):
+    """Two watchlists for one horizon compared over time."""
+
+    horizon: str
+    base_date: dt.date
+    against_date: dt.date
+    added: list[WatchlistEntryOut]  # in `against`, not in `base`
+    removed: list[WatchlistEntryOut]  # in `base`, not in `against`
+    moved: list[WatchlistMoveOut]  # in both
+
+
 class DataProviderOut(BaseModel):
     """The current data-provider selection (secrets reported only as present/absent)."""
 
