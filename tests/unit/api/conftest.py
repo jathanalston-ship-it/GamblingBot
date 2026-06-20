@@ -14,11 +14,13 @@ from sqlalchemy.pool import StaticPool
 from momentum.api.app import create_app
 from momentum.persistence.database import create_session_factory
 from momentum.persistence.models import (
+    AuditLog,
     Base,
     MarketRegime,
     OptimizationResult,
     PortfolioSnapshot,
     RiskMetric,
+    Run,
     ScanResult,
     Signal,
     Trade,
@@ -229,6 +231,30 @@ def _seed(session) -> None:
             expectancy_r=0.6,
             num_trades=3,
             is_selected=True,
+        )
+    )
+    session.add(
+        Run(
+            run_id=RUN,
+            mode="backtest",
+            as_of=dt.date(2024, 1, 4),
+            status="completed",
+            started_at=dt.datetime(2024, 1, 4, 16, tzinfo=UTC),
+            finished_at=dt.datetime(2024, 1, 4, 16, 0, 5, tzinfo=UTC),
+            equity_start=100000.0,
+            equity_end=101100.0,
+            num_opened=3,
+            num_closed=2,
+        )
+    )
+    session.add(
+        AuditLog(
+            event_type="order_filled",
+            ts=dt.datetime(2024, 1, 4, 15, 30, tzinfo=UTC),
+            run_id=RUN,
+            symbol="AAPL",
+            entity_type="trade",
+            summary="filled 10 AAPL @ 50.0",
         )
     )
 

@@ -53,7 +53,7 @@ via *Run Scan*). It did **not** persist `portfolio_snapshots`, `risk_metrics`,
 
 | Action (focus area) | Status | What works | What's broken / missing |
 |---|---|---|---|
-| **Paper Trading** | 🟡 Partially Works | "Paper session" (context bar) runs the real orchestration: scan → conviction → risk → paper order → journal; persists `runs`+`trades`+`audit`, **and now an equity snapshot + risk metric (P1)**. Unblocks Replay/Analytics/Portfolio. | The dedicated **Paper screen (`/paper`) is still a Placeholder** — no open-position monitor. `conviction_scores` not persisted. Needs internet. |
+| **Paper Trading** | 🟢 Works (P3) | Dedicated **Paper screen** (replaces the placeholder): account equity / daily P&L / total P&L / heat, open & closed positions, recent sessions (+ details, Open-in-Replay), recent signals & audit events, Run-paper-session & Refresh-data, with loading/error/empty states. The session persists `runs`+`trades`+`audit`+snapshot+risk (P1). | `conviction_scores` still not persisted live (Conviction field reads as "—"). Needs internet to run a session. |
 | **Portfolio Management** | 🟢 Works (P1) | Equity snapshot + basic risk metric are **written at the end of every paper session**; the Portfolio screen now fills from live activity (and the columns were fixed to real fields). | Risk metric is intentionally basic (per-session inception window); no multi-window risk analytics live yet. |
 | **Backtesting** | 🟢 Works (P1) | "Run backtest" runs a real event-driven breakout backtest **and persists an `optimization_results` row**; the screen accumulates a run history (study + objective). | Single fixed breakout strategy; no params/objective UI; `parameters` column not surfaced. Needs internet. |
 | **Scanning** | 🟢 Works (needs internet) | "Run scan" pulls data, ranks the universe, persists `scan_results`, and the Scan/Candidates screen shows ranked candidates with an empty→populated transition. | Doesn't create a `runs` row, so the scan **isn't in the run selector** (works only because a null run shows the latest scan). Conviction is **not** computed/persisted, so the Scan→**Conviction** step is dead in the live flow. |
@@ -87,7 +87,7 @@ exist) — they are **persistence-wiring** tasks.
 | **P1 ✅** | Persist the `run_backtest` summary as an `OptimizationResult` row (single-row study). | **Backtesting** table live after a run. | S |
 | **P2** | Persist `conviction_scores` (and the paper session's `scan_results`) during the paper/scan path. | **Conviction** + the Scan→Conviction→Analogs loop + Replay's conviction field. | M |
 | **P2** | Persist one `market_regime` per session (regime is already computed for sizing). | **Market Regime** screen + the context-bar regime badge. | S |
-| **P3** | Build the **Paper screen** (`/paper`): open positions, last-session report, "Run session" CTA. | Turns Paper Trading from "a button in the bar" into a real screen. | M |
+| **P3 ✅** | Build the **Paper screen** (`/paper`): open positions, last-session report, "Run session" CTA. | Turns Paper Trading from "a button in the bar" into a real screen. | M |
 | **P3** | `run_scan` creates a `runs` row (or unify the scan/paper run-id scheme). | Scans appear in the run selector; run-scoped views line up. | S |
 | **P4** | Graceful **offline / no-data** UX: friendly banner + the P0 "Load sample data" CTA when a command action returns `no market data`. | Robust first-run on machines without internet. | S |
 

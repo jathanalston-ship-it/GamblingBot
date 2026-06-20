@@ -21,6 +21,7 @@ from momentum.analytics.performance import analyze_performance
 from momentum.analytics.trade_analysis import compute_trade_stats
 from momentum.api.schemas import (
     AnalogsOut,
+    AuditEventOut,
     CandidateDetailOut,
     ConfigFileOut,
     ConvictionScoreOut,
@@ -32,6 +33,7 @@ from momentum.api.schemas import (
     RegimeOut,
     RiskBudgetOut,
     RiskMetricOut,
+    RunDetailOut,
     RunOut,
     ScanResultOut,
     SignalOut,
@@ -46,11 +48,13 @@ from momentum.persistence.models import (
     OpportunityClassification,
     OptimizationResult,
     PortfolioSnapshot,
+    Run,
     RiskMetric,
     ScanResult,
     Signal,
     Trade,
 )
+from momentum.persistence.repositories.audit_log import AuditLogRepository
 from momentum.persistence.repositories.conviction_scores import ConvictionScoreRepository
 from momentum.persistence.repositories.opportunity_classifications import (
     OpportunityClassificationRepository,
@@ -257,6 +261,26 @@ def list_runs(session: Session) -> list[RunOut]:
     for col in (ScanResult.run_id, Trade.run_id):
         run_ids.update(r for (r,) in session.execute(select(col).distinct()) if r)
     return [RunOut(run_id=r) for r in sorted(run_ids)]
+
+
+def list_recent_runs(
+    session: Session, *, mode: str | None = None, limit: int = 20
+) -> list[RunDetailOut]:
+    """Recent persisted session runs with their lifecycle/result (Paper screen)."""
+    stmt = select(Run)
+    if mode:
+        stmt = stmt.where(Run.mode == mode)
+    stmt = stmt.order_by(Run.started_at.desc()).limit(limit)
+    return [RunDetailOut.model_validate(row) for row in session.scalars(stmt)]
+
+
+def list_audit(
+    session: Session, *, run_id: str | None = None, limit: int = 100
+) -> list[AuditEventOut]:
+    """Recent audit events, newest first (optionally scoped to a run)."""
+    repo = AuditLogRepository(session)
+    events = repo.by_run(run_id)[-limit:][::-1] if run_id else list(repo.recent(limit))
+    return [AuditEventOut.model_validate(e) for e in events]
 
 
 def list_conviction(

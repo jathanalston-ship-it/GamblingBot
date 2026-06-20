@@ -7,6 +7,7 @@ import Analogs from "./views/Analogs";
 import Analytics from "./views/Analytics";
 import Backtesting from "./views/Backtesting";
 import Conviction from "./views/Conviction";
+import Paper from "./views/Paper";
 import Portfolio from "./views/Portfolio";
 import Replay from "./views/Replay";
 import Scan from "./views/Scan";
@@ -32,7 +33,7 @@ export default function App() {
         <Route path="analogs" element={<Analogs />} />
         <Route path="backtest" element={<Backtesting />} />
         <Route path="replay" element={<Replay />} />
-        <Route path="paper" element={<Placeholder stage="7 · Paper Trading" />} />
+        <Route path="paper" element={<Paper />} />
         <Route
           path="live"
           element={

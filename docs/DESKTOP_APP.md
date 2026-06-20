@@ -89,12 +89,23 @@ the ones added in this change; the rest already existed.
 | **Backtesting** | `backtest/` → `optimization_results` | `GET /backtests/optimizations` |
 | **Analytics** | `analytics/performance` + `trade_analysis` | `GET /performance` |
 | **Replay** | closed `trades` + `conviction_scores` | `GET /trades?status=closed`, `GET /conviction?symbol=` |
+| **Paper Trading** | `runs` + `trades` + `portfolio_snapshots` + `signals` + `audit_log` | `GET /runs/recent`, `GET /trades`, `GET /portfolio/snapshots`, `GET /signals`, ✚ `GET /audit`, `POST /actions/paper-session` |
 
 The **Replay** view lists completed trades and, for the selected trade, shows
 entry/exit, holding period, MFE/MAE, market regime, conviction, position size and
 exit reason, plus an SVG **excursion timeline** (entry → MAE → MFE → exit on an
 R-multiple axis). It reads the existing trade/conviction endpoints — no new
 backend — and follows the workspace run/symbol selection.
+
+The **Paper Trading** view (replaces the old placeholder) shows the live paper
+account — equity, daily P&L, total P&L, portfolio heat — plus open/closed
+positions, recent sessions (selectable → session details + "Open in Replay"),
+recent signals and recent audit events. It can **Run paper session** and
+**Refresh data** (auto-refreshing the views), filters all panels to the selected
+session, and opens Replay directly from any trade row. Every panel has explicit
+loading / error / empty states. Two small **read** endpoints were added in-pattern
+(no schema change): `GET /runs/recent` (recent session runs from the `runs` table)
+and `GET /audit` (recent audit events); `PortfolioSnapshotOut` gained `daily_pnl`.
 
 The read API is intentionally side-effect free. **Command** endpoints (run a scan,
 run a backtest, write settings) are added as a separate, explicitly-guarded router

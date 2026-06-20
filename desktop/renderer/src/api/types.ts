@@ -46,8 +46,56 @@ export interface Trade {
 }
 
 export interface PortfolioSnapshot {
+  run_id?: string | null;
   session_date: string;
   equity: number;
+  cash?: number;
+  num_positions?: number;
+  portfolio_heat?: number;
+  realized_pnl?: number;
+  unrealized_pnl?: number;
+  daily_pnl?: number | null;
+  daily_return?: number | null;
+  cumulative_return?: number | null;
+  drawdown?: number | null;
+  [k: string]: unknown;
+}
+
+export interface RunDetail {
+  run_id: string;
+  mode: string;
+  as_of: string;
+  status: string;
+  started_at: string | null;
+  finished_at: string | null;
+  equity_start: number | null;
+  equity_end: number | null;
+  num_opened: number | null;
+  num_closed: number | null;
+  error: string | null;
+}
+
+export interface AuditEvent {
+  id: number;
+  event_type: string;
+  ts: string | null;
+  run_id: string | null;
+  symbol: string | null;
+  entity_type: string | null;
+  summary: string | null;
+}
+
+export interface Signal {
+  id: number;
+  run_id: string | null;
+  symbol: string;
+  ts: string | null;
+  signal_type: string | null;
+  direction: string | null;
+  strength: number | null;
+  momentum_score: number | null;
+  reference_price: number | null;
+  status: string | null;
   [k: string]: unknown;
 }
 

@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from momentum.api.routes import (
     actions,
     analogs,
+    audit,
     backtests,
     candidates,
     conviction,
@@ -30,6 +31,7 @@ from momentum.api.routes import (
     portfolio,
     regimes,
     risk,
+    runs,
     settings,
     signals,
     trades,
@@ -57,6 +59,8 @@ _ROUTERS = (
     settings,
     update,
     actions,
+    runs,
+    audit,
 )
 
 

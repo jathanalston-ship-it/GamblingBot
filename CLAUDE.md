@@ -193,6 +193,15 @@ trading platform for US equities. Python 3.12, strictly typed. See
   success/failure. Provider/session/runner are injected via `app.state` (offline
   tests with a stub provider + synchronous runner). See `docs/DESKTOP_APP.md`
   § Operator console.
+- **Paper Trading screen** (`desktop/.../views/Paper.tsx`, replacing the `/paper`
+  placeholder) — the live paper account: equity / daily P&L / total P&L / portfolio
+  heat, open & closed positions, recent sessions (selectable → session details +
+  Open-in-Replay), recent signals & audit events; **Run paper session** + **Refresh
+  data** (auto-refresh), panel-level loading/error/empty states, and click-through
+  to Replay from any trade. Backed by two new in-pattern **read** endpoints (no
+  schema change): `GET /runs/recent` (session runs from the `runs` table) and
+  `GET /audit` (recent audit events); `PortfolioSnapshotOut` gained `daily_pnl`.
+  See `docs/DESKTOP_APP.md`.
 
 ## Philosophy (what we optimise for)
 

@@ -147,6 +147,7 @@ class PortfolioSnapshotOut(_ORMModel):
     portfolio_heat: float
     realized_pnl: float
     unrealized_pnl: float
+    daily_pnl: float | None
     daily_return: float | None
     cumulative_return: float | None
     drawdown: float | None
@@ -321,3 +322,31 @@ class RunOut(BaseModel):
 
     run_id: str
     label: str | None = None
+
+
+class RunDetailOut(_ORMModel):
+    """A persisted session run (Paper screen: recent sessions + session details)."""
+
+    run_id: str
+    mode: str
+    as_of: dt.date
+    status: str
+    started_at: dt.datetime | None = None
+    finished_at: dt.datetime | None = None
+    equity_start: float | None = None
+    equity_end: float | None = None
+    num_opened: int | None = None
+    num_closed: int | None = None
+    error: str | None = None
+
+
+class AuditEventOut(_ORMModel):
+    """An append-only audit event (Paper screen: recent audit events)."""
+
+    id: int
+    event_type: str
+    ts: dt.datetime | None = None
+    run_id: str | None = None
+    symbol: str | None = None
+    entity_type: str | None = None
+    summary: str | None = None

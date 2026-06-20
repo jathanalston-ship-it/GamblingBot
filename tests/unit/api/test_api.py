@@ -67,6 +67,32 @@ def test_backtests_optimizations(client):
     assert body[0]["study_name"] == "breakout_v1" and body[0]["is_selected"] is True
 
 
+def test_recent_runs(client):
+    body = client.get("/runs/recent").json()
+    assert len(body) == 1
+    run = body[0]
+    assert run["run_id"] == "bt1"
+    assert run["status"] == "completed"
+    assert run["equity_end"] == 101100.0
+    assert run["num_opened"] == 3
+    assert len(client.get("/runs/recent", params={"mode": "backtest"}).json()) == 1
+    assert client.get("/runs/recent", params={"mode": "paper"}).json() == []
+
+
+def test_audit_events(client):
+    body = client.get("/audit").json()
+    assert len(body) == 1
+    e = body[0]
+    assert e["event_type"] == "order_filled" and e["symbol"] == "AAPL"
+    assert len(client.get("/audit", params={"run_id": "bt1"}).json()) == 1
+    assert client.get("/audit", params={"run_id": "nope"}).json() == []
+
+
+def test_snapshot_exposes_daily_pnl_field(client):
+    body = client.get("/portfolio/snapshots", params={"run_id": "bt1"}).json()
+    assert all("daily_pnl" in s for s in body)
+
+
 def test_performance_summary(client):
     body = client.get("/performance", params={"run_id": "bt1"}).json()
     assert body["n_trades"] == 2  # closed trades only
