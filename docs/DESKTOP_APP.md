@@ -247,3 +247,24 @@ npm run smoke          # Linux headless: xvfb-run -a npm run smoke
 
 The smoke mode is gated entirely behind `MRP_SMOKE=1` and has no effect on a
 normal launch.
+
+## Operator console (action endpoints)
+
+The app is an **operator console**, not just a viewer: buttons trigger real
+backend work via `POST /actions/*`, tracked as background **jobs** so the UI
+shows progress and a success/failure result.
+
+| Button | Where | Endpoint | What it does |
+|---|---|---|---|
+| **Run scan** | Scan view | `POST /actions/scan` | pull data → run the momentum scanner → persist `scan_results` |
+| **Run backtest** | Backtesting view | `POST /actions/backtest` | pull data → event-driven breakout backtest → return summary |
+| **Paper session** | Context bar | `POST /actions/paper-session` | full daily session (scan → conviction → risk → paper orders → journal) |
+| **Refresh data** | Context bar | `POST /actions/refresh-data` | pull bars for the universe into the local cache |
+| **Replay** | Replay view | `POST /actions/replay` | reconstruct a stored run (run + trades + audit) |
+
+Long-running actions return a job (HTTP 202); the UI polls `GET
+/actions/jobs/{id}` (`progress` 0..1 + `message`, then `succeeded`/`failed` with
+a `result`/`error`). The job runner, session factory and market-data provider are
+injectable via `app.state`, so the whole flow is tested offline with a stub
+provider and a synchronous runner. Backend: `api/jobs.py`, `api/actions.py`,
+`api/routes/actions.py`. Frontend: `hooks/useAction.ts`, `components/ActionButton.tsx`.

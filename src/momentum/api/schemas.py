@@ -49,6 +49,27 @@ class RollbackResultOut(BaseModel):
     version: str | None = None
 
 
+class JobOut(BaseModel):
+    """A background operator-console job: status, progress and result/error."""
+
+    id: str
+    kind: str
+    status: str  # pending | running | succeeded | failed
+    progress: float
+    message: str
+    result: dict[str, Any] | None = None
+    error: str | None = None
+    created_at: str
+    finished_at: str | None = None
+
+
+class ReplayOut(BaseModel):
+    run: dict[str, Any]
+    open_trades: list[dict[str, Any]]
+    closed_trades: list[dict[str, Any]]
+    events: list[dict[str, Any]]
+
+
 class SignalOut(_ORMModel):
     id: int
     run_id: str | None

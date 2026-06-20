@@ -175,3 +175,23 @@ export interface RollbackResult {
   commit: string;
   version: string | null;
 }
+
+// Operator-console background jobs (src/momentum/api/routes/actions.py).
+export interface Job {
+  id: string;
+  kind: string;
+  status: "pending" | "running" | "succeeded" | "failed";
+  progress: number;
+  message: string;
+  result: Record<string, unknown> | null;
+  error: string | null;
+  created_at: string;
+  finished_at: string | null;
+}
+
+export interface ReplayResult {
+  run: Record<string, unknown>;
+  open_trades: Record<string, unknown>[];
+  closed_trades: Record<string, unknown>[];
+  events: Record<string, unknown>[];
+}

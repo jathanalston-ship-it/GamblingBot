@@ -8,6 +8,7 @@ import Analytics from "./views/Analytics";
 import Backtesting from "./views/Backtesting";
 import Conviction from "./views/Conviction";
 import Portfolio from "./views/Portfolio";
+import Replay from "./views/Replay";
 import Scan from "./views/Scan";
 import Settings from "./views/Settings";
 import Updates from "./views/Updates";
@@ -30,7 +31,7 @@ export default function App() {
         <Route path="conviction" element={<Conviction />} />
         <Route path="analogs" element={<Analogs />} />
         <Route path="backtest" element={<Backtesting />} />
-        <Route path="replay" element={<Placeholder stage="6 · Trade Replay" />} />
+        <Route path="replay" element={<Replay />} />
         <Route path="paper" element={<Placeholder stage="7 · Paper Trading" />} />
         <Route
           path="live"

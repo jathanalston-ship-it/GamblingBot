@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session, sessionmaker
 
 from momentum.api.routes import (
+    actions,
     analogs,
     backtests,
     candidates,
@@ -35,6 +36,7 @@ from momentum.api.routes import (
     universe,
     update,
 )
+from momentum.api.jobs import JobManager
 from momentum.persistence.database import create_db_engine, create_session_factory
 
 _ROUTERS = (
@@ -54,6 +56,7 @@ _ROUTERS = (
     performance,
     settings,
     update,
+    actions,
 )
 
 
@@ -89,6 +92,8 @@ def create_app(session_factory: sessionmaker[Session] | None = None) -> FastAPI:
     if session_factory is None:
         session_factory = create_session_factory(create_db_engine())
     app.state.session_factory = session_factory
+    # Background-job manager for operator-console actions (scan/backtest/paper/…).
+    app.state.job_manager = JobManager()
 
     for module in _ROUTERS:
         app.include_router(module.router)

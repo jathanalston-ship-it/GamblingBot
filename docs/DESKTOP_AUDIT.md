@@ -174,8 +174,9 @@ upstream change / packaged build to exercise fully.
    runs `npm install` → `npm run typecheck` (fails on any TS error) → `npm run
    build` → a headless Electron startup check on every push/PR. See
    `docs/DESKTOP_APP.md` § Continuous Integration.
-3. Decide on the **"Run scan/backtest" buttons** — either implement guarded
-   command endpoints (`POST /scans/run`, `/backtests/run`) or remove the stub
-   buttons to avoid implying capability.
-4. Implement the **Replay** screen first (the data exists: runs + trades + audit
-   via `mrp replay`); it's the lowest-effort placeholder to make real.
+3. **"Run" buttons** — ✅ **Done**: the app is now an operator console. Real
+   action endpoints (`POST /actions/scan|backtest|paper-session|refresh-data|replay`)
+   back the buttons, tracked as background jobs with progress + success/failure.
+   See `docs/DESKTOP_APP.md` § Operator console.
+4. **Replay screen** — ✅ **Done**: implemented (`views/Replay.tsx`) against
+   `POST /actions/replay`.

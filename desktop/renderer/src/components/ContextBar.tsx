@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import type { Regime, Run } from "../api/types";
 import { useApi } from "../hooks/useApi";
 import { useWorkspace } from "../state/workspace";
+import { ActionButton } from "./ActionButton";
 import { Badge, regimeTone } from "./Badge";
 
 /** The persistent context bar: run selector · live regime · ⌘K · selected symbol · paper/live. */
@@ -46,9 +47,19 @@ export function ContextBar({ onOpenPalette }: { onOpenPalette: () => void }) {
         {adx != null ? <span className="text-xs text-slate-500">ADX {String(adx)}</span> : null}
       </span>
 
+      <span className="ml-auto flex items-center gap-2">
+        <ActionButton label="Refresh data" path="/actions/refresh-data" variant="ghost" />
+        <ActionButton
+          label="Paper session"
+          path="/actions/paper-session"
+          variant="ghost"
+          onDone={() => runs.reload()}
+        />
+      </span>
+
       <button
         onClick={onOpenPalette}
-        className="ml-auto rounded border border-surface-border px-2 py-1 text-xs text-slate-400 hover:text-slate-200"
+        className="rounded border border-surface-border px-2 py-1 text-xs text-slate-400 hover:text-slate-200"
       >
         ⌘K · search / command
       </button>

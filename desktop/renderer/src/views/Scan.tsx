@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import type { ScanResult } from "../api/types";
+import { ActionButton } from "../components/ActionButton";
 import { Badge } from "../components/Badge";
 import { Inspector } from "../components/Inspector";
 import { useApi } from "../hooks/useApi";
@@ -16,7 +17,7 @@ export default function Scan() {
   const path = `/universe/scans?limit=300${passedOnly ? "&passed_only=true" : ""}${
     runId ? `&run_id=${runId}` : ""
   }`;
-  const { data, error, loading } = useApi<ScanResult[]>(path);
+  const { data, error, loading, reload } = useApi<ScanResult[]>(path);
   const rows = data ?? [];
   const idx = Math.max(0, rows.findIndex((r) => r.symbol === symbol));
 
@@ -47,13 +48,7 @@ export default function Scan() {
     <div className="grid h-full grid-cols-[1fr_22rem]">
       <div className="flex min-w-0 flex-col border-r border-surface-border">
         <div className="flex items-center gap-3 border-b border-surface-border px-3 py-2 text-sm">
-          <button
-            disabled
-            title="Planned: POST /scans/run (Phase 3 command endpoint)"
-            className="cursor-not-allowed rounded bg-accent/30 px-2 py-1 text-xs text-slate-300"
-          >
-            Run scan ⏎
-          </button>
+          <ActionButton label="Run scan" path="/actions/scan" onDone={() => reload()} />
           <span className="text-slate-500">
             {rows.length} candidates{passedOnly ? " · passed" : ""}
           </span>

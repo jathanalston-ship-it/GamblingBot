@@ -1,4 +1,5 @@
 import type { Optimization } from "../api/types";
+import { ActionButton } from "../components/ActionButton";
 import { Card } from "../components/Card";
 import type { Column } from "../components/DataTable";
 import { DataTable } from "../components/DataTable";
@@ -22,17 +23,13 @@ const cols: Column<Optimization>[] = [
 ];
 
 export default function Backtesting() {
-  const { data, error, loading } = useApi<Optimization[]>("/backtests/optimizations?limit=200");
+  const { data, error, loading, reload } = useApi<Optimization[]>(
+    "/backtests/optimizations?limit=200",
+  );
   return (
     <div>
       <PageTitle title="Backtesting" subtitle="Event-driven backtests & optimization results">
-        <button
-          disabled
-          title="Planned: POST /backtests/run (see docs/DESKTOP_APP.md implementation plan)"
-          className="cursor-not-allowed rounded bg-accent/30 px-3 py-1.5 text-sm text-slate-300"
-        >
-          Run backtest
-        </button>
+        <ActionButton label="Run backtest" path="/actions/backtest" onDone={() => reload()} />
       </PageTitle>
       <Card title="Optimization Results">
         {loading ? (

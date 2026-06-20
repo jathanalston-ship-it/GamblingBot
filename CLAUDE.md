@@ -174,6 +174,15 @@ trading platform for US equities. Python 3.12, strictly typed. See
   (`MRP_SMOKE=1`, gated in `electron/main.ts`) and asserts it paints. See
   `docs/DESKTOP_APP.md` § Continuous Integration.
 
+- **Operator console** (`src/momentum/api/{jobs.py,actions.py,routes/actions.py}`,
+  `desktop/.../{useAction.ts,ActionButton.tsx,Replay.tsx}`) — the desktop app
+  triggers real backend work via `POST /actions/{scan,backtest,paper-session,
+  refresh-data,replay}`. Long actions run as background **jobs** (`JobManager`,
+  injectable runner) so the UI polls `GET /actions/jobs/{id}` for progress +
+  success/failure. Provider/session/runner are injected via `app.state` (offline
+  tests with a stub provider + synchronous runner). See `docs/DESKTOP_APP.md`
+  § Operator console.
+
 ## Philosophy (what we optimise for)
 
 Optimise for **expectancy, profit factor, average winner, largest winner, trend
