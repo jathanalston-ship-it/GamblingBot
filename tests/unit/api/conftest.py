@@ -5,6 +5,7 @@ FastAPI ``TestClient``. No network, no real database file.
 from __future__ import annotations
 
 import datetime as dt
+import os
 
 import pytest
 from fastapi.testclient import TestClient
@@ -28,6 +29,21 @@ from momentum.persistence.models import (
 
 UTC = dt.timezone.utc
 RUN = "bt1"
+
+
+@pytest.fixture(autouse=True)
+def _restore_provider_env():
+    """Settings writes provider API keys into the live ``os.environ`` so they take
+    effect immediately; snapshot + restore them so tests don't leak into others.
+    """
+    keys = ("ALPACA_API_KEY", "ALPACA_API_SECRET", "POLYGON_API_KEY")
+    saved = {k: os.environ.get(k) for k in keys}
+    yield
+    for key, value in saved.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
 
 
 def _seed(session) -> None:

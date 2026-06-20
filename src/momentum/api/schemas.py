@@ -233,6 +233,26 @@ class ConfigFileOut(BaseModel):
     parsed: dict[str, Any] | None = None
 
 
+class DataProviderOut(BaseModel):
+    """The current data-provider selection (secrets reported only as present/absent)."""
+
+    provider: str
+    keys_present: dict[str, bool]
+    valid_providers: list[str]
+
+
+class DataProviderIn(BaseModel):
+    """Update the data-provider selection and (optionally) its API-key secrets.
+
+    A blank/omitted key leaves any existing secret untouched.
+    """
+
+    provider: str
+    alpaca_api_key: str | None = None
+    alpaca_api_secret: str | None = None
+    polygon_api_key: str | None = None
+
+
 class ConvictionScoreOut(_ORMModel):
     """A persisted conviction score (Conviction stage)."""
 

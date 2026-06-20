@@ -1,15 +1,17 @@
-"""Settings endpoints — read the configuration templates (read-only).
+"""Settings endpoints.
 
-Writing config is intentionally a separate, guarded command endpoint (see the
-desktop implementation plan); the read API never mutates state.
+Reading the configuration templates is side-effect free. The data-provider
+selection is editable via a small, explicitly-guarded write endpoint
+(``PUT /settings/data-provider``) that persists the choice to ``settings.yaml``
+and any API-key secrets to ``.env`` (secrets are never read back in plain text).
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
-from momentum.api import services
-from momentum.api.schemas import ConfigFileOut
+from momentum.api import services, user_settings
+from momentum.api.schemas import ConfigFileOut, DataProviderIn, DataProviderOut
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -27,3 +29,34 @@ def get_config(name: str) -> ConfigFileOut:
     if cfg is None:
         raise HTTPException(status_code=404, detail=f"config file not found: {name}")
     return cfg
+
+
+def _to_out(settings: user_settings.ProviderSettings) -> DataProviderOut:
+    return DataProviderOut(
+        provider=settings.provider,
+        keys_present=settings.keys_present,
+        valid_providers=list(settings.valid_providers),
+    )
+
+
+@router.get("/data-provider", response_model=DataProviderOut)
+def get_data_provider() -> DataProviderOut:
+    """Current market-data provider + which API keys are set (booleans only)."""
+    return _to_out(user_settings.read_provider_settings())
+
+
+@router.put("/data-provider", response_model=DataProviderOut)
+def put_data_provider(body: DataProviderIn) -> DataProviderOut:
+    """Set the provider and (optionally) its API-key secrets. Blank keys are kept."""
+    try:
+        settings = user_settings.write_provider_settings(
+            body.provider,
+            {
+                "alpaca_api_key": body.alpaca_api_key,
+                "alpaca_api_secret": body.alpaca_api_secret,
+                "polygon_api_key": body.polygon_api_key,
+            },
+        )
+    except user_settings.UnknownProviderError as exc:
+        raise HTTPException(status_code=400, detail=f"unknown provider: {body.provider}") from exc
+    return _to_out(settings)

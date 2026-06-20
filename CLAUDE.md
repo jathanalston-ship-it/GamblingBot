@@ -160,6 +160,17 @@ trading platform for US equities. Python 3.12, strictly typed. See
   change; repos in `persistence/repositories/{portfolio_snapshots,risk_metrics,
   optimization_results}.py`).
 
+- **Editable data-provider settings** (`src/momentum/api/user_settings.py`,
+  `routes/settings.py`, `desktop/.../views/Settings.tsx`) — the Settings screen
+  lets you pick the market-data provider (yfinance/alpaca/polygon) and enter API
+  keys from the UI. The non-secret choice persists to `settings.yaml`, secrets to
+  `.env` (in a writable `MRP_USER_DIR`; the desktop app points this at
+  `%APPDATA%`), and secrets are **never** returned by the API (only present/absent
+  booleans). Saves take effect live (pushed into `os.environ`) and persist across
+  restarts (`load_user_env`); the operator-console actions build their provider
+  from the selection (`build_provider`). `GET`/`PUT /settings/data-provider`; no
+  schema change. See `docs/DATA_PROVIDER_SETTINGS.md`.
+
 - **Windows installer ("Momentum Lab")** (`desktop/electron-builder.yml`,
   `desktop/build/{backend.spec,make_icon.py,icon.ico}`, `scripts/build_windows.ps1`)
   — a production, double-click NSIS installer for Windows 11 / non-technical users

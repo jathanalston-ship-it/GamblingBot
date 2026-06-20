@@ -54,9 +54,9 @@ def _provider(request: Request) -> MarketDataProvider:
     if factory is not None:
         provider: MarketDataProvider = factory()
         return provider
-    from momentum.data.providers.yfinance import YahooProvider
+    from momentum.api import user_settings
 
-    return YahooProvider()
+    return user_settings.build_provider()
 
 
 def _symbols(params: ActionParams) -> list[str]:

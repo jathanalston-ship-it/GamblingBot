@@ -96,6 +96,9 @@ function startBackend(): void {
     const { dbUrl, logDir } = userPaths();
     env.DATABASE_URL = process.env.DATABASE_URL ?? dbUrl;
     env.MRP_LOG_DIR = process.env.MRP_LOG_DIR ?? logDir;
+    // Writable home for user-editable settings (provider choice -> settings.yaml,
+    // API keys -> .env). The bundled config/ templates are read-only.
+    env.MRP_USER_DIR = process.env.MRP_USER_DIR ?? app.getPath("userData");
   }
   backend = spawn(cmd, args, { cwd, env, stdio: "inherit" });
   backend.on("exit", (code) => {

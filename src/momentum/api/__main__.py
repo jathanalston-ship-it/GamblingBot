@@ -15,6 +15,7 @@ import os
 import uvicorn
 
 from momentum.api.app import create_app
+from momentum.api.user_settings import load_user_env
 from momentum.persistence.database import (
     create_all,
     create_db_engine,
@@ -25,6 +26,10 @@ from momentum.persistence.database import (
 def main() -> None:
     host = os.environ.get("MRP_API_HOST", "127.0.0.1")
     port = int(os.environ.get("MRP_API_PORT", "8000"))
+
+    # Load any persisted provider API keys (.env under MRP_USER_DIR) before the
+    # provider is built, so a configured Alpaca/Polygon key authenticates.
+    load_user_env()
 
     engine = create_db_engine()
     create_all(engine)  # ensure the SQLite schema exists on first launch

@@ -134,6 +134,12 @@ export interface ConfigFile {
   parsed: Record<string, unknown> | null;
 }
 
+export interface DataProviderSettings {
+  provider: string;
+  keys_present: Record<string, boolean>;
+  valid_providers: string[];
+}
+
 export interface Run {
   run_id: string;
   label: string | null;

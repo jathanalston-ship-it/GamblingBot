@@ -20,9 +20,9 @@ export async function apiGet<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
+async function apiWrite<T>(method: "POST" | "PUT", path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${apiBaseUrl()}${path}`, {
-    method: "POST",
+    method,
     headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
@@ -37,4 +37,12 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
     throw new Error(detail);
   }
   return (await res.json()) as T;
+}
+
+export function apiPost<T>(path: string, body?: unknown): Promise<T> {
+  return apiWrite<T>("POST", path, body);
+}
+
+export function apiPut<T>(path: string, body?: unknown): Promise<T> {
+  return apiWrite<T>("PUT", path, body);
 }

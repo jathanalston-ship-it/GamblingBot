@@ -105,6 +105,48 @@ def test_performance_summary(client):
     assert "sharpe" in body["performance"] and "objective" in body["performance"]
 
 
+def test_data_provider_get_default(client, tmp_path, monkeypatch):
+    monkeypatch.setenv("MRP_USER_DIR", str(tmp_path))
+    for var in ("ALPACA_API_KEY", "ALPACA_API_SECRET", "POLYGON_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+    body = client.get("/settings/data-provider").json()
+    assert body["provider"] == "yfinance"
+    assert body["keys_present"] == {
+        "alpaca_api_key": False,
+        "alpaca_api_secret": False,
+        "polygon_api_key": False,
+    }
+    assert "polygon" in body["valid_providers"]
+
+
+def test_data_provider_put_persists_and_hides_secret(client, tmp_path, monkeypatch):
+    monkeypatch.setenv("MRP_USER_DIR", str(tmp_path))
+    for var in ("ALPACA_API_KEY", "ALPACA_API_SECRET", "POLYGON_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+    r = client.put(
+        "/settings/data-provider",
+        json={"provider": "alpaca", "alpaca_api_key": "K", "alpaca_api_secret": "S"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["provider"] == "alpaca"
+    assert body["keys_present"]["alpaca_api_key"] is True
+    # The secret value is never echoed back.
+    assert "K" not in str(body["keys_present"])
+    assert "S" not in r.text.replace("keys_present", "")
+    # Persisted: a fresh GET still reports the provider + key present.
+    again = client.get("/settings/data-provider").json()
+    assert again["provider"] == "alpaca"
+    assert again["keys_present"]["alpaca_api_key"] is True
+
+
+def test_data_provider_put_rejects_unknown(client, tmp_path, monkeypatch):
+    monkeypatch.setenv("MRP_USER_DIR", str(tmp_path))
+    r = client.put("/settings/data-provider", json={"provider": "bogus"})
+    assert r.status_code == 400
+    assert "unknown provider" in r.json()["detail"]
+
+
 def test_performance_summary_emits_strict_json_with_no_losers():
     """profit_factor is inf when there are no losing trades; the payload must
     still be strict-valid JSON (no Infinity/NaN tokens) so the browser can parse
