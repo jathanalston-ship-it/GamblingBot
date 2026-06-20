@@ -24,6 +24,7 @@ import argparse
 import datetime as dt
 import sys
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -38,10 +39,19 @@ from momentum.persistence.database import (  # noqa: E402
     create_db_engine,
     create_session_factory,
 )
+from momentum.conviction.engine import ConvictionEngine  # noqa: E402
+from momentum.conviction.inputs import ConvictionInputs  # noqa: E402
 from momentum.persistence.models.audit_log import AuditLog  # noqa: E402
+from momentum.persistence.models.conviction_score import ConvictionScore  # noqa: E402
 from momentum.persistence.models.market_regime import MarketRegime  # noqa: E402
+from momentum.persistence.models.opportunity_classification import (  # noqa: E402
+    OpportunityClassification,
+)
+from momentum.persistence.models.optimization_result import OptimizationResult  # noqa: E402
 from momentum.persistence.models.portfolio_snapshot import PortfolioSnapshot  # noqa: E402
+from momentum.persistence.models.risk_metric import RiskMetric  # noqa: E402
 from momentum.persistence.models.run import Run  # noqa: E402
+from momentum.persistence.models.scan_result import ScanResult  # noqa: E402
 from momentum.persistence.models.signal import Signal  # noqa: E402
 from momentum.persistence.models.trade import Trade  # noqa: E402
 
@@ -91,6 +101,13 @@ def reset(session: Session) -> None:
     session.execute(delete(Trade).where(Trade.run_id == DEMO_TAG))
     session.execute(delete(Signal).where(Signal.run_id == DEMO_TAG))
     session.execute(delete(MarketRegime).where(MarketRegime.model_version == DEMO_TAG))
+    session.execute(delete(ScanResult).where(ScanResult.run_id == DEMO_TAG))
+    session.execute(delete(ConvictionScore).where(ConvictionScore.run_id == DEMO_TAG))
+    session.execute(
+        delete(OpportunityClassification).where(OpportunityClassification.run_id == DEMO_TAG)
+    )
+    session.execute(delete(RiskMetric).where(RiskMetric.run_id == DEMO_TAG))
+    session.execute(delete(OptimizationResult).where(OptimizationResult.run_id == DEMO_TAG))
     session.flush()
 
 
@@ -289,6 +306,189 @@ def seed_runs_and_audit(session: Session, trades: list[Trade]) -> None:
             )
 
 
+def build_candidates(rng: np.random.Generator) -> list[dict[str, Any]]:
+    """A ranked candidate per universe symbol with realistic scan features."""
+    cands: list[dict[str, Any]] = []
+    for i, (symbol, sector) in enumerate(SYMBOLS):
+        price = round(float(rng.uniform(40, 400)), 2)
+        cands.append(
+            {
+                "symbol": symbol,
+                "sector": sector,
+                "momentum_score": round(float(95 - i * 2.6 + rng.normal(0, 1.2)), 2),
+                "price": price,
+                "atr": round(price * 0.02, 3),
+                "dollar_volume": round(price * float(rng.uniform(3e6, 2e7)), 0),
+                "relative_volume": round(float(rng.uniform(1.1, 3.5)), 2),
+                "distance_from_ath": round(float(-rng.uniform(0.0, 0.08)), 4),
+                "ema_fast": round(price, 2),
+                "ema_mid": round(price * 0.97, 2),
+                "ema_slow": round(price * 0.93, 2),
+                "sector_rs": round(float(rng.uniform(0.55, 0.98)), 3),
+            }
+        )
+    cands.sort(key=lambda c: c["momentum_score"], reverse=True)
+    for rank, c in enumerate(cands, start=1):
+        c["rank"] = rank
+    return cands
+
+
+def seed_scan_results(session: Session, as_of: dt.date, cands: list[dict[str, Any]]) -> None:
+    for c in cands:
+        session.add(
+            ScanResult(
+                run_id=DEMO_TAG,
+                as_of=as_of,
+                model_version="v1",
+                symbol=c["symbol"],
+                rank=c["rank"],
+                momentum_score=c["momentum_score"],
+                passed=True,
+                price=c["price"],
+                dollar_volume=c["dollar_volume"],
+                relative_volume=c["relative_volume"],
+                distance_from_ath=c["distance_from_ath"],
+                ema_fast=c["ema_fast"],
+                ema_mid=c["ema_mid"],
+                ema_slow=c["ema_slow"],
+                atr=c["atr"],
+                sector=c["sector"],
+                sector_rs=c["sector_rs"],
+                components={
+                    "c_momentum": round(c["momentum_score"] / 100, 3),
+                    "c_trend": 0.8,
+                    "c_ath": 0.9,
+                    "c_rvol": round(min(1.0, c["relative_volume"] / 3.5), 3),
+                    "c_sector": c["sector_rs"],
+                },
+            )
+        )
+
+
+def seed_conviction(
+    session: Session, as_of: dt.date, cands: list[dict[str, Any]], rng: np.random.Generator
+) -> None:
+    engine = ConvictionEngine()
+    ts = dt.datetime.combine(as_of, dt.time(15, 50), tzinfo=UTC)
+    for c in cands:
+        inputs = ConvictionInputs(
+            market_regime="bull",
+            sector_strength=c["sector_rs"],
+            relative_volume=c["relative_volume"],
+            distance_to_ath=abs(c["distance_from_ath"]),
+            trend_strength=float(rng.uniform(20, 40)),
+            breadth=float(rng.uniform(0.45, 0.72)),
+            momentum_score=c["momentum_score"] / 100.0,
+            historical_expectancy_r=float(rng.uniform(0.2, 1.4)),
+            historical_sample_size=int(rng.integers(20, 60)),
+        )
+        result = engine.score(inputs)
+        session.add(
+            ConvictionScore.from_result(
+                result, symbol=c["symbol"], run_id=DEMO_TAG, as_of=as_of, ts=ts
+            )
+        )
+
+
+def seed_opportunity(
+    session: Session, as_of: dt.date, cands: list[dict[str, Any]], rng: np.random.Generator
+) -> None:
+    ts = dt.datetime.combine(as_of, dt.time(15, 50), tzinfo=UTC)
+    for c in cands:
+        score = round(float(min(100.0, max(0.0, c["momentum_score"] + rng.normal(0, 6)))), 2)
+        tier = "Home Run" if score >= 90 else "Enhanced" if score >= 70 else "Normal"
+        session.add(
+            OpportunityClassification(
+                run_id=DEMO_TAG,
+                symbol=c["symbol"],
+                as_of=as_of,
+                ts=ts,
+                tier=tier,
+                score=score,
+                new_ath=bool(c["distance_from_ath"] > -0.005),
+                model_version="v1",
+                new_ath_score=round(float(rng.uniform(0, 1)), 3),
+                momentum_score=round(c["momentum_score"] / 100, 3),
+                relative_volume=round(min(1.0, c["relative_volume"] / 3.5), 3),
+                regime_score=0.8,
+                sector_leadership=c["sector_rs"],
+                historical_edge=round(float(rng.uniform(0.3, 0.9)), 3),
+                breakdown={"tier": tier, "score": score},
+            )
+        )
+
+
+def seed_risk_metrics(
+    session: Session, as_of_dt: dt.datetime, session_date: dt.date, rng: np.random.Generator
+) -> None:
+    for window in ("inception", "90d", "30d"):
+        session.add(
+            RiskMetric(
+                run_id=DEMO_TAG,
+                as_of=as_of_dt,
+                session_date=session_date,
+                scope="portfolio",
+                window=window,
+                volatility_annual=round(float(rng.uniform(0.12, 0.20)), 4),
+                sharpe=round(float(rng.uniform(0.9, 1.8)), 3),
+                sortino=round(float(rng.uniform(1.2, 2.4)), 3),
+                calmar=round(float(rng.uniform(0.6, 1.3)), 3),
+                max_drawdown=round(float(-rng.uniform(0.04, 0.12)), 4),
+                current_drawdown=round(float(-rng.uniform(0.0, 0.03)), 4),
+                var_95=round(float(-rng.uniform(0.01, 0.03)), 4),
+                cvar_95=round(float(-rng.uniform(0.02, 0.05)), 4),
+                gross_exposure=round(float(rng.uniform(0.3, 0.6)), 3),
+                portfolio_heat=round(float(rng.uniform(0.01, 0.04)), 4),
+                win_rate=round(float(rng.uniform(0.38, 0.48)), 3),
+                profit_factor=round(float(rng.uniform(1.6, 2.8)), 3),
+                expectancy_r=round(float(rng.uniform(0.4, 0.9)), 3),
+                avg_win_r=round(float(rng.uniform(2.0, 3.5)), 3),
+                avg_loss_r=round(float(-rng.uniform(0.8, 1.0)), 3),
+                payoff_ratio=round(float(rng.uniform(2.0, 3.5)), 3),
+                num_trades=int(rng.integers(20, 55)),
+            )
+        )
+
+
+def seed_optimizations(session: Session, rng: np.random.Generator) -> int:
+    """A couple of optimization studies for the Backtesting screen."""
+    count = 0
+    for study, objective in (("breakout_v1", "sharpe"), ("regime_filter_v1", "expectancy_r")):
+        rows = []
+        for _ in range(7):
+            rows.append(
+                (
+                    int(rng.choice([20, 30, 50, 60, 80])),
+                    round(float(rng.choice([1.5, 2.0, 2.5, 3.0])), 1),
+                    round(float(rng.uniform(0.5, 1.8)), 4),
+                )
+            )
+        rows.sort(key=lambda r: r[2], reverse=True)
+        for rank, (lookback, atr_mult, obj) in enumerate(rows, start=1):
+            session.add(
+                OptimizationResult(
+                    study_name=study,
+                    optimizer="grid",
+                    run_id=DEMO_TAG,
+                    param_hash=f"{study}-{count:02d}",
+                    parameters={"breakout_lookback": lookback, "atr_mult": atr_mult},
+                    objective=objective,
+                    objective_value=obj,
+                    sample="full",
+                    sharpe=round(float(rng.uniform(0.6, 1.8)), 3),
+                    cagr=round(float(rng.uniform(0.08, 0.35)), 3),
+                    calmar=round(float(rng.uniform(0.5, 1.3)), 3),
+                    max_drawdown=round(float(-rng.uniform(0.06, 0.18)), 3),
+                    expectancy_r=round(float(rng.uniform(0.3, 0.9)), 3),
+                    num_trades=int(rng.integers(30, 120)),
+                    rank=rank,
+                    is_selected=(rank == 1),
+                )
+            )
+            count += 1
+    return count
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Seed the MRP demo dataset.")
     parser.add_argument("--reset-only", action="store_true", help="Delete demo rows and exit.")
@@ -316,6 +516,15 @@ def main() -> int:
         session.flush()
         seed_snapshots(session, trades, days)
         seed_runs_and_audit(session, trades)
+
+        as_of = days[-1]
+        as_of_dt = dt.datetime.combine(as_of, dt.time(16, 0), tzinfo=UTC)
+        cands = build_candidates(rng)
+        seed_scan_results(session, as_of, cands)
+        seed_conviction(session, as_of, cands, rng)
+        seed_opportunity(session, as_of, cands, rng)
+        seed_risk_metrics(session, as_of_dt, as_of, rng)
+        n_opt = seed_optimizations(session, rng)
         session.commit()
 
         wins = sum(1 for t in trades if (t.net_pnl or 0) > 0)
@@ -325,6 +534,11 @@ def main() -> int:
         print("  signals            : 100")
         print(f"  closed trades      : {len(trades)} ({wins} winners, net ${total_pnl:,.0f})")
         print("  portfolio snapshots: 30")
+        print(f"  scan candidates    : {len(cands)} (ranked)")
+        print(f"  conviction scores  : {len(cands)}")
+        print(f"  opportunity tiers  : {len(cands)}")
+        print("  risk metrics       : 3 (inception / 90d / 30d)")
+        print(f"  optimization rows  : {n_opt} (2 studies)")
         print("  run + audit trail  : 1 'demo' run (replay-ready)")
         print(f"\nDatabase: {engine.url}")
         print("Try:  mrp replay   |   mrp health   |   start the API and open the desktop app")

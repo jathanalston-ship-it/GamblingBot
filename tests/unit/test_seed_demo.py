@@ -15,9 +15,14 @@ from momentum.persistence.database import create_session_factory
 from momentum.persistence.models import (
     AuditLog,
     Base,
+    ConvictionScore,
     MarketRegime,
+    OpportunityClassification,
+    OptimizationResult,
     PortfolioSnapshot,
+    RiskMetric,
     Run,
+    ScanResult,
     Signal,
     Trade,
 )
@@ -58,6 +63,15 @@ def _seed(session: Session) -> None:
     session.flush()
     seed_demo.seed_snapshots(session, trades, days)
     seed_demo.seed_runs_and_audit(session, trades)
+
+    as_of = days[-1]
+    as_of_dt = dt.datetime.combine(as_of, dt.time(16, 0), tzinfo=seed_demo.UTC)
+    cands = seed_demo.build_candidates(rng)
+    seed_demo.seed_scan_results(session, as_of, cands)
+    seed_demo.seed_conviction(session, as_of, cands, rng)
+    seed_demo.seed_opportunity(session, as_of, cands, rng)
+    seed_demo.seed_risk_metrics(session, as_of_dt, as_of, rng)
+    seed_demo.seed_optimizations(session, rng)
     session.commit()
 
 
@@ -69,6 +83,23 @@ def test_seed_creates_expected_counts(session: Session) -> None:
     assert _count(session, MarketRegime) == 30
     assert _count(session, Run) == 1
     assert _count(session, AuditLog) > 0
+
+
+def test_seed_populates_research_screens(session: Session) -> None:
+    # Every desktop research screen has data straight after seed-demo.
+    _seed(session)
+    assert _count(session, ScanResult) == len(seed_demo.SYMBOLS)
+    assert _count(session, ConvictionScore) == len(seed_demo.SYMBOLS)
+    assert _count(session, OpportunityClassification) == len(seed_demo.SYMBOLS)
+    assert _count(session, RiskMetric) == 3
+    assert _count(session, OptimizationResult) > 0
+    # Ranks are 1..N and one optimization row per study is selected.
+    ranks = sorted(int(r.rank) for r in session.scalars(select(ScanResult)))
+    assert ranks == list(range(1, len(seed_demo.SYMBOLS) + 1))
+    selected = list(
+        session.scalars(select(OptimizationResult).where(OptimizationResult.is_selected))
+    )
+    assert len(selected) == 2  # one winner per study
 
 
 def test_all_trades_closed_and_positive_skew(session: Session) -> None:
@@ -88,7 +119,19 @@ def test_reset_is_idempotent(session: Session) -> None:
     _seed(session)
     seed_demo.reset(session)
     session.commit()
-    for model in (Signal, Trade, PortfolioSnapshot, MarketRegime, Run, AuditLog):
+    for model in (
+        Signal,
+        Trade,
+        PortfolioSnapshot,
+        MarketRegime,
+        Run,
+        AuditLog,
+        ScanResult,
+        ConvictionScore,
+        OpportunityClassification,
+        RiskMetric,
+        OptimizationResult,
+    ):
         assert _count(session, model) == 0
 
 

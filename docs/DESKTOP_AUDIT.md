@@ -52,15 +52,15 @@ returns, so "demo data" simply means the DB was seeded with `make seed-demo`.
 
 | Screen (nav) | Route | Implemented? | Data source (endpoint) | Live? | Populated by demo seed? |
 |---|---|---|---|---|---|
-| **Scan** (1) | `/scan` | ✅ display | `GET /universe/scans` (+ `/conviction`) | Live | ❌ `scan_results` not seeded → empty |
-| **Candidates** (2) | `/candidates` | ✅ (reuses Scan) | `GET /universe/scans`, `/candidates/{sym}` | Live | ❌ empty |
-| **Conviction** (3) | `/conviction` | ✅ display | `GET /conviction?symbol=` | Live | ❌ `conviction_scores` not seeded → empty |
-| **Analogs** (4) | `/analogs` | ✅ display | `GET /analogs?symbol=` | Live (computed from trades) | ⚠️ needs a selected symbol from the (empty) scan list |
-| **Backtest** (5) | `/backtest` | ✅ display | `GET /backtests/optimizations` | Live | ❌ `optimization_results` not seeded → empty |
-| **Replay** (6) | `/replay` | ❌ **Placeholder** | — | — | — |
+| **Scan** (1) | `/scan` | ✅ display | `GET /universe/scans` (+ `/conviction`) | Live | ✅ 15 ranked `scan_results` |
+| **Candidates** (2) | `/candidates` | ✅ (reuses Scan) | `GET /universe/scans`, `/candidates/{sym}` | Live | ✅ 15 candidates |
+| **Conviction** (3) | `/conviction` | ✅ display | `GET /conviction?symbol=` | Live | ✅ 15 `conviction_scores` (real engine) |
+| **Analogs** (4) | `/analogs` | ✅ display | `GET /analogs?symbol=` | Live (computed from trades) | ✅ a candidate is now selectable |
+| **Backtest** (5) | `/backtest` | ✅ display | `GET /backtests/optimizations` | Live | ✅ 14 `optimization_results` (2 studies) |
+| **Replay** (6) | `/replay` | ✅ implemented | `POST /actions/replay` | Live | ✅ 1 `demo` run |
 | **Paper** (7) | `/paper` | ❌ **Placeholder** | — | — | — |
 | **Live** (8) | `/live` | ❌ **Placeholder** (gated) | — | — | — |
-| **Portfolio** | `/portfolio` | ✅ display | `GET /portfolio/snapshots`, `/risk/metrics` | Live | ⚠️ equity curve ✅ (30 snapshots); risk metrics ❌ not seeded |
+| **Portfolio** | `/portfolio` | ✅ display | `GET /portfolio/snapshots`, `/risk/metrics` | Live | ✅ equity curve (30 snapshots) + 3 `risk_metrics` windows |
 | **Analytics** | `/analytics` | ✅ display | `GET /performance` (computed from trades) | Live | ✅ (50 demo trades → real metrics) |
 | **Settings** | `/settings` | ✅ functional (read) | `GET /settings/config[/{name}]` | Live (reads `config/*.yaml`) | ✅ always (repo configs) |
 | **Updates** | `/updates` | ✅ functional | `GET /update/status`, `POST /apply`, `/rollback` | Live | ✅ source install / degraded on packaged build |
@@ -73,13 +73,14 @@ returns, so "demo data" simply means the DB was seeded with `make seed-demo`.
   (the only POSTs in the API are `/update/apply` and `/update/rollback`). This is
   by design (the read API "never accepts write payloads"), not a bug — but it
   means the desktop app cannot *trigger* scans/backtests; it only views results.
-- **Demo seed gap.** `make seed-demo` populates `trades, signals,
-  portfolio_snapshots, market_regimes, runs, audit_log` — so **Analytics,
-  Portfolio (equity), Settings, Updates** have content, but the **Scanner,
-  Candidates, Conviction, Backtest-optimizations and Risk-metrics** screens are
-  **empty** under the demo seed (they need a real scan/backtest/risk run, or an
-  extended seeder). The Scan→Conviction→Analogs research loop is therefore empty
-  on a demo-seeded DB.
+- **Demo seed gap — RESOLVED.** `make seed-demo` now also populates
+  `scan_results` (15 ranked candidates), `conviction_scores` (15, via the real
+  `ConvictionEngine`), `opportunity_classifications` (15 tiers), `risk_metrics`
+  (3 windows) and `optimization_results` (14, 2 studies) — on top of the original
+  `trades, signals, portfolio_snapshots, market_regimes, runs, audit_log`. **Every
+  desktop screen now shows realistic data straight after the seed**, including the
+  full Scan→Candidates→Conviction→Analogs research loop and the Backtest /
+  Risk-metrics cards. See `docs/DEMO_DATA.md`.
 - **Dashboard endpoint unused.** `GET /dashboard` exists but no view consumes it
   (the index route renders Scan, not a dashboard).
 - **3 placeholder screens:** Replay, Paper, Live (Live is intentionally gated).
@@ -168,8 +169,9 @@ upstream change / packaged build to exercise fully.
 
 ## Recommendations (out of scope to implement here)
 
-1. **Extend `seed_demo.py`** to add `scan_results`, `conviction_scores` and a
-   `risk_metrics` / `optimization_results` row so every screen demos with data.
+1. **Extend `seed_demo.py`** — ✅ **Done**: the seeder now adds `scan_results`,
+   `conviction_scores`, `opportunity_classifications`, `risk_metrics` and
+   `optimization_results`, so every screen demos with data. See `docs/DEMO_DATA.md`.
 2. **Typecheck/build the desktop app in CI** — ✅ **Done**: `.github/workflows/desktop.yml`
    runs `npm install` → `npm run typecheck` (fails on any TS error) → `npm run
    build` → a headless Electron startup check on every push/PR. See

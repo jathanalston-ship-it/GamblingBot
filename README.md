@@ -80,7 +80,7 @@ metrics above.
 | **[docs/CLI.md](docs/CLI.md)** | The `mrp` CLI: `serve` / `paper-run` / `scan` / `health` / `replay`, logging, and usage examples (implemented). |
 | **[docs/UPDATER.md](docs/UPDATER.md)** | Local self-update (`mrp update` / `mrp rollback`): check → backup → pull → migrate → verify → restart, with automatic rollback (implemented). |
 | **[docs/SETUP.md](docs/SETUP.md)** | Fresh-machine setup: dependencies, env vars, database + migrations, backend/frontend startup, verification, troubleshooting. |
-| **[docs/DEMO_DATA.md](docs/DEMO_DATA.md)** | Demo dataset seeder: 50 trades, 100 signals, snapshots, regimes, replay data — explore the UI without the scanner. |
+| **[docs/DEMO_DATA.md](docs/DEMO_DATA.md)** | Demo dataset seeder: 50 trades, 100 signals, snapshots, regimes, 15 ranked scan/conviction/opportunity candidates, risk metrics, optimization results, replay data — every UI screen populated without the scanner. |
 | **[docs/WINDOWS_INSTALLER.md](docs/WINDOWS_INSTALLER.md)** | Momentum Lab Windows 11 installer: architecture, one-command build, NSIS packaging, shortcuts, icon, uninstall, startup checklist. |
 | **[docs/ROADMAP.md](docs/ROADMAP.md)** | Phased implementation order. |
 

@@ -145,9 +145,11 @@ trading platform for US equities. Python 3.12, strictly typed. See
   `docs/CLI.md`.
 - **Demo dataset** (`scripts/seed_demo.py`, `make seed-demo`) — a deterministic,
   idempotent seed (50 positive-skew closed trades, 100 signals, 30 portfolio
-  snapshots, 30 market regimes, a `demo` run + full audit trail) so the UI/API
-  can be demonstrated without the scanner. All rows tagged `demo`; replay-aligned
-  (`mrp replay --run-id demo`). See `docs/DEMO_DATA.md`.
+  snapshots, 30 market regimes, 15 ranked scan results + matching conviction
+  scores / opportunity tiers via the real `ConvictionEngine`, 3 risk-metric
+  windows, 14 optimization rows, a `demo` run + full audit trail) so **every
+  desktop screen shows realistic data** without the scanner. All rows tagged
+  `demo`; replay-aligned (`mrp replay --run-id demo`). See `docs/DEMO_DATA.md`.
 
 - **Windows installer ("Momentum Lab")** (`desktop/electron-builder.yml`,
   `desktop/build/{backend.spec,make_icon.py,icon.ico}`, `scripts/build_windows.ps1`)
