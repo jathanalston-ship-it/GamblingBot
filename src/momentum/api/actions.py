@@ -266,6 +266,22 @@ def seed_demo_data(
     return {"seeded": True, **counts}
 
 
+def refresh_lifecycles(
+    *,
+    session_factory: sessionmaker[Session],
+    run_id: str | None = None,
+    progress: Progress,
+) -> dict[str, Any]:
+    """Derive + persist every candidate's setup-lifecycle state (auto transitions)."""
+    from momentum.api import lifecycle_service
+
+    progress(0.2, "deriving lifecycle states")
+    with session_factory() as session:
+        n = lifecycle_service.refresh_lifecycles(session, run_id=run_id)
+    progress(1.0, "done")
+    return {"updated": n}
+
+
 def generate_watchlists(
     *,
     session_factory: sessionmaker[Session],

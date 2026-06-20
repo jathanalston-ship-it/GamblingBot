@@ -1,0 +1,22 @@
+# Setup-lifecycle thresholds. Copy to lifecycle.yaml to override.
+#
+# Every candidate is derived into exactly one state from its evidence (scan,
+# conviction, entry signal, open/closed trade). Transitions are generated
+# automatically by comparing the newly-derived state to the stored one.
+model_version: v1
+
+# Ready: conditions nearly met (high conviction, near the trigger, demand building)
+ready_conviction: 60.0
+ready_ath_distance: -0.04 # within 4% of the all-time high
+ready_rvol: 1.2 # relative volume building
+
+# Triggered: entry condition hit (broke out to/through the high)
+trigger_ath_distance: -0.005 # at or above the all-time high
+
+# Extended: the move has become crowded while a position is open
+extended_r: 3.0 # unrealized gain >= 3R, or
+extended_gain_pct: 0.20 # >= 20% above entry, or
+climax_rvol: 3.0 # blow-off volume at the highs
+
+# Failed: a Ready/Triggered setup that loses its gating (or breaks support)
+invalidate_on_scan_fail: true

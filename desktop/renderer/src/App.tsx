@@ -7,6 +7,7 @@ import Analogs from "./views/Analogs";
 import Analytics from "./views/Analytics";
 import Backtesting from "./views/Backtesting";
 import Conviction from "./views/Conviction";
+import Lifecycle from "./views/Lifecycle";
 import Paper from "./views/Paper";
 import Portfolio from "./views/Portfolio";
 import Replay from "./views/Replay";
@@ -46,6 +47,7 @@ export default function App() {
           }
         />
         <Route path="tradeplan" element={<TradePlan />} />
+        <Route path="lifecycle" element={<Lifecycle />} />
         <Route path="watchlists" element={<Watchlists />} />
         <Route path="portfolio" element={<Portfolio />} />
         <Route path="analytics" element={<Analytics />} />

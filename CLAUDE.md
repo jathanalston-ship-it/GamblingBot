@@ -184,6 +184,19 @@ trading platform for US equities. Python 3.12, strictly typed. See
   history date selector, generate, over-time comparison). Demo seeds two dated
   watchlists. See `docs/WATCHLISTS.md`.
 
+- **Setup lifecycle tracking** (`src/momentum/lifecycle/`, `api/lifecycle_service.py`,
+  `setup_lifecycles` table + migration `0012`) — every candidate is auto-derived
+  into exactly one state (Building → Ready → Triggered → Active → Extended →
+  Completed/Failed) from its scan/conviction/signal/trade evidence by a pure
+  `LifecycleEngine` (priority cascade; thresholds in `config/lifecycle.example.yaml`).
+  Persisted one row per `(run_id, symbol)` with `previous_state`/`state_since` + a
+  JSON transition history; `SetupLifecycleRepository.upsert` appends a transition
+  only on change (auto-generated). `refresh_lifecycles` runs as the final step of
+  every daily session (`track_lifecycles`) + `POST /actions/refresh-lifecycles`;
+  reads via `GET /lifecycles[/summary|/{symbol}]` (filter by state). Desktop
+  **Lifecycle** view: clickable counted pipeline, state filter, transition history.
+  See `docs/LIFECYCLE.md`.
+
 - **Trade-plan generation** (`src/momentum/tradeplan/`, `api/tradeplan_service.py`)
   — read-only, **no persistence**: derives entry / stop / three scale-out targets /
   reward:risk / expected hold / suggested size + portfolio risk for a candidate from

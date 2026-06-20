@@ -149,6 +149,7 @@ class DailyOrchestrationEngine:
         persist_portfolio: bool = True,
         generate_watchlists: bool = True,
         watchlist_config: WatchlistConfig | None = None,
+        track_lifecycles: bool = True,
     ) -> None:
         self.conviction = conviction
         self.risk = risk
@@ -163,6 +164,7 @@ class DailyOrchestrationEngine:
         self.persist_portfolio = persist_portfolio
         self.generate_watchlists = generate_watchlists
         self.watchlist_engine = WatchlistEngine(watchlist_config) if generate_watchlists else None
+        self.track_lifecycles = track_lifecycles
 
     def run_day(
         self,
@@ -241,6 +243,12 @@ class DailyOrchestrationEngine:
             if self.watchlist_engine is not None:
                 self._persist_watchlists(session, pipeline, scan, regime, as_of, when, run_id)
                 session.commit()
+
+            # 8. Refresh setup-lifecycle states (auto transitions) from the ledger.
+            if self.track_lifecycles:
+                from momentum.api.lifecycle_service import refresh_lifecycles
+
+                refresh_lifecycles(session, run_id=run_id, as_of=as_of)
         except Exception as exc:  # record the failure durably, then re-raise
             session.rollback()
             failed = runs.get(run_id)

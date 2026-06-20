@@ -319,6 +319,36 @@ class WatchlistComparisonOut(BaseModel):
     moved: list[WatchlistMoveOut]  # in both
 
 
+class LifecycleOut(_ORMModel):
+    """A persisted setup-lifecycle row (Lifecycle stage)."""
+
+    id: int
+    run_id: str | None
+    symbol: str
+    as_of: dt.date
+    state: str
+    previous_state: str | None
+    state_since: dt.date
+    reason: str | None
+    conviction: float | None
+    sector: str | None
+    history: list[dict[str, Any]] | None
+    model_version: str
+
+
+class LifecycleStateCount(BaseModel):
+    state: str
+    count: int
+
+
+class LifecycleSummaryOut(BaseModel):
+    """Per-state counts for the lifecycle pipeline view (canonical order)."""
+
+    run_id: str | None
+    total: int
+    states: list[LifecycleStateCount]
+
+
 class TargetLevelOut(BaseModel):
     """One scale-out target in a trade plan."""
 

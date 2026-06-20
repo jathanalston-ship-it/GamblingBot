@@ -139,6 +139,17 @@ def start_generate_watchlists(request: Request, params: ActionParams | None = No
     return JobOut(**_jobs(request).submit("generate-watchlists", fn).to_dict())
 
 
+@router.post("/refresh-lifecycles", response_model=JobOut, status_code=202)
+def start_refresh_lifecycles(request: Request, params: ActionParams | None = None) -> JobOut:
+    p = params or ActionParams()
+    sf = _session_factory(request)
+
+    def fn(progress: Progress) -> dict[str, object]:
+        return actions.refresh_lifecycles(session_factory=sf, run_id=p.run_id, progress=progress)
+
+    return JobOut(**_jobs(request).submit("refresh-lifecycles", fn).to_dict())
+
+
 @router.post("/paper-session", response_model=JobOut, status_code=202)
 def start_paper_session(request: Request, params: ActionParams | None = None) -> JobOut:
     p = params or ActionParams()

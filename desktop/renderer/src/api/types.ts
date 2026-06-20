@@ -134,6 +134,38 @@ export interface ConfigFile {
   parsed: Record<string, unknown> | null;
 }
 
+export interface LifecycleTransition {
+  state: string;
+  at: string;
+  reason: string | null;
+}
+
+export interface Lifecycle {
+  id: number;
+  run_id: string | null;
+  symbol: string;
+  as_of: string;
+  state: string;
+  previous_state: string | null;
+  state_since: string;
+  reason: string | null;
+  conviction: number | null;
+  sector: string | null;
+  history: LifecycleTransition[] | null;
+  model_version: string;
+}
+
+export interface LifecycleStateCount {
+  state: string;
+  count: number;
+}
+
+export interface LifecycleSummary {
+  run_id: string | null;
+  total: number;
+  states: LifecycleStateCount[];
+}
+
 export interface TradeTarget {
   label: string;
   price: number;

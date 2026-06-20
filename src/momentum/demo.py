@@ -33,6 +33,7 @@ from momentum.persistence.models.portfolio_snapshot import PortfolioSnapshot
 from momentum.persistence.models.risk_metric import RiskMetric
 from momentum.persistence.models.run import Run
 from momentum.persistence.models.scan_result import ScanResult
+from momentum.persistence.models.setup_lifecycle import SetupLifecycle
 from momentum.persistence.models.signal import Signal
 from momentum.persistence.models.trade import Trade
 from momentum.persistence.models.watchlist_entry import WatchlistEntryRow
@@ -96,6 +97,7 @@ def reset(session: Session) -> None:
     session.execute(delete(RiskMetric).where(RiskMetric.run_id == DEMO_TAG))
     session.execute(delete(OptimizationResult).where(OptimizationResult.run_id == DEMO_TAG))
     session.execute(delete(WatchlistEntryRow).where(WatchlistEntryRow.run_id == DEMO_TAG))
+    session.execute(delete(SetupLifecycle).where(SetupLifecycle.run_id == DEMO_TAG))
     session.flush()
 
 
@@ -520,6 +522,7 @@ def seed_all(session: Session, *, progress: ProgressFn | None = None) -> dict[st
     n_opt = seed_optimizations(session, rng)
     session.flush()
     n_watch = seed_watchlists(session, as_of, rng)
+    n_life = seed_lifecycles(session)
 
     _report(progress, 1.0, "done")
     return {
@@ -533,8 +536,62 @@ def seed_all(session: Session, *, progress: ProgressFn | None = None) -> dict[st
         "risk_metrics": 3,
         "optimization_results": n_opt,
         "watchlist_entries": n_watch,
+        "setup_lifecycles": n_life,
         "runs": 1,
     }
+
+
+def seed_lifecycles(session: Session) -> int:
+    """A deterministic spread across all seven states so the pipeline view is full.
+
+    Each non-Building setup is first written as ``Building`` then advanced, so the
+    persisted transition history shows a real move.
+    """
+    from momentum.persistence.repositories.setup_lifecycles import SetupLifecycleRepository
+
+    repo = SetupLifecycleRepository(session)
+    today = dt.date.today()
+    spread: list[tuple[str, str]] = [
+        ("Building", "setup forming"),
+        ("Building", "setup forming"),
+        ("Building", "setup forming"),
+        ("Ready", "conditions nearly met"),
+        ("Ready", "conditions nearly met"),
+        ("Triggered", "entry condition hit (breakout)"),
+        ("Triggered", "entry condition hit (breakout)"),
+        ("Active", "trade in progress"),
+        ("Active", "trade in progress"),
+        ("Extended", "move extended (+4.2R, climax volume)"),
+        ("Completed", "target reached (+5.1R)"),
+        ("Completed", "target reached (+2.4R)"),
+        ("Completed", "target reached (+3.8R)"),
+        ("Failed", "stopped out (-1.0R)"),
+        ("Failed", "setup invalidated (lost support)"),
+    ]
+    for i, ((symbol, sector), (state, reason)) in enumerate(zip(SYMBOLS, spread)):
+        conviction = round(90.0 - i * 3.0, 1)
+        repo.upsert(
+            symbol=symbol,
+            run_id=DEMO_TAG,
+            state="Building",
+            reason="setup forming",
+            as_of=today - dt.timedelta(days=3),
+            conviction=conviction,
+            sector=sector,
+            model_version=DEMO_TAG,
+        )
+        if state != "Building":
+            repo.upsert(
+                symbol=symbol,
+                run_id=DEMO_TAG,
+                state=state,
+                reason=reason,
+                as_of=today,
+                conviction=conviction,
+                sector=sector,
+                model_version=DEMO_TAG,
+            )
+    return len(SYMBOLS)
 
 
 def seed_watchlists(session: Session, as_of: dt.date, rng: np.random.Generator) -> int:

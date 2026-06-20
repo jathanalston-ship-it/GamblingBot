@@ -107,6 +107,28 @@ def test_performance_summary(client):
     assert "sharpe" in body["performance"] and "objective" in body["performance"]
 
 
+def test_lifecycle_endpoints(client, session_factory):
+    from momentum.api.lifecycle_service import refresh_lifecycles
+
+    with session_factory() as s:
+        n = refresh_lifecycles(s, run_id="bt1")
+    assert n >= 1
+
+    summ = client.get("/lifecycles/summary", params={"run_id": "bt1"}).json()
+    assert len(summ["states"]) == 7  # all canonical states present
+    assert {s["state"] for s in summ["states"]} >= {"Building", "Active", "Completed", "Failed"}
+    assert summ["total"] >= 1
+
+    rows = client.get("/lifecycles", params={"run_id": "bt1"}).json()
+    assert rows and all("state" in r and "history" in r for r in rows)
+    # filter by a state that exists in the result set
+    some_state = rows[0]["state"]
+    filtered = client.get("/lifecycles", params={"run_id": "bt1", "state": some_state}).json()
+    assert filtered and all(r["state"] == some_state for r in filtered)
+
+    assert client.get("/lifecycles/NOPE", params={"run_id": "bt1"}).status_code == 404
+
+
 def test_trade_plan_endpoint(client):
     body = client.get("/tradeplan/AAPL").json()
     assert body["symbol"] == "AAPL"
