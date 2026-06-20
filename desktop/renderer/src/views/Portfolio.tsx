@@ -1,11 +1,13 @@
 import type { PortfolioSnapshot, RiskMetric } from "../api/types";
 import { Card } from "../components/Card";
+import { EquityChart } from "../components/charts/EquityChart";
 import type { Column } from "../components/DataTable";
 import { DataTable } from "../components/DataTable";
 import { ErrorBox, Loading, PageTitle } from "../components/Page";
 import { Stat } from "../components/Stat";
 import { useApi } from "../hooks/useApi";
-import { date, money, num, pct } from "../lib/format";
+import { useWorkspace } from "../state/workspace";
+import { date, money, num, pct, signed } from "../lib/format";
 
 const nz = (v: unknown): number | null => (typeof v === "number" ? v : null);
 
@@ -27,9 +29,22 @@ const riskCols: Column<RiskMetric>[] = [
 ];
 
 export default function Portfolio() {
-  const snaps = useApi<PortfolioSnapshot[]>("/portfolio/snapshots?limit=400");
-  const risk = useApi<RiskMetric[]>("/risk/metrics?limit=100");
-  const latest = snaps.data?.[snaps.data.length - 1];
+  const { runId } = useWorkspace();
+  const runQ = runId ? `&run_id=${runId}` : "";
+  const snaps = useApi<PortfolioSnapshot[]>(`/portfolio/snapshots?limit=400${runQ}`);
+  const risk = useApi<RiskMetric[]>(`/risk/metrics?limit=100${runQ}`);
+
+  const rows = snaps.data ?? [];
+  const latest = rows[rows.length - 1];
+  const points = rows.map((s) => ({
+    label: date(s.session_date),
+    equity: s.equity,
+    drawdown: s.drawdown ?? 0,
+  }));
+  const drawdowns = rows
+    .map((s) => nz(s["drawdown"]))
+    .filter((v): v is number => typeof v === "number");
+  const maxDrawdown = drawdowns.length ? Math.min(...drawdowns) : null;
 
   return (
     <div>
@@ -41,16 +56,22 @@ export default function Portfolio() {
             value={money(latest?.equity ?? null)}
             hint={latest ? date(latest.session_date) : "no snapshot"}
           />
-          <Stat label="Snapshots" value={snaps.data?.length ?? 0} />
-          <Stat label="Risk Metrics" value={risk.data?.length ?? 0} />
+          <Stat
+            label="Max Drawdown"
+            value={<span className="text-bear">{pct(maxDrawdown, 1)}</span>}
+          />
+          <Stat
+            label="Day P&L"
+            value={signed(latest?.daily_pnl ?? null, 0)}
+          />
         </div>
-        <Card title="Equity Snapshots">
+        <Card title="Equity & Drawdown">
           {snaps.loading ? (
             <Loading />
           ) : snaps.error ? (
             <ErrorBox message={snaps.error} />
           ) : (
-            <DataTable columns={snapCols} rows={snaps.data ?? []} empty="No portfolio snapshots." />
+            <EquityChart points={points} />
           )}
         </Card>
         <Card title="Risk Metrics">
@@ -60,6 +81,15 @@ export default function Portfolio() {
             <ErrorBox message={risk.error} />
           ) : (
             <DataTable columns={riskCols} rows={risk.data ?? []} empty="No risk metrics." />
+          )}
+        </Card>
+        <Card title="Equity Snapshots">
+          {snaps.loading ? (
+            <Loading />
+          ) : snaps.error ? (
+            <ErrorBox message={snaps.error} />
+          ) : (
+            <DataTable columns={snapCols} rows={rows} empty="No portfolio snapshots." />
           )}
         </Card>
       </div>

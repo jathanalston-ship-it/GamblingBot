@@ -233,6 +233,28 @@ class ConfigFileOut(BaseModel):
     parsed: dict[str, Any] | None = None
 
 
+class AttributionGroupOut(BaseModel):
+    """Objective-first stats for one attribution slice (a sector, regime, reason)."""
+
+    key: str
+    num_trades: int
+    expectancy_r: float | None
+    profit_factor: float | None
+    avg_winner_r: float | None
+    avg_loser_r: float | None
+    win_rate: float | None
+    net_profit: float | None
+
+
+class AttributionOut(BaseModel):
+    """Performance sliced by sector, regime and exit reason (Analytics stage)."""
+
+    run_id: str | None
+    by_sector: list[AttributionGroupOut]
+    by_regime: list[AttributionGroupOut]
+    by_exit_reason: list[AttributionGroupOut]
+
+
 class DataProviderOut(BaseModel):
     """The current data-provider selection (secrets reported only as present/absent)."""
 
@@ -273,6 +295,9 @@ class ConvictionScoreOut(_ORMModel):
     momentum_score: float | None
     historical_edge: float | None
     breakdown: dict[str, Any] | None
+    # A plain-language summary of why the score was assigned (computed at read
+    # time from the breakdown's per-factor contributions).
+    narrative: str | None = None
 
 
 class OpportunityOut(_ORMModel):

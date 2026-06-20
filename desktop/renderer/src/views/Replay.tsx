@@ -8,14 +8,34 @@ import { useApi } from "../hooks/useApi";
 import { date, money, num, signed } from "../lib/format";
 import { useWorkspace } from "../state/workspace";
 
+type TradeFilter = "all" | "winners" | "losers";
+type TradeSort = "date" | "r" | "pnl";
+
 /** 6 · Replay — pick a completed trade and inspect how it played out. */
 export default function Replay() {
   const { runId, symbol, setSymbol } = useWorkspace();
   const path = `/trades?status=closed&limit=500${runId ? `&run_id=${runId}` : ""}`;
   const { data, error, loading } = useApi<Trade[]>(path);
 
-  const trades = useMemo(() => data ?? [], [data]);
+  const allTrades = useMemo(() => data ?? [], [data]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [filter, setFilter] = useState<TradeFilter>("all");
+  const [sort, setSort] = useState<TradeSort>("date");
+
+  const trades = useMemo(() => {
+    const filtered = allTrades.filter((t) => {
+      if (filter === "winners") return (t.net_pnl ?? 0) > 0;
+      if (filter === "losers") return (t.net_pnl ?? 0) < 0;
+      return true;
+    });
+    const sorted = [...filtered];
+    sorted.sort((a, b) => {
+      if (sort === "r") return (b.r_multiple ?? 0) - (a.r_multiple ?? 0);
+      if (sort === "pnl") return (b.net_pnl ?? 0) - (a.net_pnl ?? 0);
+      return (b.exit_ts ?? "").localeCompare(a.exit_ts ?? "");
+    });
+    return sorted;
+  }, [allTrades, filter, sort]);
 
   // Auto-select: keep the focused symbol if it has a trade, else the first row.
   useEffect(() => {
@@ -56,6 +76,10 @@ export default function Replay() {
           <TradeList
             trades={trades}
             selectedId={selectedId}
+            filter={filter}
+            sort={sort}
+            onFilter={setFilter}
+            onSort={setSort}
             onSelect={(t) => {
               setSelectedId(t.id ?? null);
               setSymbol(t.symbol);
@@ -77,14 +101,50 @@ export default function Replay() {
 function TradeList({
   trades,
   selectedId,
+  filter,
+  sort,
+  onFilter,
+  onSort,
   onSelect,
 }: {
   trades: Trade[];
   selectedId: number | null;
+  filter: TradeFilter;
+  sort: TradeSort;
+  onFilter: (f: TradeFilter) => void;
+  onSort: (s: TradeSort) => void;
   onSelect: (t: Trade) => void;
 }) {
+  const selectClass =
+    "rounded border border-surface-border bg-surface px-1.5 py-1 text-xs text-slate-300";
   return (
     <Card title={`Completed trades · ${trades.length}`}>
+      <div className="mb-2 flex items-center gap-2">
+        <label className="flex items-center gap-1 text-xs text-slate-500">
+          Filter
+          <select
+            value={filter}
+            onChange={(e) => onFilter(e.target.value as TradeFilter)}
+            className={selectClass}
+          >
+            <option value="all">All</option>
+            <option value="winners">Winners</option>
+            <option value="losers">Losers</option>
+          </select>
+        </label>
+        <label className="flex items-center gap-1 text-xs text-slate-500">
+          Sort
+          <select
+            value={sort}
+            onChange={(e) => onSort(e.target.value as TradeSort)}
+            className={selectClass}
+          >
+            <option value="date">Date</option>
+            <option value="r">R-multiple</option>
+            <option value="pnl">P&amp;L</option>
+          </select>
+        </label>
+      </div>
       <ul className="-m-1 flex max-h-[70vh] flex-col gap-1 overflow-auto p-1">
         {trades.map((t, i) => {
           const win = (t.net_pnl ?? 0) > 0;
@@ -211,11 +271,61 @@ function TradeDetail({ trade, runId }: { trade: Trade; runId: string | null }) {
         </div>
       </Card>
 
+      {/* notes */}
+      <NotesCard tradeId={trade.id} />
+
       {/* timeline */}
       <Card title="Timeline">
+        <p className="mb-2 text-xs text-slate-500">
+          schematic (entry → MAE → MFE → exit), not actual price path
+        </p>
         <TradeTimeline trade={trade} />
       </Card>
     </div>
+  );
+}
+
+/* ── Notes ──────────────────────────────────────────────────────────────── */
+
+function NotesCard({ tradeId }: { tradeId: number | undefined }) {
+  const [text, setText] = useState("");
+
+  useEffect(() => {
+    if (tradeId == null) {
+      setText("");
+      return;
+    }
+    try {
+      const stored = window.localStorage.getItem(`mrp.replay.notes.${tradeId}`);
+      setText(stored ?? "");
+    } catch {
+      setText("");
+    }
+  }, [tradeId]);
+
+  const onChange = (value: string): void => {
+    setText(value);
+    if (tradeId == null) return;
+    try {
+      window.localStorage.setItem(`mrp.replay.notes.${tradeId}`, value);
+    } catch {
+      // ignore storage failures (quota / private mode)
+    }
+  };
+
+  return (
+    <Card title="Notes">
+      {tradeId == null ? (
+        <p className="text-xs text-slate-500">Notes unavailable for this trade.</p>
+      ) : (
+        <textarea
+          value={text}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="Your notes on this trade (saved locally)…"
+          className="h-24 w-full resize-y rounded border border-surface-border bg-surface px-2 py-1.5 text-sm text-slate-200 placeholder:text-slate-500 focus:border-accent focus:outline-none"
+        />
+      )}
+    </Card>
   );
 }
 

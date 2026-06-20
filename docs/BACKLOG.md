@@ -3,6 +3,26 @@
 Deferred / future work, parked here so sessions don't re-discover it. Move an
 item into a subsystem doc when it becomes active.
 
+## Trader-UI review — deferred (need market-data plumbing, not offline-testable)
+
+These items from the daily-use UI review were intentionally deferred because they
+require a live quotes/bars feed or reference data the system doesn't yet ingest;
+they belong in a dedicated market-data slice with its own tests:
+
+- **Live mark-to-market on open positions** (Paper) — current price, unrealized
+  P&L, current R, distance-to-stop/target. Needs a quotes endpoint hitting the
+  provider. UI has placeholder columns (% equity, per-position heat) + a caption.
+- **Real OHLC price charts** with entry/exit/stop overlays (Scan inspector,
+  Conviction, Replay) — needs a `/bars` endpoint serving cached OHLCV. Replay's
+  excursion chart is labeled schematic in the meantime.
+- **Event & liquidity columns** on candidates — earnings/ex-div flags, $ADV,
+  spread, ATR — need a corporate-actions/liquidity data source.
+- **Full backtest report** (equity curve, drawdown, trade list, OOS split,
+  vs-benchmark) — needs per-run backtest detail persistence; Backtesting now
+  renders params as labeled fields instead of raw JSON, but is still summary-only.
+- **VIX / breadth** in the context bar — not in the regime feed; realized vol
+  (RV) is shown as a proxy beside ADX.
+
 ## Known follow-ups
 
 - **Stale remote branch** — `claude/admiring-feynman-n8rhuj` still exists on the

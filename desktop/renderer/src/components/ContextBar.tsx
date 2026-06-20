@@ -1,26 +1,32 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
-import type { Regime, Run } from "../api/types";
+import type { PortfolioSnapshot, Regime, Run } from "../api/types";
 import { useApi } from "../hooks/useApi";
+import { money, pct, signed } from "../lib/format";
 import { useUpdateStatus } from "../state/updates";
 import { useWorkspace } from "../state/workspace";
-import { ActionButton } from "./ActionButton";
 import { Badge, regimeTone } from "./Badge";
 
-/** The persistent context bar: run selector · live regime · ⌘K · selected symbol · paper/live. */
+/** The persistent context bar: run selector · live regime · account · ⌘K · symbol · paper/live. */
 export function ContextBar({ onOpenPalette }: { onOpenPalette: () => void }) {
   const { runId, setRunId, symbol } = useWorkspace();
   const navigate = useNavigate();
   const update = useUpdateStatus();
   const runs = useApi<Run[]>("/runs");
   const regime = useApi<Regime>("/regimes/latest");
+  const snaps = useApi<PortfolioSnapshot[]>("/portfolio/snapshots?limit=400");
 
   useEffect(() => {
     if (!runId && runs.data && runs.data.length > 0) setRunId(runs.data[0].run_id);
   }, [runId, runs.data, setRunId]);
 
   const adx = regime.data ? regime.data["adx"] : null;
+  const rv = regime.data ? regime.data["realized_vol"] : null;
+
+  const latest =
+    snaps.data && snaps.data.length > 0 ? snaps.data[snaps.data.length - 1] : null;
+  const dayPnl = latest?.daily_pnl ?? null;
 
   return (
     <header className="flex items-center gap-4 border-b border-surface-border bg-surface-raised px-4 py-2 text-sm">
@@ -49,29 +55,39 @@ export function ContextBar({ onOpenPalette }: { onOpenPalette: () => void }) {
           <span className="text-slate-500">no regime</span>
         )}
         {adx != null ? <span className="text-xs text-slate-500">ADX {String(adx)}</span> : null}
+        {typeof rv === "number" ? (
+          <span className="text-xs text-slate-500">RV {pct(rv, 1)}</span>
+        ) : null}
       </span>
 
-      <span className="ml-auto flex items-center gap-2">
-        <ActionButton
-          label="Load sample data"
-          path="/actions/seed-demo"
-          variant="ghost"
-          onDone={() => window.location.reload()}
-        />
-        <ActionButton label="Refresh data" path="/actions/refresh-data" variant="ghost" />
-        <ActionButton
-          label="Paper session"
-          path="/actions/paper-session"
-          variant="ghost"
-          onDone={() => runs.reload()}
-        />
+      <span className="flex items-center gap-4 text-xs">
+        <span className="flex items-center gap-1">
+          <span className="text-slate-500">Equity</span>
+          <span className="tabular-nums text-slate-200">{money(latest?.equity ?? null)}</span>
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="text-slate-500">Day P&L</span>
+          {dayPnl == null ? (
+            <span className="tabular-nums text-slate-500">—</span>
+          ) : (
+            <span className={`tabular-nums ${dayPnl >= 0 ? "text-bull" : "text-bear"}`}>
+              {signed(dayPnl, 0)}
+            </span>
+          )}
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="text-slate-500">Heat</span>
+          <span className="tabular-nums text-slate-200">
+            {latest?.portfolio_heat != null ? pct(latest.portfolio_heat, 1) : "—"}
+          </span>
+        </span>
       </span>
 
       {update.available ? (
         <button
           onClick={() => navigate("/updates")}
           title={update.version ? `Version ${update.version}` : "A new version is available"}
-          className="flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 px-2.5 py-1 text-xs text-accent hover:bg-accent/20"
+          className="ml-auto flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 px-2.5 py-1 text-xs text-accent hover:bg-accent/20"
         >
           <span className="h-1.5 w-1.5 rounded-full bg-accent" />
           {update.downloaded ? "Update ready" : "Update available"}
@@ -80,7 +96,7 @@ export function ContextBar({ onOpenPalette }: { onOpenPalette: () => void }) {
 
       <button
         onClick={onOpenPalette}
-        className="rounded border border-surface-border px-2 py-1 text-xs text-slate-400 hover:text-slate-200"
+        className={`${update.available ? "" : "ml-auto"} rounded border border-surface-border px-2 py-1 text-xs text-slate-400 hover:text-slate-200`}
       >
         ⌘K · search / command
       </button>

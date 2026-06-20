@@ -164,7 +164,26 @@ export interface ConvictionScore {
   config_hash: string | null;
   momentum_score: number | null;
   breakdown: { score?: number; band?: string; components?: ConvictionComponent[] } | null;
+  narrative: string | null;
   [k: string]: unknown;
+}
+
+export interface AttributionGroup {
+  key: string;
+  num_trades: number;
+  expectancy_r: number | null;
+  profit_factor: number | null;
+  avg_winner_r: number | null;
+  avg_loser_r: number | null;
+  win_rate: number | null;
+  net_profit: number | null;
+}
+
+export interface Attribution {
+  run_id: string | null;
+  by_sector: AttributionGroup[];
+  by_regime: AttributionGroup[];
+  by_exit_reason: AttributionGroup[];
 }
 
 export interface Opportunity {

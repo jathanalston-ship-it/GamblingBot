@@ -16,6 +16,7 @@ export default function Paper() {
   const navigate = useNavigate();
   const { setRunId, setSymbol } = useWorkspace();
   const [run, setRun] = useState<string | null>(null); // selected session (null = all)
+  const [showAudit, setShowAudit] = useState(false);
   const runQ = run ? `&run_id=${run}` : "";
 
   const runs = useApi<RunDetail[]>("/runs/recent?limit=12");
@@ -98,13 +99,26 @@ export default function Paper() {
               state={openT}
               empty="No open positions. Run a paper session to enter trades."
             >
-              {(rows) => <TradeTable rows={rows} onPick={openReplay} kind="open" />}
+              {(rows) => (
+                <TradeTable
+                  rows={rows}
+                  onPick={openReplay}
+                  kind="open"
+                  equity={latest?.equity ?? null}
+                />
+              )}
             </Async>
+            <p className="mt-2 text-xs text-slate-500">
+              Mark-to-market (live price / unrealized P&amp;L) requires a market-data feed — coming
+              with the quotes endpoint.
+            </p>
           </Card>
 
           <Card title={`Closed Positions · ${closedT.data?.length ?? 0}`}>
             <Async state={closedT} empty="No closed positions yet.">
-              {(rows) => <TradeTable rows={rows} onPick={openReplay} kind="closed" />}
+              {(rows) => (
+                <TradeTable rows={rows} onPick={openReplay} kind="closed" equity={null} />
+              )}
             </Async>
           </Card>
 
@@ -144,11 +158,30 @@ export default function Paper() {
             </Card>
           ) : null}
 
-          <Card title={`Recent Audit Events · ${aud.data?.length ?? 0}`}>
-            <Async state={aud} empty="No audit events.">
-              {(rows) => <AuditList rows={rows} />}
-            </Async>
-          </Card>
+          {showAudit ? (
+            <Card
+              title={`Recent Audit Events · ${aud.data?.length ?? 0}`}
+              action={
+                <button
+                  onClick={() => setShowAudit(false)}
+                  className="rounded bg-surface px-2 py-1 text-xs text-slate-400 hover:text-slate-200"
+                >
+                  Hide
+                </button>
+              }
+            >
+              <Async state={aud} empty="No audit events.">
+                {(rows) => <AuditList rows={rows} />}
+              </Async>
+            </Card>
+          ) : (
+            <button
+              onClick={() => setShowAudit(true)}
+              className="self-start rounded border border-surface-border bg-surface-raised px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200"
+            >
+              Show audit trail
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -193,11 +226,14 @@ function TradeTable({
   rows,
   onPick,
   kind,
+  equity,
 }: {
   rows: Trade[];
   onPick: (t: Trade) => void;
   kind: "open" | "closed";
+  equity: number | null;
 }): ReactNode {
+  const open = kind === "open";
   return (
     <table className="w-full text-sm">
       <thead className="text-xs uppercase tracking-wide text-slate-400">
@@ -205,35 +241,59 @@ function TradeTable({
           <th className="px-2 py-1.5 font-medium">Symbol</th>
           <th className="px-2 py-1.5 text-right font-medium">Qty</th>
           <th className="px-2 py-1.5 text-right font-medium">Entry</th>
-          <th className="px-2 py-1.5 text-right font-medium">{kind === "open" ? "Opened" : "Exit"}</th>
-          <th className="px-2 py-1.5 text-right font-medium">{kind === "open" ? "Risk" : "Net P&L"}</th>
+          <th className="px-2 py-1.5 text-right font-medium">{open ? "Opened" : "Exit"}</th>
+          {open ? (
+            <>
+              <th className="px-2 py-1.5 text-right font-medium">% Equity</th>
+              <th className="px-2 py-1.5 text-right font-medium">Heat</th>
+            </>
+          ) : (
+            <th className="px-2 py-1.5 text-right font-medium">Net P&L</th>
+          )}
         </tr>
       </thead>
       <tbody>
-        {rows.map((t, i) => (
-          <tr
-            key={t.id ?? i}
-            onClick={() => onPick(t)}
-            className="cursor-pointer border-b border-surface-border/40 hover:bg-surface/50"
-            title="Open in Replay"
-          >
-            <td className="px-2 py-1.5 font-medium text-slate-200">{t.symbol}</td>
-            <td className="px-2 py-1.5 text-right tabular-nums text-slate-300">{num(t.quantity, 0)}</td>
-            <td className="px-2 py-1.5 text-right tabular-nums text-slate-300">{money(t.entry_price)}</td>
-            <td className="px-2 py-1.5 text-right tabular-nums text-slate-400">
-              {date(kind === "open" ? t.entry_ts : t.exit_ts)}
-            </td>
-            <td className="px-2 py-1.5 text-right tabular-nums">
-              {kind === "open" ? (
-                <span className="text-slate-300">{money(t.initial_risk)}</span>
+        {rows.map((t, i) => {
+          const notional =
+            t.quantity != null && t.entry_price != null ? t.quantity * t.entry_price : null;
+          const pctEquity =
+            notional != null && equity != null && equity !== 0 ? notional / equity : null;
+          const heat =
+            t.initial_risk != null && equity != null && equity !== 0
+              ? t.initial_risk / equity
+              : null;
+          return (
+            <tr
+              key={t.id ?? i}
+              onClick={() => onPick(t)}
+              className="cursor-pointer border-b border-surface-border/40 hover:bg-surface/50"
+              title="Open in Replay"
+            >
+              <td className="px-2 py-1.5 font-medium text-slate-200">{t.symbol}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums text-slate-300">{num(t.quantity, 0)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums text-slate-300">{money(t.entry_price)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums text-slate-400">
+                {date(open ? t.entry_ts : t.exit_ts)}
+              </td>
+              {open ? (
+                <>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-slate-300">
+                    {pctEquity != null ? pct(pctEquity, 1) : "—"}
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-slate-300">
+                    {heat != null ? pct(heat, 2) : "—"}
+                  </td>
+                </>
               ) : (
-                <span className={(t.net_pnl ?? 0) >= 0 ? "text-bull" : "text-bear"}>
-                  {money(t.net_pnl)}
-                </span>
+                <td className="px-2 py-1.5 text-right tabular-nums">
+                  <span className={(t.net_pnl ?? 0) >= 0 ? "text-bull" : "text-bear"}>
+                    {money(t.net_pnl)}
+                  </span>
+                </td>
               )}
-            </td>
-          </tr>
-        ))}
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );

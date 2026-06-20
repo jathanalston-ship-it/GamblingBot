@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime as dt
+
 import pytest
 
 
@@ -103,6 +105,84 @@ def test_performance_summary(client):
     # equity curve present (3 snapshots) -> full performance block computed
     assert body["performance"] is not None
     assert "sharpe" in body["performance"] and "objective" in body["performance"]
+
+
+def test_attribution_endpoint_slices_closed_trades(client):
+    body = client.get("/performance/attribution").json()
+    sectors = {g["key"]: g for g in body["by_sector"]}
+    assert sectors["Technology"]["num_trades"] == 2  # one win + one loss, both closed
+    regimes = {g["key"]: g for g in body["by_regime"]}
+    assert regimes["bull"]["num_trades"] == 2
+    reasons = {g["key"] for g in body["by_exit_reason"]}
+    assert {"trailing_stop", "stop"} <= reasons
+    # strict-JSON safe (no Infinity/NaN even with a one-sided group)
+    assert "Infinity" not in client.get("/performance/attribution").text
+
+
+def test_conviction_narrative_built_from_breakdown():
+    from momentum.api.schemas import ConvictionScoreOut
+    from momentum.api.services import _with_narrative
+
+    out = ConvictionScoreOut(
+        id=1,
+        run_id=None,
+        symbol="NVDA",
+        as_of=dt.date(2024, 1, 2),
+        score=87.0,
+        band="extreme",
+        model_version="v1",
+        config_hash=None,
+        regime_score=None,
+        sector_strength=None,
+        relative_volume=None,
+        distance_to_ath=None,
+        trend_strength=None,
+        breadth=None,
+        momentum_score=None,
+        historical_edge=None,
+        breakdown={
+            "components": [
+                {"name": "relative_volume", "contribution": 18.0},
+                {"name": "regime", "contribution": 10.0},
+                {"name": "historical_edge", "contribution": 12.0},
+                {"name": "volatility_penalty", "contribution": -7.0},
+            ]
+        },
+    )
+    narrative = _with_narrative(out).narrative
+    assert narrative is not None
+    assert narrative.startswith("NVDA scores 87 (extreme)")
+    # top-3 positive drivers, humanized
+    assert "relative volume" in narrative
+    assert "historical analog performance" in narrative
+    # the negative is called out as a brake
+    assert "held back by volatility" in narrative
+
+
+def test_conviction_narrative_none_without_breakdown():
+    from momentum.api.schemas import ConvictionScoreOut
+    from momentum.api.services import _with_narrative
+
+    out = ConvictionScoreOut(
+        id=1,
+        run_id=None,
+        symbol="AAPL",
+        as_of=dt.date(2024, 1, 2),
+        score=50.0,
+        band="medium",
+        model_version="v1",
+        config_hash=None,
+        regime_score=None,
+        sector_strength=None,
+        relative_volume=None,
+        distance_to_ath=None,
+        trend_strength=None,
+        breadth=None,
+        momentum_score=None,
+        historical_edge=None,
+        breakdown=None,
+    )
+    assert _with_narrative(out).narrative is None
 
 
 def test_data_provider_get_default(client, tmp_path, monkeypatch):

@@ -7,10 +7,20 @@ import { ErrorBox, Loading, PageTitle } from "../components/Page";
 import { useApi } from "../hooks/useApi";
 import { num } from "../lib/format";
 
-const params = (o: Optimization): string => {
-  const p = o["params"];
-  return p && typeof p === "object" ? JSON.stringify(p) : "—";
-};
+function ParamPills({ value }: { value: unknown }) {
+  if (!value || typeof value !== "object") return <span className="text-slate-500">—</span>;
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length === 0) return <span className="text-slate-500">—</span>;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {entries.map(([key, val]) => (
+        <span key={key} className="rounded bg-surface px-1.5 py-0.5 text-xs">
+          <span className="text-slate-500">{key}</span> {String(val)}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 const cols: Column<Optimization>[] = [
   { key: "study_name", header: "Study" },
@@ -18,7 +28,7 @@ const cols: Column<Optimization>[] = [
   {
     key: "params",
     header: "Parameters",
-    render: (o) => <span className="text-xs text-slate-400">{params(o)}</span>,
+    render: (o) => <ParamPills value={o["params"]} />,
   },
 ];
 

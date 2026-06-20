@@ -18,10 +18,13 @@ import yaml
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from momentum.analytics import attribution as attr
 from momentum.analytics.performance import analyze_performance
-from momentum.analytics.trade_analysis import compute_trade_stats
+from momentum.analytics.trade_analysis import TradeStats, compute_trade_stats
 from momentum.api.schemas import (
     AnalogsOut,
+    AttributionGroupOut,
+    AttributionOut,
     AuditEventOut,
     CandidateDetailOut,
     ConfigFileOut,
@@ -300,6 +303,57 @@ def list_audit(
     return [AuditEventOut.model_validate(e) for e in events]
 
 
+def _humanize(name: str) -> str:
+    """Turn a component key (``relative_volume``) into a phrase (``relative volume``)."""
+    pretty = name.replace("_", " ").strip()
+    # A few nicer aliases for the common factors.
+    aliases = {
+        "distance to ath": "proximity to all-time highs",
+        "regime": "market regime",
+        "historical edge": "historical analog performance",
+        "sector strength": "sector leadership",
+        "trend strength": "trend quality",
+        "volatility penalty": "volatility",
+    }
+    return aliases.get(pretty, pretty)
+
+
+def _conviction_narrative(out: ConvictionScoreOut) -> str | None:
+    """Plain-language summary built from the breakdown's per-factor contributions."""
+    breakdown = out.breakdown or {}
+    components = breakdown.get("components")
+    if not isinstance(components, list) or not components:
+        return None
+    comps = [
+        c
+        for c in components
+        if isinstance(c, dict) and isinstance(c.get("contribution"), int | float)
+    ]
+    if not comps:
+        return None
+    comps.sort(key=lambda c: float(c["contribution"]), reverse=True)
+    positives = [c for c in comps if float(c["contribution"]) > 0][:3]
+    negatives = [c for c in comps if float(c["contribution"]) < 0]
+    if not positives:
+        return None
+    drivers = [_humanize(str(c.get("name", ""))) for c in positives]
+    if len(drivers) == 1:
+        driver_text = drivers[0]
+    elif len(drivers) == 2:
+        driver_text = f"{drivers[0]} and {drivers[1]}"
+    else:
+        driver_text = f"{drivers[0]}, {drivers[1]} and {drivers[2]}"
+    text = f"{out.symbol} scores {out.score:.0f} ({out.band}), driven by strong {driver_text}"
+    if negatives:
+        worst = min(negatives, key=lambda c: float(c["contribution"]))
+        text += f", held back by {_humanize(str(worst.get('name', '')))}"
+    return text + "."
+
+
+def _with_narrative(out: ConvictionScoreOut) -> ConvictionScoreOut:
+    return out.model_copy(update={"narrative": _conviction_narrative(out)})
+
+
 def list_conviction(
     session: Session, *, symbol: str | None = None, run_id: str | None = None, limit: int = 100
 ) -> list[ConvictionScoreOut]:
@@ -309,14 +363,47 @@ def list_conviction(
     if run_id:
         stmt = stmt.where(ConvictionScore.run_id == run_id)
     stmt = stmt.order_by(ConvictionScore.as_of.desc()).limit(limit)
-    return [ConvictionScoreOut.model_validate(row) for row in session.scalars(stmt)]
+    return [
+        _with_narrative(ConvictionScoreOut.model_validate(row)) for row in session.scalars(stmt)
+    ]
 
 
 def latest_conviction(
     session: Session, symbol: str, run_id: str | None = None
 ) -> ConvictionScoreOut | None:
     rows = ConvictionScoreRepository(session).for_symbol(symbol, run_id)
-    return ConvictionScoreOut.model_validate(rows[0]) if rows else None
+    return _with_narrative(ConvictionScoreOut.model_validate(rows[0])) if rows else None
+
+
+def _attribution_group(key: str, stats: TradeStats) -> AttributionGroupOut:
+    safe = _json_safe(asdict(stats))
+    return AttributionGroupOut(
+        key=key,
+        num_trades=stats.num_trades,
+        expectancy_r=safe["expectancy_r"],
+        profit_factor=safe["profit_factor"],
+        avg_winner_r=safe["avg_winner_r"],
+        avg_loser_r=safe["avg_loser_r"],
+        win_rate=safe["win_rate"],
+        net_profit=safe["net_profit"],
+    )
+
+
+def performance_attribution(
+    session: Session, *, run_id: str | None = None, min_trades: int = 1
+) -> AttributionOut:
+    """Slice closed-trade performance by sector, regime and exit reason."""
+    trades = TradeRepository(session).analytics_trades(run_id)
+
+    def groups(by: dict[str, TradeStats]) -> list[AttributionGroupOut]:
+        return [_attribution_group(k, v) for k, v in by.items()]
+
+    return AttributionOut(
+        run_id=run_id,
+        by_sector=groups(attr.by_sector(trades, min_trades=min_trades)),
+        by_regime=groups(attr.by_regime(trades, min_trades=min_trades)),
+        by_exit_reason=groups(attr.by_exit_reason(trades, min_trades=min_trades)),
+    )
 
 
 def list_opportunity(

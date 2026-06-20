@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 
 import type { Analogs as AnalogsData, Trade } from "../api/types";
 import { Badge, regimeTone } from "../components/Badge";
+import { Histogram } from "../components/charts/Histogram";
 import type { Column } from "../components/DataTable";
 import { DataTable } from "../components/DataTable";
 import { Stat } from "../components/Stat";
@@ -53,6 +54,9 @@ function Body({ symbol, runId }: { symbol: string; runId: string | null }) {
   if (error) return <div className="p-6 text-sm text-bear">Failed: {error}</div>;
   if (!data) return null;
 
+  const rMultiples = data.trades.map((t) => t.r_multiple ?? 0);
+  const smallSample = data.sample_size < 20;
+
   return (
     <div className="p-4">
       <div className="mb-4 flex items-center gap-3">
@@ -65,12 +69,28 @@ function Body({ symbol, runId }: { symbol: string; runId: string | null }) {
         <span className="ml-auto text-sm text-slate-400">n = {data.sample_size}</span>
       </div>
 
-      <div className="mb-5 grid grid-cols-2 gap-4 md:grid-cols-5">
+      <div className="mb-2 grid grid-cols-2 gap-4 md:grid-cols-5">
         <Stat label="Expectancy" value={`${num(data.expectancy_r, 2)} R`} />
-        <Stat label="Win rate" value={pct(data.win_rate)} />
         <Stat label="Avg winner" value={`${num(data.avg_winner_r, 2)} R`} />
         <Stat label="Avg loser" value={`${num(data.avg_loser_r, 2)} R`} />
         <Stat label="Sample" value={data.sample_size} />
+        <div className="rounded-lg border border-surface-border bg-surface-raised p-4 opacity-70">
+          <div className="text-xs uppercase tracking-wide text-slate-500">Win rate</div>
+          <div className="mt-1 text-base font-medium text-slate-400">{pct(data.win_rate)}</div>
+        </div>
+      </div>
+
+      {smallSample ? (
+        <div className="mb-4 text-xs text-neutral">
+          ⚠ Small sample (n={data.sample_size}) — treat averages as indicative, not reliable.
+        </div>
+      ) : null}
+
+      <div className="mb-5 rounded-lg border border-surface-border bg-surface-raised p-3">
+        <div className="mb-2 text-xs uppercase tracking-wide text-slate-400">
+          R-multiple distribution
+        </div>
+        <Histogram values={rMultiples} />
       </div>
 
       <DataTable

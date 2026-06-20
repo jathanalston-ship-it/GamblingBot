@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import type { ScanResult } from "../api/types";
@@ -9,17 +9,52 @@ import { useApi } from "../hooks/useApi";
 import { num, pct } from "../lib/format";
 import { useWorkspace } from "../state/workspace";
 
-export default function Scan() {
+type SortKey = "rank" | "momentum_score" | "relative_volume" | "distance_from_ath";
+
+const SORTABLE: { key: SortKey; defaultDir: 1 | -1 }[] = [
+  { key: "rank", defaultDir: 1 },
+  { key: "momentum_score", defaultDir: -1 },
+  { key: "relative_volume", defaultDir: -1 },
+  { key: "distance_from_ath", defaultDir: -1 },
+];
+
+/**
+ * Stage 1 (Scan) — the full ranked universe. With `shortlist`, it becomes
+ * Stage 2 (Candidates): the passed-gate tradeable set only.
+ */
+export default function Scan({ shortlist = false }: { shortlist?: boolean }) {
   const { runId, symbol, setSymbol } = useWorkspace();
-  const [passedOnly, setPassedOnly] = useState(false);
+  const [passedOnly, setPassedOnly] = useState(shortlist);
+  const [sector, setSector] = useState<string>("all");
+  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "rank", dir: 1 });
   const navigate = useNavigate();
 
-  const path = `/universe/scans?limit=300${passedOnly ? "&passed_only=true" : ""}${
+  const effectivePassed = shortlist || passedOnly;
+  const path = `/universe/scans?limit=300${effectivePassed ? "&passed_only=true" : ""}${
     runId ? `&run_id=${runId}` : ""
   }`;
   const { data, error, loading, reload } = useApi<ScanResult[]>(path);
-  const rows = data ?? [];
-  const idx = Math.max(0, rows.findIndex((r) => r.symbol === symbol));
+  const all = useMemo(() => data ?? [], [data]);
+
+  const sectors = useMemo(
+    () => Array.from(new Set(all.map((r) => r.sector).filter((s): s is string => !!s))).sort(),
+    [all],
+  );
+
+  const rows = useMemo(() => {
+    const filtered = sector === "all" ? all : all.filter((r) => r.sector === sector);
+    const { key, dir } = sort;
+    return [...filtered].sort((a, b) => {
+      const av = (a[key] as number | null) ?? 0;
+      const bv = (b[key] as number | null) ?? 0;
+      return (av - bv) * dir;
+    });
+  }, [all, sector, sort]);
+
+  const idx = Math.max(
+    0,
+    rows.findIndex((r) => r.symbol === symbol),
+  );
 
   useEffect(() => {
     if (!symbol && rows.length > 0) setSymbol(rows[0].symbol);
@@ -44,22 +79,49 @@ export default function Scan() {
     return () => window.removeEventListener("keydown", onKey);
   }, [rows, idx, setSymbol, navigate]);
 
+  const onSort = (key: SortKey): void =>
+    setSort((s) =>
+      s.key === key
+        ? { key, dir: (s.dir * -1) as 1 | -1 }
+        : { key, dir: SORTABLE.find((c) => c.key === key)?.defaultDir ?? 1 },
+    );
+  const caret = (key: SortKey): string => (sort.key === key ? (sort.dir === 1 ? " ▲" : " ▼") : "");
+
   return (
     <div className="grid h-full grid-cols-[1fr_22rem]">
       <div className="flex min-w-0 flex-col border-r border-surface-border">
         <div className="flex items-center gap-3 border-b border-surface-border px-3 py-2 text-sm">
           <ActionButton label="Run scan" path="/actions/scan" onDone={() => reload()} />
           <span className="text-slate-500">
-            {rows.length} candidates{passedOnly ? " · passed" : ""}
+            {rows.length} {shortlist ? "candidates · passed" : "candidates"}
           </span>
-          <label className="ml-auto flex items-center gap-1.5 text-slate-400">
-            <input
-              type="checkbox"
-              checked={passedOnly}
-              onChange={(e) => setPassedOnly(e.target.checked)}
-            />
-            passed only
+          <label className="flex items-center gap-1.5 text-slate-400">
+            sector
+            <select
+              value={sector}
+              onChange={(e) => setSector(e.target.value)}
+              className="rounded border border-surface-border bg-surface px-2 py-1 text-slate-200"
+            >
+              <option value="all">all</option>
+              {sectors.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
           </label>
+          {!shortlist ? (
+            <label className="ml-auto flex items-center gap-1.5 text-slate-400">
+              <input
+                type="checkbox"
+                checked={passedOnly}
+                onChange={(e) => setPassedOnly(e.target.checked)}
+              />
+              passed only
+            </label>
+          ) : (
+            <span className="ml-auto text-xs text-slate-500">tradeable set (gate passed)</span>
+          )}
         </div>
 
         <div className="min-h-0 flex-1 overflow-auto">
@@ -68,16 +130,24 @@ export default function Scan() {
           ) : error ? (
             <div className="p-6 text-sm text-bear">Failed: {error}</div>
           ) : rows.length === 0 ? (
-            <div className="p-6 text-sm text-slate-500">No scan results — run `mrp scan`.</div>
+            <div className="p-6 text-sm text-slate-500">No scan results — run a scan.</div>
           ) : (
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-surface-raised text-xs uppercase tracking-wide text-slate-400">
                 <tr>
-                  <th className="px-3 py-2 text-right font-medium">#</th>
+                  <Th onClick={() => onSort("rank")} align="right">
+                    #{caret("rank")}
+                  </Th>
                   <th className="px-3 py-2 text-left font-medium">Sym</th>
-                  <th className="px-3 py-2 text-right font-medium">Score</th>
-                  <th className="px-3 py-2 text-right font-medium">RVol</th>
-                  <th className="px-3 py-2 text-right font-medium">ΔATH</th>
+                  <Th onClick={() => onSort("momentum_score")} align="right">
+                    Score{caret("momentum_score")}
+                  </Th>
+                  <Th onClick={() => onSort("relative_volume")} align="right">
+                    RVol{caret("relative_volume")}
+                  </Th>
+                  <Th onClick={() => onSort("distance_from_ath")} align="right">
+                    ΔATH{caret("distance_from_ath")}
+                  </Th>
                   <th className="px-3 py-2 text-left font-medium">Sector</th>
                   <th className="px-3 py-2 text-left font-medium">Gate</th>
                 </tr>
@@ -116,5 +186,26 @@ export default function Scan() {
 
       <Inspector symbol={symbol} />
     </div>
+  );
+}
+
+function Th({
+  children,
+  onClick,
+  align = "left",
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  align?: "left" | "right";
+}) {
+  return (
+    <th
+      onClick={onClick}
+      className={`cursor-pointer select-none px-3 py-2 font-medium hover:text-slate-200 ${
+        align === "right" ? "text-right" : "text-left"
+      }`}
+    >
+      {children}
+    </th>
   );
 }

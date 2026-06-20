@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { apiPut } from "../api/client";
 import type { ConfigFile, DataProviderSettings } from "../api/types";
+import { ActionButton } from "../components/ActionButton";
 import { Card } from "../components/Card";
 import { ErrorBox, Loading, PageTitle } from "../components/Page";
 import { useApi } from "../hooks/useApi";
@@ -143,15 +144,56 @@ function DataProviderPanel() {
   );
 }
 
+function flatten(obj: Record<string, unknown>, prefix = ""): [string, string][] {
+  const out: [string, string][] = [];
+  for (const [k, v] of Object.entries(obj)) {
+    const key = prefix ? `${prefix}.${k}` : k;
+    if (v !== null && typeof v === "object" && !Array.isArray(v)) {
+      out.push(...flatten(v as Record<string, unknown>, key));
+    } else {
+      out.push([key, Array.isArray(v) ? v.join(", ") : String(v)]);
+    }
+  }
+  return out;
+}
+
 function ConfigViewer({ name }: { name: string }) {
   const { data, error, loading } = useApi<ConfigFile>(`/settings/config/${name}`);
+  const [raw, setRaw] = useState(false);
   if (loading) return <Loading />;
   if (error) return <ErrorBox message={error} />;
   if (!data) return null;
+
+  const pairs = data.parsed ? flatten(data.parsed) : null;
   return (
-    <pre className="max-h-[60vh] overflow-auto rounded bg-surface p-4 text-xs leading-relaxed text-slate-300">
-      {data.content}
-    </pre>
+    <div>
+      <div className="mb-2 flex justify-end">
+        <button
+          onClick={() => setRaw((r) => !r)}
+          className="rounded border border-surface-border px-2 py-0.5 text-xs text-slate-400 hover:text-slate-200"
+        >
+          {raw ? "Show fields" : "Show raw YAML"}
+        </button>
+      </div>
+      {raw || !pairs ? (
+        <pre className="max-h-[55vh] overflow-auto rounded bg-surface p-4 text-xs leading-relaxed text-slate-300">
+          {data.content}
+        </pre>
+      ) : (
+        <div className="max-h-[55vh] overflow-auto rounded bg-surface">
+          <table className="w-full text-sm">
+            <tbody>
+              {pairs.map(([k, v]) => (
+                <tr key={k} className="border-b border-surface-border/40">
+                  <td className="px-3 py-1.5 font-mono text-xs text-slate-400">{k}</td>
+                  <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-200">{v}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -194,11 +236,32 @@ function ConfigTemplates() {
   );
 }
 
+function Maintenance() {
+  return (
+    <Card title="Data & Maintenance">
+      <div className="flex flex-wrap items-center gap-3">
+        <ActionButton
+          label="Load sample data"
+          path="/actions/seed-demo"
+          variant="ghost"
+          onDone={() => window.location.reload()}
+        />
+        <ActionButton label="Refresh market data" path="/actions/refresh-data" variant="ghost" />
+        <span className="text-xs text-slate-500">
+          Sample data populates every screen with a deterministic demo dataset (50 trades, signals,
+          regimes, scans). Safe to run once.
+        </span>
+      </div>
+    </Card>
+  );
+}
+
 export default function Settings() {
   return (
     <div className="space-y-5">
-      <PageTitle title="Settings" subtitle="Data provider, API keys and configuration templates" />
+      <PageTitle title="Settings" subtitle="Data provider, API keys, maintenance and configuration" />
       <DataProviderPanel />
+      <Maintenance />
       <ConfigTemplates />
     </div>
   );

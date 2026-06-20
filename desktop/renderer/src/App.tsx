@@ -28,7 +28,7 @@ export default function App() {
       <Route element={<AppShell />}>
         <Route index element={<Scan />} />
         <Route path="scan" element={<Scan />} />
-        <Route path="candidates" element={<Scan />} />
+        <Route path="candidates" element={<Scan shortlist />} />
         <Route path="conviction" element={<Conviction />} />
         <Route path="analogs" element={<Analogs />} />
         <Route path="backtest" element={<Backtesting />} />
