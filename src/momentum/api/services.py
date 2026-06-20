@@ -7,6 +7,7 @@ nothing here mutates state.
 
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import asdict
 from pathlib import Path
@@ -156,6 +157,20 @@ def list_optimizations(
     return [OptimizationResultOut.model_validate(row) for row in session.scalars(stmt)]
 
 
+def _json_safe(value: dict[str, Any]) -> dict[str, Any]:
+    """Replace non-finite floats (inf/-inf/NaN) with None.
+
+    Metrics like ``profit_factor`` are ``inf`` when there are no losing trades,
+    and tail/skew stats can be ``NaN`` on tiny samples. Python's JSON encoder
+    emits these as ``Infinity``/``NaN`` tokens, which strict ``JSON.parse`` (the
+    browser) rejects — breaking the Analytics view. Map them to ``null`` so the
+    payload is always valid JSON; the UI already renders ``None`` as "—".
+    """
+    return {
+        k: (None if isinstance(v, float) and not math.isfinite(v) else v) for k, v in value.items()
+    }
+
+
 def performance_summary(session: Session, *, run_id: str | None = None) -> PerformanceOut:
     """Trade stats (always) plus full performance metrics when an equity curve exists."""
     trades = TradeRepository(session).analytics_trades(run_id)
@@ -173,22 +188,24 @@ def performance_summary(session: Session, *, run_id: str | None = None) -> Perfo
             index=pd.to_datetime([s.session_date for s in snapshots]),
         )
         report = analyze_performance(equity, trades)
-        performance = {
-            "total_return": report.total_return,
-            "cagr": report.cagr,
-            "annual_volatility": report.annual_volatility,
-            "sharpe": report.sharpe,
-            "sortino": report.sortino,
-            "calmar": report.calmar,
-            "max_drawdown": report.max_drawdown,
-            "return_tail_ratio": report.return_tail_ratio,
-            "objective": report.objective,
-        }
+        performance = _json_safe(
+            {
+                "total_return": report.total_return,
+                "cagr": report.cagr,
+                "annual_volatility": report.annual_volatility,
+                "sharpe": report.sharpe,
+                "sortino": report.sortino,
+                "calmar": report.calmar,
+                "max_drawdown": report.max_drawdown,
+                "return_tail_ratio": report.return_tail_ratio,
+                "objective": report.objective,
+            }
+        )
 
     return PerformanceOut(
         run_id=run_id,
         n_trades=len(trades),
-        trade_stats=asdict(stats),
+        trade_stats=_json_safe(asdict(stats)),
         performance=performance,
     )
 

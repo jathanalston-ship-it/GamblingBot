@@ -7,7 +7,11 @@ import { useApi } from "../hooks/useApi";
 const isPctKey = (k: string): boolean => /(return|cagr|drawdown|volatility|rate)/i.test(k);
 const label = (k: string): string => k.replace(/_/g, " ");
 const fmt = (k: string, v: number | null): string =>
-  v == null ? "—" : isPctKey(k) ? `${(v * 100).toFixed(1)}%` : v.toFixed(2);
+  v == null || typeof v !== "number" || !Number.isFinite(v)
+    ? "—"
+    : isPctKey(k)
+      ? `${(v * 100).toFixed(1)}%`
+      : v.toFixed(2);
 
 export default function Analytics() {
   const { data, error, loading } = useApi<Performance>("/performance");

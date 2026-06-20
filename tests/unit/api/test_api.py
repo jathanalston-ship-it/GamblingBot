@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 
 def test_root_and_health(client):
     for path in ("/", "/health"):
@@ -101,3 +103,27 @@ def test_performance_summary(client):
     # equity curve present (3 snapshots) -> full performance block computed
     assert body["performance"] is not None
     assert "sharpe" in body["performance"] and "objective" in body["performance"]
+
+
+def test_performance_summary_emits_strict_json_with_no_losers():
+    """profit_factor is inf when there are no losing trades; the payload must
+    still be strict-valid JSON (no Infinity/NaN tokens) so the browser can parse
+    it — otherwise the Analytics screen breaks. Non-finite floats become null.
+    """
+    import json
+    from dataclasses import asdict
+
+    from momentum.analytics.trade_analysis import Trade, compute_trade_stats
+    from momentum.api.services import _json_safe
+
+    winners_only = [
+        Trade(symbol="AAA", pnl=100.0, r_multiple=2.0, holding_days=5, mfe_r=3.0),
+        Trade(symbol="BBB", pnl=50.0, r_multiple=1.0, holding_days=3, mfe_r=2.0),
+    ]
+    safe = _json_safe(asdict(compute_trade_stats(winners_only)))
+    assert safe["profit_factor"] is None  # inf -> null
+
+    body = json.dumps(safe)
+    assert "Infinity" not in body and "NaN" not in body
+    # strict parse (browser semantics) must not reject any constant token
+    json.loads(body, parse_constant=lambda c: pytest.fail(f"invalid JSON token: {c!r}"))
