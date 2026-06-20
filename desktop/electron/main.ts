@@ -33,6 +33,9 @@ import {
 
 const API_HOST = "127.0.0.1";
 const isDev = process.env.NODE_ENV === "development";
+// CI startup validation: boot the window from the built renderer WITHOUT the
+// backend, confirm it paints, print a sentinel and exit. Set by `npm run smoke`.
+const isSmoke = process.env.MRP_SMOKE === "1";
 
 let backend: ChildProcess | null = null;
 let win: BrowserWindow | null = null;
@@ -189,7 +192,14 @@ async function createWindow(): Promise<void> {
   } else {
     await win.loadFile(join(__dirname, "..", "renderer", "dist", "index.html"));
   }
-  win.once("ready-to-show", () => win?.show());
+  win.once("ready-to-show", () => {
+    win?.show();
+    if (isSmoke) {
+      // The renderer mounted from the built bundle — report success and exit 0.
+      console.log("MRP_SMOKE_OK");
+      app.exit(0);
+    }
+  });
 }
 
 // Single-instance: a second launch focuses the existing window instead of
@@ -205,6 +215,17 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(async () => {
+    // Startup validation (CI): create the window from the built renderer with no
+    // backend, then let the ready-to-show handler print the sentinel and exit.
+    if (isSmoke) {
+      setTimeout(() => {
+        console.error("MRP_SMOKE_TIMEOUT");
+        app.exit(1);
+      }, 30_000);
+      await createWindow();
+      return;
+    }
+
     apiPort = isDev ? Number(process.env.MRP_API_PORT ?? 8000) : await freePort();
     // The preload reads MRP_API_PORT to build the API base URL — keep them in sync.
     process.env.MRP_API_PORT = String(apiPort);

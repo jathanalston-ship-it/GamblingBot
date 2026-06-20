@@ -19,9 +19,11 @@
     "dist:win": "npm run build && electron-builder --win",
     "icon": "python build/make_icon.py",
     "lint": "npm --workspace renderer run lint",
-    "typecheck": "npm --workspace renderer run typecheck && tsc -p electron/tsconfig.json --noEmit"
+    "typecheck": "npm --workspace renderer run typecheck && tsc -p electron/tsconfig.json --noEmit",
+    "smoke": "node scripts/smoke.cjs"
   },
   "devDependencies": {
+    "@types/node": "^20.17.6",
     "concurrently": "^9.1.0",
     "cross-env": "^7.0.3",
     "electron": "^33.2.0",

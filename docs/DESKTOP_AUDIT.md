@@ -170,8 +170,10 @@ upstream change / packaged build to exercise fully.
 
 1. **Extend `seed_demo.py`** to add `scan_results`, `conviction_scores` and a
    `risk_metrics` / `optimization_results` row so every screen demos with data.
-2. **Typecheck/build the desktop app in CI** (`npm run typecheck && npm run
-   build`) so the renderer/Electron TypeScript is verified on every change.
+2. **Typecheck/build the desktop app in CI** — ✅ **Done**: `.github/workflows/desktop.yml`
+   runs `npm install` → `npm run typecheck` (fails on any TS error) → `npm run
+   build` → a headless Electron startup check on every push/PR. See
+   `docs/DESKTOP_APP.md` § Continuous Integration.
 3. Decide on the **"Run scan/backtest" buttons** — either implement guarded
    command endpoints (`POST /scans/run`, `/backtests/run`) or remove the stub
    buttons to avoid implying capability.

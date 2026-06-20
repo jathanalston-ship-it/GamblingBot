@@ -75,6 +75,7 @@ metrics above.
 | **[docs/AUDIT_LOGGING.md](docs/AUDIT_LOGGING.md)** | Append-only audit log: immutable, twice-timestamped, queryable, crash-safe records of every material action (implemented). |
 | **[docs/E2E_VERIFICATION.md](docs/E2E_VERIFICATION.md)** | End-to-end verification: pass/fail checklist, automated tests, and the manual testing workflow for the full paper path. |
 | **[docs/PRODUCTION_READINESS_TESTS.md](docs/PRODUCTION_READINESS_TESTS.md)** | Production-readiness QA plan: startup/corruption/missing-data/scale/memory/crash-recovery tests (manual + automated + failure injection + load) and findings. |
+| **[.github/workflows/desktop.yml](.github/workflows/desktop.yml)** | Desktop CI: install → typecheck (fails on any TS error) → build → headless Electron startup validation, on every push/PR. |
 | **[docs/DESKTOP_AUDIT.md](docs/DESKTOP_AUDIT.md)** | Desktop app audit: launch/connectivity readiness, per-screen feature completeness (live vs demo vs placeholder), screenshot checklist, and a UAT plan. |
 | **[docs/CLI.md](docs/CLI.md)** | The `mrp` CLI: `serve` / `paper-run` / `scan` / `health` / `replay`, logging, and usage examples (implemented). |
 | **[docs/UPDATER.md](docs/UPDATER.md)** | Local self-update (`mrp update` / `mrp rollback`): check → backup → pull → migrate → verify → restart, with automatic rollback (implemented). |

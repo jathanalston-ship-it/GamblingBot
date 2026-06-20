@@ -217,3 +217,33 @@ npm run dev                  # Vite (5173) + Electron; Electron spawns the backe
 make serve                   # backend at 127.0.0.1:8000
 npm --workspace renderer run dev   # UI in a browser tab against the API
 ```
+
+## Continuous Integration
+
+`.github/workflows/desktop.yml` validates the desktop app on every push / PR
+(and via manual dispatch). The job runs on `ubuntu-latest` and **fails on any
+TypeScript error**:
+
+1. **Install** — `npm install` (workspace root + `renderer`).
+2. **Typecheck** — `npm run typecheck` (renderer `tsc --noEmit` + the Electron
+   `tsc -p electron/tsconfig.json --noEmit`). Any TS error fails the build.
+3. **Build** — `npm run build` (Vite renderer → `renderer/dist`, Electron main →
+   `dist-electron`), then a check that the expected artifacts exist.
+4. **Electron startup validation** — `xvfb-run -a npm run smoke` launches the
+   *built* app headlessly in smoke mode (`MRP_SMOKE=1`): the main process creates
+   the window from the built renderer **without** the backend, waits for the
+   first paint, prints `MRP_SMOKE_OK` and exits 0. `desktop/scripts/smoke.cjs`
+   asserts that sentinel + a clean exit (with a timeout), so a renderer or main
+   process that won't boot fails CI.
+
+Run the startup check locally (needs a display, or Xvfb on Linux):
+
+```bash
+cd desktop
+npm install
+npm run build
+npm run smoke          # Linux headless: xvfb-run -a npm run smoke
+```
+
+The smoke mode is gated entirely behind `MRP_SMOKE=1` and has no effect on a
+normal launch.

@@ -1,0 +1,56 @@
+name: Desktop CI
+
+# Validate the Momentum Lab desktop app on every push / PR: install, typecheck
+# (fails on ANY TypeScript error), build, and a headless Electron startup check.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  desktop:
+    name: Build & startup validation
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install Electron runtime libraries (Linux + Xvfb)
+        working-directory: ${{ github.workspace }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xvfb libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
+            libgbm1 libgtk-3-0 libasound2 libxss1 libxshmfence1 libxdamage1
+
+      - name: Install dependencies (npm install)
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck (fail on any TypeScript error)
+        run: npm run typecheck
+
+      - name: Build (renderer + Electron main)
+        run: npm run build
+
+      - name: Verify build artifacts exist
+        run: |
+          test -f dist-electron/main.js
+          test -f dist-electron/preload.js
+          test -f renderer/dist/index.html
+
+      - name: Electron startup validation (headless)
+        run: xvfb-run -a --server-args="-screen 0 1280x800x24" npm run smoke

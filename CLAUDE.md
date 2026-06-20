@@ -167,6 +167,13 @@ trading platform for US equities. Python 3.12, strictly typed. See
   `GitRunner` / `BackupManager` / migrator / integrity / restart, so it's tested
   end-to-end against a temporary git repo (no network). See `docs/UPDATER.md`.
 
+- **Desktop CI** (`.github/workflows/desktop.yml`, `desktop/scripts/smoke.cjs`) —
+  validates the Electron app on every push/PR: `npm install` → `npm run typecheck`
+  (**fails on any TS error**) → `npm run build` → a headless Electron **startup
+  validation** (`xvfb-run npm run smoke`) that boots the built app in smoke mode
+  (`MRP_SMOKE=1`, gated in `electron/main.ts`) and asserts it paints. See
+  `docs/DESKTOP_APP.md` § Continuous Integration.
+
 ## Philosophy (what we optimise for)
 
 Optimise for **expectancy, profit factor, average winner, largest winner, trend
