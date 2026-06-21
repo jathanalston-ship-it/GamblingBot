@@ -40,6 +40,8 @@ const bridge = {
     return () => ipcRenderer.removeListener("mrp:backend:status", listener);
   },
   getBackendStatus: (): Promise<string> => ipcRenderer.invoke("mrp:backend:get-status"),
+  /** Restart the app (relaunch the process → fresh backend + reloaded UI). */
+  relaunch: (): Promise<boolean> => ipcRenderer.invoke("mrp:app:relaunch"),
   /** In-app auto-update controls (packaged build only). */
   updater: {
     check: (): Promise<{ version: string | null }> => ipcRenderer.invoke("mrp:update:check"),

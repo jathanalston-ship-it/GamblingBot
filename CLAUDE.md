@@ -351,6 +351,18 @@ trading platform for US equities. Python 3.12, strictly typed. See
   `GET /audit` (recent audit events); `PortfolioSnapshotOut` gained `daily_pnl`.
   See `docs/DESKTOP_APP.md`.
 
+- **Development / factory reset** (`src/momentum/api/reset.py`,
+  `routes/actions.py` `POST /actions/reset`, `desktop/.../components/ResetPanel.tsx`)
+  — a Settings **Developer — Reset** panel with two confirm-gated buttons ("Reset
+  Local Data", "Reset + Load Demo Data") that wipe local state to fresh-install:
+  stop active jobs (`JobManager.clear`) → clear **all** DB rows (reverse FK order;
+  `alembic_version`/schema **preserved**) → `reconcile_schema` → clear bar cache →
+  clear user settings (API keys preserved) → clear logs **last** (after logging the
+  reset event). Synchronous endpoint (can't be a job — it stops jobs). Restart via
+  the preload `relaunch()` bridge (`app.relaunch()`); reset+demo reloads the app.
+  Tests prove cleared/schema-preserved/serves-after/repeatable/no-orphans.
+  See `docs/DEV_RESET.md`.
+
 ## Philosophy (what we optimise for)
 
 Optimise for **expectancy, profit factor, average winner, largest winner, trend

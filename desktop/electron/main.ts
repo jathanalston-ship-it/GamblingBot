@@ -396,6 +396,14 @@ if (!app.requestSingleInstanceLock()) {
     manager = createManager();
     // Lets the renderer seed its initial status on mount (avoids a missed event).
     ipcMain.handle("mrp:backend:get-status", () => lastBackendStatus);
+    // Factory reset → restart: relaunch the whole app so the backend is respawned
+    // and the renderer reloads. `app.quit()` first runs the graceful shutdown
+    // (before-quit/will-quit) so the old backend is stopped before relaunch.
+    ipcMain.handle("mrp:app:relaunch", () => {
+      app.relaunch();
+      app.quit();
+      return true;
+    });
 
     // Show the window first (loading screen) so the user sees "Backend Starting"
     // immediately, then bring the backend up.

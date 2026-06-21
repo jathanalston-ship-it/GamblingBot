@@ -164,6 +164,29 @@ def write_provider_settings(provider: str, secrets: dict[str, str | None]) -> Pr
     return read_provider_settings()
 
 
+def clear_user_settings(*, preserve_api_keys: bool = True) -> dict[str, bool]:
+    """Delete the writable user settings (factory reset). Returns what was removed.
+
+    Removes ``settings.yaml`` (the provider choice resets to the default). API-key
+    secrets in ``.env`` are preserved by default; when ``preserve_api_keys`` is
+    ``False`` the ``.env`` file is removed and the provider vars are dropped from the
+    live process environment too. Never raises on a missing file.
+    """
+    removed = {"settings_yaml": False, "env": False}
+    settings_path = _settings_path()
+    if settings_path.is_file():
+        settings_path.unlink()
+        removed["settings_yaml"] = True
+    if not preserve_api_keys:
+        env_path = _env_path()
+        if env_path.is_file():
+            env_path.unlink()
+            removed["env"] = True
+        for var in PROVIDER_KEYS.values():
+            os.environ.pop(var, None)
+    return removed
+
+
 def load_user_env() -> None:
     """Load persisted ``.env`` secrets into the process environment at startup.
 

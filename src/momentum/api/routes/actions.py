@@ -11,13 +11,14 @@ The job manager, session factory and market-data provider are taken from
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import os
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, sessionmaker
 
-from momentum.api import actions
+from momentum.api import actions, reset as reset_ops
 from momentum.api.jobs import JobManager, Progress
 from momentum.api.schemas import JobOut, ReplayOut
 from momentum.universe.screener import MomentumScanner
@@ -37,6 +38,25 @@ class ActionParams(BaseModel):
 
 class ReplayRequest(BaseModel):
     run_id: str | None = None
+
+
+class ResetRequest(BaseModel):
+    """Factory-reset options. ``load_demo`` re-seeds the demo dataset afterwards."""
+
+    load_demo: bool = False
+    preserve_api_keys: bool = True
+
+
+class ResetOut(BaseModel):
+    ok: bool
+    rows_cleared: int
+    tables_cleared: dict[str, int]
+    cache_files_removed: int
+    logs_removed: int
+    jobs_stopped: int
+    settings_cleared: dict[str, bool]
+    preserved_api_keys: bool
+    demo: dict[str, Any] | None = None
 
 
 # -- shared accessors -------------------------------------------------------- #
@@ -199,6 +219,34 @@ def replay(request: Request, body: ReplayRequest | None = None) -> ReplayOut:
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
     return ReplayOut(**summary)
+
+
+# -- factory reset (synchronous) --------------------------------------------- #
+@router.post("/reset", response_model=ResetOut)
+def reset(request: Request, body: ResetRequest | None = None) -> ResetOut:
+    """Reset all local application state to fresh-install (dev / factory reset).
+
+    Synchronous on purpose: it stops active jobs as its first step, so it cannot be
+    a job itself. With ``load_demo`` it re-seeds the demo dataset after the wipe so
+    the app comes back populated for rapid testing.
+    """
+    p = body or ResetRequest()
+    sf = _session_factory(request)
+    summary = reset_ops.reset_local_data(
+        session_factory=sf,
+        cache_dir=os.environ.get("MRP_BAR_CACHE"),
+        log_dir=os.environ.get("MRP_LOG_DIR"),
+        preserve_api_keys=p.preserve_api_keys,
+        job_manager=_jobs(request),
+    )
+    demo: dict[str, object] | None = None
+    if p.load_demo:
+
+        def _silent(_pct: float, _msg: str) -> None:
+            return None
+
+        demo = actions.seed_demo_data(session_factory=sf, progress=_silent)
+    return ResetOut(**summary, demo=demo)
 
 
 # -- job polling ------------------------------------------------------------- #

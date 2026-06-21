@@ -5,6 +5,7 @@ import type { ConfigFile, DataProviderSettings } from "../api/types";
 import { ActionButton } from "../components/ActionButton";
 import { Card } from "../components/Card";
 import { ErrorBox, Loading, PageTitle } from "../components/Page";
+import { ResetPanel } from "../components/ResetPanel";
 import { useApi } from "../hooks/useApi";
 
 // Which secret fields each provider needs (yfinance needs none).
@@ -262,6 +263,7 @@ export default function Settings() {
       <PageTitle title="Settings" subtitle="Data provider, API keys, maintenance and configuration" />
       <DataProviderPanel />
       <Maintenance />
+      <ResetPanel />
       <ConfigTemplates />
     </div>
   );

@@ -25,6 +25,8 @@ export interface MrpBridge {
   onBackendStatus?: (cb: (status: string) => void) => () => void;
   /** The current backend status (for seeding on mount). */
   getBackendStatus?: () => Promise<string>;
+  /** Restart the app (fresh backend + reloaded UI). Packaged build only. */
+  relaunch?: () => Promise<boolean>;
   /** In-app auto-update controls (packaged build only). */
   updater?: {
     check: () => Promise<{ version: string | null }>;

@@ -100,6 +100,24 @@ class JobManager:
         self._runner(execute)
         return job
 
+    def clear(self) -> int:
+        """Stop tracking all jobs (used by factory reset); return how many were dropped.
+
+        Running jobs execute in daemon threads that cannot be force-stopped, but any
+        unfinished job is marked failed and the registry is emptied so the UI stops
+        polling stale work after a reset.
+        """
+        with self._lock:
+            n = len(self._jobs)
+            for job in self._jobs.values():
+                if not job.done:
+                    job.status = "failed"
+                    job.error = "cancelled by reset"
+                    job.finished_at = _utcnow()
+            self._jobs.clear()
+            self._order.clear()
+        return n
+
     def get(self, job_id: str) -> Job | None:
         return self._jobs.get(job_id)
 
