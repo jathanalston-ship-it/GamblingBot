@@ -382,6 +382,15 @@ trading platform for US equities. Python 3.12, strictly typed. See
   backend keeps the panel reachable (`BackendGate`) — never a silent exit. See
   `docs/DEVELOPMENT_MODE.md`.
 
+- **Portable build** (`MomentumLab-Portable.zip`; `desktop/electron/paths.ts`,
+  `scripts/build_windows.ps1` step 4, `.github/workflows/release.yml`) — a no-install
+  Windows build for testing release candidates: extract & run `Momentum Lab.exe` (no
+  registry, no installer, no uninstall). Same binaries as the installer — a
+  `MomentumLab.portable` marker beside the exe switches `resolveDataRoot` to portable
+  mode so DB/logs/settings (incl. startup logs) live in `MomentumLab-Data` beside the
+  executable. CI zips the already-built `win-unpacked` (+ marker), so it can't drift
+  from the installer. See `docs/PORTABLE_BUILD.md`.
+
 ## Philosophy (what we optimise for)
 
 Optimise for **expectancy, profit factor, average winner, largest winner, trend

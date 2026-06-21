@@ -22,7 +22,7 @@
     "icon": "python build/make_icon.py",
     "lint": "npm --workspace renderer run lint",
     "typecheck": "npm --workspace renderer run typecheck && tsc -p electron/tsconfig.json --noEmit",
-    "test:backend": "npm run build:electron && node scripts/backend-manager.test.cjs && node scripts/startup-trace.test.cjs",
+    "test:backend": "npm run build:electron && node scripts/backend-manager.test.cjs && node scripts/startup-trace.test.cjs && node scripts/paths.test.cjs",
     "smoke": "node scripts/smoke.cjs"
   },
   "dependencies": {

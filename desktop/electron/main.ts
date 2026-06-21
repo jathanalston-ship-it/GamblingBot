@@ -14,7 +14,7 @@
  */
 import { copyFileSync, existsSync, mkdirSync, readFileSync, watch, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import {
   app,
@@ -28,6 +28,7 @@ import {
 import electronUpdater from "electron-updater";
 
 import { BackendManager, type BackendStatus } from "./backend-manager";
+import { PORTABLE_MARKER, resolveDataRoot } from "./paths";
 import { StartupTrace } from "./startup-trace";
 
 const API_HOST = "127.0.0.1";
@@ -74,14 +75,44 @@ function repoRoot(): string {
 }
 
 /**
+ * Whether this is a PORTABLE build: a packaged app extracted from
+ * `MomentumLab-Portable.zip`, identified by a marker file shipped beside the
+ * executable (only in the zip, never in the installer). Portable builds keep all
+ * state — including startup logs — beside the executable, so a release candidate
+ * runs with no install, no registry and no uninstall. Memoised.
+ */
+let portableCache: boolean | null = null;
+function isPortable(): boolean {
+  if (portableCache !== null) return portableCache;
+  try {
+    // electron-builder's own portable target also sets this; honour it too.
+    if (process.env.PORTABLE_EXECUTABLE_DIR) {
+      portableCache = true;
+    } else {
+      portableCache =
+        app.isPackaged && existsSync(join(dirname(app.getPath("exe")), PORTABLE_MARKER));
+    }
+  } catch {
+    portableCache = false;
+  }
+  return portableCache;
+}
+
+/**
  * Per-user, writable paths for the database, logs and editable config.
  *
- * Development Mode isolates everything under a visible, git-ignored `<repo>/.dev`
- * so the developer can find the DB/logs/config and the Developer Panel can open
- * those folders; the packaged app uses the per-user `userData` directory.
+ * Development Mode isolates everything under a visible, git-ignored `<repo>/.dev`;
+ * a portable build uses `<exeDir>/MomentumLab-Data` (beside the executable); the
+ * installed app uses the per-user `userData` directory. (See `paths.ts`.)
  */
 function userPaths(): { root: string; dataDir: string; logDir: string; dbUrl: string } {
-  const root = isDevApp ? join(repoRoot(), ".dev") : app.getPath("userData");
+  const root = resolveDataRoot({
+    isDevApp,
+    isPortable: isPortable(),
+    repoRoot: repoRoot(),
+    exeDir: app.isPackaged ? dirname(app.getPath("exe")) : repoRoot(),
+    userDataDir: app.getPath("userData"),
+  });
   const dataDir = join(root, "data");
   const logDir = join(root, "logs");
   mkdirSync(dataDir, { recursive: true });
@@ -155,6 +186,7 @@ function writeStartupReport(): void {
       ts: new Date().toISOString(),
       appVersion: app.getVersion(),
       packaged: app.isPackaged,
+      portable: isPortable(),
       platform: process.platform,
       host: API_HOST,
       port: apiPort,
@@ -261,6 +293,7 @@ function devDiagnostics(): Record<string, unknown> {
   return {
     version: app.getVersion(),
     packaged: app.isPackaged,
+    portable: isPortable(),
     devApp: isDevApp,
     platform: process.platform,
     host: API_HOST,

@@ -73,8 +73,11 @@ This script (`scripts/build_windows.ps1`):
 2. **Builds the desktop app** — `npm ci` then `npm run build` (renderer via Vite →
    `renderer/dist`, Electron main via tsc → `dist-electron`).
 3. **Packages the installer** — `electron-builder --win` → `desktop/release/MomentumLab-Setup-<version>.exe`.
+4. **Builds the portable zip** — zips the unpacked app (+ a portable marker) →
+   `desktop/release/MomentumLab-Portable.zip` (no-install build for testing release
+   candidates; see `docs/PORTABLE_BUILD.md`).
 
-The finished installer is printed at the end and lives in `desktop/release/`.
+Both artifacts are printed at the end and live in `desktop/release/`.
 
 ## 4. Packaging process (what electron-builder does)
 

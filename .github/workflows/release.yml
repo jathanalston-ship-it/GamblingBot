@@ -149,6 +149,7 @@ jobs:
             echo "## Momentum Lab ${TAG}"
             echo
             echo "**Windows 11 installer:** \`MomentumLab-Setup-${VERSION}.exe\` — double-click to install (per-user, no admin)."
+            echo "**Portable (no install):** \`MomentumLab-Portable.zip\` — extract and run \`Momentum Lab.exe\` (no registry, no uninstall; logs beside the exe). For testing release candidates."
             echo
             echo "### Changes"
             if [ -n "$PREV" ]; then
@@ -177,10 +178,12 @@ jobs:
           draft: false
           prerelease: false
           fail_on_unmatched_files: false
-          # The .exe is the deliverable; latest.yml + *.blockmap are the
+          # The .exe is the installer; MomentumLab-Portable.zip is the no-install
+          # build for testing release candidates; latest.yml + *.blockmap are the
           # electron-updater metadata that make future in-app updates work.
           files: |
             desktop/release/MomentumLab-Setup-*.exe
+            desktop/release/MomentumLab-Portable.zip
             desktop/release/latest.yml
             desktop/release/*.blockmap
         env:

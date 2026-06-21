@@ -16,6 +16,7 @@ export interface UpdaterEvent {
 export interface DevDiagnostics {
   version: string;
   packaged: boolean;
+  portable: boolean;
   devApp: boolean;
   platform: string;
   host: string;
