@@ -640,3 +640,58 @@ export interface WatchlistPerfEntry {
   complete: boolean;
   last_tracked_date: string | null;
 }
+
+export interface AuditConvictionBucket {
+  label: string;
+  lo: number;
+  hi: number;
+  n: number;
+  win_rate: number | null;
+  expected_value_r: number | null;
+  avg_predicted: number | null;
+}
+
+export interface AuditFactorScore {
+  name: string;
+  ic: number | null;
+  p_value: number | null;
+  n: number;
+  significant: boolean;
+  direction: string;
+}
+
+export interface AuditCalibration {
+  buckets: AuditConvictionBucket[];
+  brier_score: number | null;
+  monotonic_win_rate: boolean;
+  ic: number | null;
+  p_value: number | null;
+}
+
+export interface AuditArea {
+  area: string;
+  headline: string;
+  metrics: Record<string, number | null>;
+  p_value: number | null;
+  significant: boolean;
+}
+
+export interface SignalAudit {
+  n_candidates: number;
+  n_with_conviction: number;
+  win_rate: number | null;
+  expectancy_r: number | null;
+  avg_reward_risk: number | null;
+  payoff_ratio: number | null;
+  max_drawdown_r: number | null;
+  conviction_buckets: AuditConvictionBucket[];
+  calibration: AuditCalibration;
+  factor_scores: AuditFactorScore[];
+  strongest_factors: AuditFactorScore[];
+  weakest_factors: AuditFactorScore[];
+  areas: AuditArea[];
+  recommendations: string[];
+  caveats: string[];
+  config_hash: string;
+  generated_at: string;
+}

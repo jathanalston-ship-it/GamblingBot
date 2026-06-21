@@ -198,6 +198,18 @@ trading platform for US equities. Python 3.12, strictly typed. See
   Reads: `GET /watchlist-performance[/entries]`; desktop **WL Performance** view; demo
   seeds conviction-correlated outcomes. See `docs/WATCHLIST_PERFORMANCE.md`.
 
+- **Signal validation audit** (`src/momentum/signal_audit/`, `analytics/significance.py`,
+  `api/signal_audit_service.py`) — over the last N candidates-with-outcomes (closed trades
+  joined to conviction + sub-factors, watchlist rank, and scan-derived eligibility/options
+  verdicts), grades all six predictive surfaces against realised R and emits **win rate &
+  EV by conviction bucket**, a **calibration report**, **max drawdown**, **avg reward:risk**,
+  and **ranked predictive factors** (strongest/weakest by |IC|). Conclusions are **gated on
+  statistical significance** (`analytics/significance.py`: Pearson+p via incomplete-beta
+  Student-t, Welch t-test, two-proportion z, max drawdown — no scipy); recommendations are
+  emitted **only** when `p < alpha` with sufficient n, else it states none are warranted
+  (never invents conclusions). Pure engine; read-only, no persistence. `GET /signal-audit`;
+  desktop **Signal Audit** view. See `docs/SIGNAL_AUDIT.md`.
+
 - **Options-eligibility engine** (`src/momentum/options_eligibility/`,
   `api/options_eligibility_service.py`) — read-only go/no-go gate: is a setup
   suitable for options **leverage** or should it be traded as **shares**? Scores six

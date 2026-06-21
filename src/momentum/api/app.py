@@ -36,6 +36,7 @@ from momentum.api.routes import (
     risk,
     runs,
     settings,
+    signal_audit,
     signal_eval,
     signals,
     lifecycles,
@@ -77,6 +78,7 @@ _ROUTERS = (
     options_eligibility,
     options_recommendation,
     watchlist_performance,
+    signal_audit,
 )
 
 

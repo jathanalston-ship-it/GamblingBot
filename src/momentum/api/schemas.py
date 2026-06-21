@@ -814,3 +814,68 @@ class WatchlistPerfEntryOut(_ORMModel):
     bars_tracked: int
     complete: bool
     last_tracked_date: dt.date | None
+
+
+class AuditConvictionBucketOut(BaseModel):
+    """Win rate + expected value for one conviction bucket."""
+
+    label: str
+    lo: float
+    hi: float
+    n: int
+    win_rate: float | None
+    expected_value_r: float | None
+    avg_predicted: float | None
+
+
+class AuditFactorScoreOut(BaseModel):
+    """A predictive factor's correlation with outcome + significance."""
+
+    name: str
+    ic: float | None
+    p_value: float | None
+    n: int
+    significant: bool
+    direction: str
+
+
+class AuditCalibrationOut(BaseModel):
+    """Conviction calibration report."""
+
+    buckets: list[AuditConvictionBucketOut]
+    brier_score: float | None
+    monotonic_win_rate: bool
+    ic: float | None
+    p_value: float | None
+
+
+class AuditAreaOut(BaseModel):
+    """One subsystem's measured effectiveness."""
+
+    area: str
+    headline: str
+    metrics: dict[str, float | None]
+    p_value: float | None
+    significant: bool
+
+
+class SignalAuditOut(BaseModel):
+    """The full signal-validation audit payload."""
+
+    n_candidates: int
+    n_with_conviction: int
+    win_rate: float | None
+    expectancy_r: float | None
+    avg_reward_risk: float | None
+    payoff_ratio: float | None
+    max_drawdown_r: float | None
+    conviction_buckets: list[AuditConvictionBucketOut]
+    calibration: AuditCalibrationOut
+    factor_scores: list[AuditFactorScoreOut]
+    strongest_factors: list[AuditFactorScoreOut]
+    weakest_factors: list[AuditFactorScoreOut]
+    areas: list[AuditAreaOut]
+    recommendations: list[str]
+    caveats: list[str]
+    config_hash: str
+    generated_at: str

@@ -1,0 +1,22 @@
+# Signal-validation audit thresholds. Copy to signal_audit.yaml to override.
+#
+# The audit grades the last N candidates-with-outcomes (closed trades joined to the
+# conviction / watchlist / eligibility / options prediction context) and only emits
+# recommendations where a test is statistically significant at `alpha`.
+model_version: v1
+
+lookback_candidates: 100 # audit the last N candidates that produced an outcome
+alpha: 0.05 # significance level for every conclusion
+min_sample: 20 # minimum n before a correlation is interpreted
+min_group: 10 # minimum per-group n before a two-group difference is interpreted
+
+target_r: 2.0 # the planned first-target tier, in R (for trade-plan target accuracy)
+stop_overrun_r: -1.2 # losses worse than this overran the stop, in R
+
+# Conviction calibration / win-rate buckets (0-100).
+conviction_buckets:
+  - [0, 20]
+  - [20, 40]
+  - [40, 60]
+  - [60, 80]
+  - [80, 100]

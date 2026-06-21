@@ -14,6 +14,7 @@ import Portfolio from "./views/Portfolio";
 import Replay from "./views/Replay";
 import Scan from "./views/Scan";
 import Settings from "./views/Settings";
+import SignalAudit from "./views/SignalAudit";
 import SignalEvaluation from "./views/SignalEvaluation";
 import TradePlan from "./views/TradePlan";
 import Updates from "./views/Updates";
@@ -57,6 +58,7 @@ export default function App() {
         <Route path="portfolio" element={<Portfolio />} />
         <Route path="analytics" element={<Analytics />} />
         <Route path="signal-eval" element={<SignalEvaluation />} />
+        <Route path="signal-audit" element={<SignalAudit />} />
         <Route path="settings" element={<Settings />} />
         <Route path="updates" element={<Updates />} />
       </Route>
