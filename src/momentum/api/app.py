@@ -29,6 +29,7 @@ from momentum.api.routes import (
     health,
     opportunity,
     options_eligibility,
+    options_recommendation,
     performance,
     portfolio,
     regimes,
@@ -73,6 +74,7 @@ _ROUTERS = (
     command_center,
     signal_eval,
     options_eligibility,
+    options_recommendation,
 )
 
 

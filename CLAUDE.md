@@ -195,6 +195,18 @@ trading platform for US equities. Python 3.12, strictly typed. See
   Plan view. **No contract recommendations** (distinct from the contract-level
   options-qualification gate). See `docs/OPTIONS_ELIGIBILITY.md`.
 
+- **Options-recommendation engine** (`src/momentum/options_recommendation/`,
+  `api/options_recommendation_service.py`) — for an options-*eligible* setup, recommends
+  one defined-risk contract (expiration, strike, delta, risk level, max loss, target
+  profit, suggested allocation) in the preference order **Deep ITM → ATM → Vertical
+  Spread** (Deep ITM is the conservative default; rich IV ⇒ spread, cheap IV + large
+  move ⇒ ATM). Hard-avoids low liquidity / wide spreads (gates) and lottery / short-dated
+  contracts (by construction: min long delta + min DTE floor). Approximate no-chain
+  pricing (Brenner–Subrahmanyam), budget+capital sizing, explicit **risk disclosures**,
+  **no live execution**. Pure engine; no persistence (inputs from scan + eligibility +
+  trade-plan hold + dynamic risk budget). `GET /options-recommendation/{symbol}`. See
+  `docs/OPTIONS_RECOMMENDATION.md`.
+
 - **Signal evaluation system** (`src/momentum/signaleval/`, `api/signal_eval_service.py`)
   — grades every generated signal against its realised outcome (the trade it
   produced via `entry_signal_id`): tracks outcome / MFE / MAE / holding / return /

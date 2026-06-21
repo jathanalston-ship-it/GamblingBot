@@ -186,6 +186,25 @@ def test_options_eligibility_endpoint(client):
     assert client.get("/options-eligibility/NOPE").status_code == 404
 
 
+def test_options_recommendation_endpoint(client):
+    body = client.get("/options-recommendation/AAPL").json()
+    assert body["symbol"] == "AAPL"
+    assert isinstance(body["recommended"], bool)
+    assert {c["structure"] for c in body["candidates"]} == {
+        "deep_itm_call",
+        "atm_call",
+        "vertical_spread",
+    }
+    gate_names = {g["name"] for g in body["gates"]}
+    assert {"liquidity", "option_spread", "lottery", "short_dated"} <= gate_names
+    assert body["risk_disclosures"]  # disclosures always present
+    contract = body["contract"]
+    assert contract["expiration_days"] >= 30  # never short-dated
+    assert contract["delta"] >= 0.4  # never a lottery contract
+    assert "Infinity" not in client.get("/options-recommendation/AAPL").text
+    assert client.get("/options-recommendation/NOPE").status_code == 404
+
+
 def test_trade_plan_endpoint(client):
     body = client.get("/tradeplan/AAPL").json()
     assert body["symbol"] == "AAPL"

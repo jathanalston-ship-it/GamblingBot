@@ -520,6 +520,58 @@ class TradePlanOut(BaseModel):
     methodology: list[str]
 
 
+class StructureCandidateOut(BaseModel):
+    """One scored options structure (for transparency on the choice)."""
+
+    structure: str
+    display: str
+    score: float
+    components: dict[str, float]
+
+
+class AvoidGateOut(BaseModel):
+    """One AVOID gate's outcome."""
+
+    name: str
+    passed: bool
+    detail: str
+
+
+class ContractRecommendationOut(BaseModel):
+    """The concrete (approximate) recommended contract."""
+
+    structure: str
+    display: str
+    expiration_days: int
+    strike: float
+    delta: float
+    short_strike: float | None
+    short_delta: float | None
+    risk_level: str
+    contracts: int
+    est_premium_per_contract: float
+    max_loss: float
+    target_profit: float
+    suggested_allocation: float
+    allocation_pct: float
+    reward_to_risk: float | None
+
+
+class OptionsRecommendationOut(BaseModel):
+    """A defined-risk options recommendation for an eligible setup (no execution)."""
+
+    symbol: str
+    recommended: bool
+    structure: str | None
+    contract: ContractRecommendationOut | None
+    expected_move_pct: float | None
+    candidates: list[StructureCandidateOut]
+    gates: list[AvoidGateOut]
+    risk_disclosures: list[str]
+    summary: str
+    config_hash: str
+
+
 class DataProviderOut(BaseModel):
     """The current data-provider selection (secrets reported only as present/absent)."""
 

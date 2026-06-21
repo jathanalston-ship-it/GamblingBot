@@ -51,6 +51,19 @@ they belong in a dedicated market-data slice with its own tests:
 - **Live broker adapter & a real scheduler/clock loop** — the `Scheduler` is a
   serial decision point triggered by the caller, not a timed daemon.
 
+## Options recommendation — deferred follow-ups
+
+- **Real IV / IV-rank inputs** — the options-recommendation service has no implied-vol
+  data, so `iv`/`iv_rank` pass as `None` (engine defaults to vol-from-ATR and rank 0.5,
+  i.e. mostly the conservative Deep ITM default). Wire an IV feed to unlock the ATM /
+  spread regimes from real data.
+- **Desktop Options Recommendation card** — surface `GET /options-recommendation/{symbol}`
+  on the Trade Plan view (alongside the Options Eligibility card), incl. the contract,
+  gates and risk disclosures. Backend + API are done; the React view is not.
+- **Live-chain validation** — feed the recommended contract into the contract-level
+  options-qualification gate against real quotes before display (replace the approximate
+  Brenner–Subrahmanyam pricing with chain mids/greeks).
+
 ## QA findings (from docs/PRODUCTION_READINESS_TESTS.md)
 
 - **Harden the scanner against malformed bars** (FINDING-1, medium) —
