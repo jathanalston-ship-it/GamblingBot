@@ -17,7 +17,7 @@
  * Security: contextIsolation on, nodeIntegration off; the renderer talks to the
  * backend only over http://127.0.0.1:<port> via the typed preload bridge.
  */
-import { ChildProcess, spawn } from "node:child_process";
+import { ChildProcess, spawn, spawnSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
@@ -119,6 +119,9 @@ function startBackend(): void {
     ...process.env,
     MRP_API_HOST: API_HOST,
     MRP_API_PORT: String(apiPort),
+    // The backend self-terminates if WE die without cleaning it up (crash /
+    // force-kill / system shutdown) — the orphan backstop.
+    MRP_PARENT_PID: String(process.pid),
     PYTHONPATH: isDev ? join(cwd, "src") : process.env.PYTHONPATH ?? "",
   };
   if (!isDev) {
@@ -155,34 +158,66 @@ function startBackend(): void {
   });
 }
 
+const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
 /**
- * Stop the backend sidecar — killing the whole process TREE.
+ * Kill the backend's whole process TREE.
  *
  * `child.kill()` only signals the immediate PID, but the packaged backend
  * (`mrp-backend.exe`, a PyInstaller binary) spawns a child of its own. Killing
  * just the parent orphans that child, which keeps holding the loopback port and
- * locking files in the install directory — which is what makes the next
- * installer fail with "Momentum Lab cannot be closed". So on Windows we use
- * `taskkill /T` to take down the entire tree.
+ * locking files in the install directory. On Windows we use `taskkill /T` to take
+ * down the entire tree; `force=false` requests a graceful close first.
+ *
+ * `sync` uses spawnSync so the kill completes even inside a `process.exit`/crash
+ * handler, where the event loop won't run async work.
  */
+function killTree(proc: ChildProcess, { force, sync }: { force: boolean; sync: boolean }): void {
+  const pid = proc.pid;
+  try {
+    if (process.platform === "win32" && pid) {
+      const args = force ? ["/pid", String(pid), "/T", "/F"] : ["/pid", String(pid), "/T"];
+      if (sync) spawnSync("taskkill", args, { stdio: "ignore" });
+      else spawn("taskkill", args, { stdio: "ignore" });
+    } else {
+      proc.kill(force ? "SIGKILL" : "SIGTERM");
+    }
+  } catch {
+    /* best effort */
+  }
+}
+
+/** Fast, force-kill the current sidecar (used by startup retries / crash recovery). */
 function stopBackend(): void {
   const proc = backend;
   backend = null;
-  if (!proc || proc.killed) return;
-  const pid = proc.pid;
-  if (process.platform === "win32" && pid) {
-    try {
-      spawn("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" });
-      return;
-    } catch {
-      /* fall through to a plain kill */
-    }
-  }
-  try {
-    proc.kill();
-  } catch {
-    /* already gone */
-  }
+  if (!proc || proc.exitCode !== null) return;
+  killTree(proc, { force: true, sync: false });
+}
+
+/** Synchronous force-kill — the last-resort safety net for `process.exit`/crashes. */
+function forceKillBackendSync(): void {
+  const proc = backend;
+  if (!proc || proc.exitCode !== null) return;
+  killTree(proc, { force: true, sync: true });
+}
+
+/**
+ * Graceful shutdown for the normal quit path: ask the backend to stop, wait for it
+ * to exit, then force-kill the tree if it overruns the timeout.
+ */
+async function gracefulStopBackend(timeoutMs: number): Promise<void> {
+  const proc = backend;
+  backend = null;
+  if (!proc || proc.exitCode !== null) return;
+  const exited = new Promise<void>((resolve) => proc.once("exit", () => resolve()));
+
+  killTree(proc, { force: false, sync: false }); // 1. graceful (SIGTERM / taskkill /T)
+  await Promise.race([exited, delay(timeoutMs)]);
+  if (proc.exitCode !== null) return; // exited cleanly
+
+  killTree(proc, { force: true, sync: false }); // 2. force the whole tree
+  await Promise.race([exited, delay(2000)]);
 }
 
 async function waitForBackend(timeoutMs = STARTUP_TIMEOUT_MS): Promise<void> {
@@ -479,21 +514,51 @@ if (!app.requestSingleInstanceLock()) {
   });
 }
 
+const SHUTDOWN_TIMEOUT_MS = 5_000; // graceful window before force-killing the tree
+let cleanupRan = false;
+
+// All windows closed -> quit the app (drives the graceful shutdown below).
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-// Tear the sidecar down on every shutdown path (normal close, "Restart &
-// install", or the failed-startup quit above) so it can never be orphaned.
-// `shuttingDown` first, so the backend's exit event doesn't trigger crash recovery.
-function shutdown(): void {
+// before-quit fires first: stop crash-recovery so the imminent backend exit isn't
+// treated as a crash to recover from.
+app.on("before-quit", () => {
   shuttingDown = true;
   if (restartTimer) {
     clearTimeout(restartTimer);
     restartTimer = null;
   }
-  stopBackend();
+});
+
+// will-quit: defer the quit until the backend is gracefully stopped (then force-
+// killed if it overruns). The cleanupRan guard lets the re-quit proceed.
+app.on("will-quit", (event) => {
+  if (cleanupRan) return;
+  cleanupRan = true;
+  shuttingDown = true;
+  event.preventDefault();
+  void gracefulStopBackend(SHUTDOWN_TIMEOUT_MS).finally(() => app.exit(0));
+});
+
+// Last-resort safety nets for paths that bypass the quit events — a main-process
+// crash, an explicit process.exit, etc. (A hard kill of Electron or a system
+// shutdown that skips even these is covered by the backend's parent watchdog.)
+process.on("exit", forceKillBackendSync);
+process.on("uncaughtException", (err) => {
+  console.error("[main] uncaught exception:", err);
+  forceKillBackendSync();
+  process.exit(1);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[main] unhandled rejection:", reason);
+  forceKillBackendSync();
+  process.exit(1);
+});
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
+  process.on(sig, () => {
+    forceKillBackendSync();
+    process.exit(0);
+  });
 }
-app.on("before-quit", shutdown);
-app.on("quit", shutdown);
-app.on("will-quit", shutdown);

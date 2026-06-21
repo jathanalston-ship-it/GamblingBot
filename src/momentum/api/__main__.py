@@ -15,6 +15,7 @@ import os
 import uvicorn
 
 from momentum.api.app import create_app
+from momentum.api.parent_watchdog import start_parent_watchdog
 from momentum.api.user_settings import load_user_env
 from momentum.core.logging import setup_logging
 from momentum.persistence.database import (
@@ -33,6 +34,11 @@ def main() -> None:
     # to a stdout no one sees.
     log = setup_logging(log_dir=os.environ.get("MRP_LOG_DIR"))
     log.info("MRP backend starting: host=%s port=%s", host, port)
+
+    # Self-terminate if the desktop launcher dies without cleaning us up (crash /
+    # force-kill / system shutdown) so the sidecar can never be orphaned.
+    if start_parent_watchdog() is not None:
+        log.info("parent watchdog active (MRP_PARENT_PID=%s)", os.environ.get("MRP_PARENT_PID"))
 
     # Load any persisted provider API keys (.env under MRP_USER_DIR) before the
     # provider is built, so a configured Alpaca/Polygon key authenticates.
