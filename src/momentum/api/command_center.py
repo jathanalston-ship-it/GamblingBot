@@ -19,12 +19,27 @@ from momentum.api.schemas import (
     WatchlistComparisonOut,
     WatchlistEntryOut,
 )
-from momentum.persistence.models import ConvictionScore, PortfolioSnapshot
+from momentum.persistence.models import ConvictionScore, PortfolioSnapshot, Run
 
 _TOP_N = 5
 
 
+def _effective_run_id(session: Session, run_id: str | None) -> str | None:
+    """Resolve the run to display, falling back to *latest* for a missing run.
+
+    The frontend auto-selects a run id (e.g. ``demo``) and keeps it in workspace
+    state, so it can request a run that was never seeded or has since been removed.
+    Rather than show an empty dashboard (or risk a 500), an unknown/blank run id
+    falls back to ``None`` — i.e. the latest data across runs.
+    """
+    if not run_id:  # None or "" -> latest
+        return None
+    exists = session.scalar(select(Run.id).where(Run.run_id == run_id).limit(1))
+    return run_id if exists is not None else None
+
+
 def command_center(session: Session, *, run_id: str | None = None) -> CommandCenterOut:
+    run_id = _effective_run_id(session, run_id)
     regime = services.latest_regime(session)
 
     # Multi-horizon opportunities (top 5 each) + the best reward:risk across them.

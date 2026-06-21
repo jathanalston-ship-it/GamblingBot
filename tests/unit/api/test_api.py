@@ -146,6 +146,33 @@ def test_command_center_aggregate(client, session_factory):
     assert "Infinity" not in client.get("/command-center", params={"run_id": "bt1"}).text
 
 
+def test_command_center_falls_back_when_run_is_missing(client):
+    # the frontend keeps an auto-selected run id (e.g. "demo") that may not be
+    # seeded yet — command-center must fall back to latest, not 500 or go empty.
+    body = client.get("/command-center", params={"run_id": "never-seeded-xyz"}).json()
+    assert body["run_id"] is None  # fell back to latest
+    assert body["regime"]["regime"] == "bull"  # latest data still shown
+    assert body["performance"]["n_trades"] == 2
+    assert body["equity"] is not None
+
+
+def test_command_center_blank_run_falls_back(client):
+    body = client.get("/command-center", params={"run_id": ""}).json()
+    assert body["run_id"] is None
+    assert body["regime"] is not None
+
+
+def test_command_center_known_run_is_used(client):
+    body = client.get("/command-center", params={"run_id": "bt1"}).json()
+    assert body["run_id"] == "bt1"  # a real run is respected, not overridden
+
+
+def test_command_center_never_500_on_missing_run(client):
+    assert client.get("/command-center", params={"run_id": "does-not-exist"}).status_code == 200
+    assert client.get("/command-center", params={"run_id": ""}).status_code == 200
+    assert client.get("/command-center").status_code == 200
+
+
 def test_lifecycle_endpoints(client, session_factory):
     from momentum.api.lifecycle_service import refresh_lifecycles
 
