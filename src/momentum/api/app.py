@@ -11,10 +11,13 @@ Run locally::
 
 from __future__ import annotations
 
+import logging
 import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from sqlalchemy.orm import Session, sessionmaker
 
 from momentum.api.routes import (
@@ -49,6 +52,8 @@ from momentum.api.routes import (
 )
 from momentum.api.jobs import JobManager
 from momentum.persistence.database import create_db_engine, create_session_factory
+
+_log = logging.getLogger(__name__)
 
 _ROUTERS = (
     health,
@@ -119,5 +124,19 @@ def create_app(session_factory: sessionmaker[Session] | None = None) -> FastAPI:
 
     for module in _ROUTERS:
         app.include_router(module.router)
+
+    # Surface the real error on a 500 instead of an opaque "Internal Server Error".
+    # The backend is a private loopback sidecar, so returning the exception type +
+    # message is safe and makes failures diagnosable from the UI and the logs
+    # (FastAPI's default handler hides the cause behind a bare 500).
+    @app.exception_handler(Exception)
+    async def _unhandled(request: Request, exc: Exception) -> JSONResponse:
+        if isinstance(exc, StarletteHTTPException):  # 404/explicit HTTPException
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+        _log.exception("unhandled error on %s %s", request.method, request.url.path)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"{type(exc).__name__}: {exc}", "path": request.url.path},
+        )
 
     return app
