@@ -879,3 +879,28 @@ class SignalAuditOut(BaseModel):
     caveats: list[str]
     config_hash: str
     generated_at: str
+
+
+class RouteHealthOut(BaseModel):
+    """The probe result for one API route."""
+
+    method: str
+    path: str
+    classification: str  # PASS | 404 | 500 | FAIL | TIMEOUT | SKIPPED
+    http_status: int | None
+    detail: str | None = None
+
+
+class ApiHealthReportOut(BaseModel):
+    """Self-audit of every route: live-probe classification + summary counts."""
+
+    total: int
+    passed: int
+    not_found: int
+    server_errors: int
+    failed: int
+    timeouts: int
+    skipped: int
+    healthy: bool
+    routes: list[RouteHealthOut]
+    generated_at: str

@@ -198,6 +198,16 @@ trading platform for US equities. Python 3.12, strictly typed. See
   Reads: `GET /watchlist-performance[/entries]`; desktop **WL Performance** view; demo
   seeds conviction-correlated outcomes. See `docs/WATCHLIST_PERFORMANCE.md`.
 
+- **API health audit** (`src/momentum/api/api_health_service.py`, `routes/api_health.py`)
+  — `GET /health/routes` live-probes **every** route in-process (via an ASGI transport,
+  through the full middleware + DB stack) and classifies each PASS / 404 / 500 / FAIL /
+  TIMEOUT; routes are enumerated from the app's own OpenAPI schema (always in sync),
+  mutating routes (POST/PUT) and the audit route itself are SKIPPED (no side effects),
+  and `healthy` is true only when there are no 500s/FAILs/TIMEOUTs. A global FastAPI
+  exception handler (`api/app.py`) now returns the real error type+message on a 500
+  (loopback sidecar), so the audit's `detail` names each broken route's cause. See
+  `docs/API_HEALTH.md`.
+
 - **Signal validation audit** (`src/momentum/signal_audit/`, `analytics/significance.py`,
   `api/signal_audit_service.py`) — over the last N candidates-with-outcomes (closed trades
   joined to conviction + sub-factors, watchlist rank, and scan-derived eligibility/options
