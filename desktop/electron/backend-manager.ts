@@ -17,6 +17,29 @@ import { ChildProcess, spawn as nodeSpawn, spawnSync } from "node:child_process"
 
 export type BackendStatus = "starting" | "healthy" | "failed" | "restarting" | "stopped";
 
+/**
+ * A structured record of how the backend came up, for the startup diagnostic
+ * report written to disk. Owns the things only the launcher can see: the
+ * executable it spawned, the PID, how long start → healthy took, the final
+ * health status, whether an already-running backend was adopted, and the tail of
+ * any captured startup exceptions. Configuration / database path come from the
+ * launch environment (filled in by main.ts).
+ */
+export interface StartupDiagnostics {
+  executable: string;
+  args: string[];
+  cwd: string;
+  pid: number | null;
+  adopted: boolean;
+  attempts: number;
+  status: BackendStatus;
+  healthUrl: string;
+  startedAt: string | null;
+  healthyAt: string | null;
+  startupDurationMs: number | null;
+  errorTail: string | null;
+}
+
 type SpawnFn = (
   cmd: string,
   args: string[],
@@ -74,6 +97,9 @@ export class BackendManager {
   private recoveryEnabled = false;
   private restarting = false;
   private restarts = 0;
+  private attempts = 0;
+  private startedAtMs: number | null = null;
+  private healthyAtMs: number | null = null;
   private readonly logBuf: string[] = [];
 
   private statusCbs: ((s: BackendStatus) => void)[] = [];
@@ -110,6 +136,29 @@ export class BackendManager {
   }
   get logTail(): string {
     return this.logBuf.join("\n") || "(no backend output was captured)";
+  }
+
+  /** The launcher's view of how the backend came up (for the startup report). */
+  get diagnostics(): StartupDiagnostics {
+    const errorLines = this.logBuf.filter((l) => /\b(error|exception|traceback|exit|failed)\b/i.test(l));
+    const duration =
+      this.startedAtMs !== null && this.healthyAtMs !== null
+        ? this.healthyAtMs - this.startedAtMs
+        : null;
+    return {
+      executable: this.command,
+      args: [...this.args],
+      cwd: this.cwd,
+      pid: this.adopted ? null : (this.proc?.pid ?? null),
+      adopted: this.adopted,
+      attempts: this.attempts,
+      status: this._status,
+      healthUrl: this.healthUrl,
+      startedAt: this.startedAtMs !== null ? new Date(this.startedAtMs).toISOString() : null,
+      healthyAt: this.healthyAtMs !== null ? new Date(this.healthyAtMs).toISOString() : null,
+      startupDurationMs: duration,
+      errorTail: errorLines.length ? errorLines.slice(-20).join("\n") : null,
+    };
   }
   onStatus(cb: (s: BackendStatus) => void): void {
     this.statusCbs.push(cb);
@@ -161,12 +210,14 @@ export class BackendManager {
   /** Bring the backend up: adopt an already-running one, else spawn + verify. */
   async start(): Promise<boolean> {
     this.shuttingDown = false;
+    if (this.startedAtMs === null) this.startedAtMs = this.now();
     this.setStatus("starting");
 
     // 1. already running? (a leftover sidecar or a dev server) — adopt it.
     if (await this.probeHealth()) {
       this.adopted = true;
       this.recoveryEnabled = false; // we don't own it, so we don't restart/kill it
+      this.healthyAtMs = this.now();
       this.logFn("adopted an already-running backend");
       this.setStatus("healthy");
       return true;
@@ -174,10 +225,12 @@ export class BackendManager {
 
     // 2. spawn + health-verify, retrying.
     for (let attempt = 1; attempt <= this.startAttempts; attempt++) {
+      this.attempts++;
       this.spawnProcess();
       if (await this.waitForHealth()) {
         this.recoveryEnabled = true;
         this.restarts = 0;
+        this.healthyAtMs = this.now();
         this.setStatus("healthy");
         return true;
       }

@@ -151,6 +151,41 @@ test("does not kill an adopted backend on stop", async () => {
   assert.strictEqual(m.status, "stopped");
 });
 
+// 8. Startup diagnostics are recorded on a cold start (for the startup report).
+test("records startup diagnostics on a cold start", async () => {
+  const { m } = makeManager({ healthy: false, healthyOnSpawn: true });
+  await m.start();
+  const d = m.diagnostics;
+  assert.strictEqual(d.status, "healthy");
+  assert.strictEqual(d.adopted, false);
+  assert.strictEqual(d.attempts, 1);
+  assert.strictEqual(d.pid, 4242, "should report the spawned PID");
+  assert.strictEqual(d.executable, "fake");
+  assert.ok(typeof d.startupDurationMs === "number", "duration should be measured");
+  assert.ok(d.startedAt && d.healthyAt, "both timestamps should be set");
+});
+
+// 9. An adopted backend reports a null PID (we did not spawn it).
+test("diagnostics mark an adopted backend with a null PID", async () => {
+  const { m } = makeManager({ healthy: true });
+  await m.start();
+  const d = m.diagnostics;
+  assert.strictEqual(d.adopted, true);
+  assert.strictEqual(d.pid, null);
+  assert.strictEqual(d.status, "healthy");
+});
+
+// 10. A failed start captures an error tail for the diagnostic report.
+test("diagnostics capture an error tail when start fails", async () => {
+  let t = 0;
+  const now = () => (t += 30);
+  const { m } = makeManager({ healthy: false, startAttempts: 1, now });
+  await m.start();
+  const d = m.diagnostics;
+  assert.strictEqual(d.status, "failed");
+  assert.ok(d.errorTail, "should capture exit/error lines on failure");
+});
+
 (async () => {
   let failed = 0;
   for (const [name, fn] of tests) {

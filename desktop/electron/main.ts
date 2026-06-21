@@ -12,7 +12,7 @@
  * Security: contextIsolation on, nodeIntegration off; the renderer talks to the
  * backend only over http://127.0.0.1:<port> via the typed preload bridge.
  */
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
 
@@ -109,6 +109,47 @@ function backendEnv(cwd: string): NodeJS.ProcessEnv {
 function sendBackendStatus(status: BackendStatus): void {
   lastBackendStatus = status;
   win?.webContents.send("mrp:backend:status", status);
+}
+
+/**
+ * Write the startup diagnostic report to `<logDir>/startup-report.json`.
+ *
+ * This is the authoritative record of a launch: the backend executable + PID, how
+ * long start → healthy took, the final health status, the configuration the
+ * backend was launched with (database path, log dir) and the tail of any startup
+ * exception. It is written after every `start()` attempt (success or failure) so a
+ * broken install is diagnosable from disk with zero terminal interaction. The
+ * backend writes its own companion `backend-startup.json` (config it actually
+ * loaded); we point at it here. Best-effort — never throws.
+ */
+function writeStartupReport(): void {
+  if (isSmoke || !manager) return;
+  try {
+    const { dbUrl, logDir } = userPaths();
+    const report = {
+      ts: new Date().toISOString(),
+      appVersion: app.getVersion(),
+      packaged: app.isPackaged,
+      platform: process.platform,
+      host: API_HOST,
+      port: apiPort,
+      healthUrl: `http://${API_HOST}:${apiPort}/health`,
+      databaseUrl: isDev ? process.env.DATABASE_URL ?? null : dbUrl,
+      logDir,
+      backendReport: join(logDir, "backend-startup.json"),
+      backend: manager.diagnostics,
+    };
+    writeFileSync(join(logDir, "startup-report.json"), JSON.stringify(report, null, 2), "utf-8");
+    console.error(
+      `[startup] status=${report.backend.status} ` +
+        `pid=${report.backend.pid ?? "-"} ` +
+        `adopted=${report.backend.adopted} ` +
+        `duration=${report.backend.startupDurationMs ?? "-"}ms ` +
+        `exe=${report.backend.executable}`,
+    );
+  } catch (err) {
+    console.error("[startup] failed to write startup report:", err);
+  }
 }
 
 /** Build the process manager and wire its lifecycle events to the UI. */
@@ -363,12 +404,14 @@ if (!app.requestSingleInstanceLock()) {
     initAutoUpdates();
 
     let healthy = await manager.start();
+    writeStartupReport();
     while (!healthy) {
       if (!promptBackendFailure("The backend service failed to start.")) {
         app.quit();
         return;
       }
       healthy = await manager.start();
+      writeStartupReport();
     }
 
     app.on("activate", () => {
