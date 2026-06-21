@@ -391,6 +391,16 @@ trading platform for US equities. Python 3.12, strictly typed. See
   executable. CI zips the already-built `win-unpacked` (+ marker), so it can't drift
   from the installer. See `docs/PORTABLE_BUILD.md`.
 
+- **Automated release validation** (`desktop/scripts/release-validation.cjs` +
+  `validate-release.cjs`, `.github/workflows/release.yml`) — before a release is
+  published, CI launches the packaged (portable) app and grades **seven startup
+  criteria** (electron_started / backend_started / health_endpoint / window_created /
+  renderer_loaded / database_accessible / startup_report_generated) from its
+  `startup-report.json` + a live `/health` probe, writes `release-validation.json`,
+  and **only publishes if all pass** — a release that cannot launch is never
+  published. Pure `evaluateValidation` + injectable `runValidation`, unit-tested
+  (healthy launch, never-launches, launch-throws). See `docs/RELEASE_VALIDATION.md`.
+
 ## Philosophy (what we optimise for)
 
 Optimise for **expectancy, profit factor, average winner, largest winner, trend

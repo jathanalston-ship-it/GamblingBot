@@ -135,6 +135,27 @@ jobs:
         shell: pwsh
         run: ./scripts/build_windows.ps1
 
+      # ----------------------------------------------------------------------- #
+      # GATE: launch the packaged app and verify it actually starts. If any of
+      # the seven checks fails (Electron / backend / health / window / renderer /
+      # database / startup report), this step fails -> the job fails -> the
+      # publish step below never runs. A release that cannot launch is never
+      # published. Writes desktop/release/release-validation.json.
+      # ----------------------------------------------------------------------- #
+      - name: Validate packaged build (startup verification — gates the release)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Expand-Archive -Path desktop/release/MomentumLab-Portable.zip -DestinationPath release-validate -Force
+          $exe = Join-Path (Get-Location) "release-validate/MomentumLab-Portable/Momentum Lab.exe"
+          if (-not (Test-Path $exe)) { throw "packaged executable not found: $exe" }
+          node desktop/scripts/validate-release.cjs --exe "$exe" --out desktop/release/release-validation.json --timeout 180000
+
+      - name: Show validation result
+        if: always()
+        shell: bash
+        run: cat desktop/release/release-validation.json 2>/dev/null || echo "no validation report (build/launch failed before it could be written)"
+
       - name: Generate release notes from git commits
         id: notes
         shell: bash
@@ -184,6 +205,7 @@ jobs:
           files: |
             desktop/release/MomentumLab-Setup-*.exe
             desktop/release/MomentumLab-Portable.zip
+            desktop/release/release-validation.json
             desktop/release/latest.yml
             desktop/release/*.blockmap
         env:

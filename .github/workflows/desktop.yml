@@ -53,8 +53,8 @@ jobs:
           test -f dist-electron/backend-manager.js
           test -f renderer/dist/index.html
 
-      - name: BackendManager lifecycle tests
-        run: node scripts/backend-manager.test.cjs
+      - name: Electron unit tests (lifecycle · startup trace · paths · release validation)
+        run: npm run test:backend
 
       - name: Electron startup validation (headless)
         run: xvfb-run -a --server-args="-screen 0 1280x800x24" npm run smoke
