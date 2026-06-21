@@ -13,6 +13,16 @@
  * published. Both halves are unit-tested in release-validation.test.cjs.
  */
 
+/**
+ * Strip any embedded credentials from a URL (`scheme://user:pass@host` →
+ * `scheme://***@host`). This report is uploaded as a PUBLIC release asset, so no
+ * URL it carries (DB URL, health URL) may ever leak a credential.
+ */
+function redactUrl(url) {
+  if (typeof url !== "string" || !url) return url;
+  return url.replace(/(\/\/)[^/@\s]+@/g, "$1***@");
+}
+
 /** The seven checks, in the order the release requires them. */
 const CHECK_NAMES = [
   "electron_started",
@@ -59,7 +69,7 @@ function evaluateValidation(input) {
   add(
     "health_endpoint",
     !!health && health.ok === true,
-    health ? `HTTP ${health.status} @ ${healthUrl || "?"}` : "not probed",
+    health ? `HTTP ${health.status} @ ${redactUrl(healthUrl) || "?"}` : "not probed",
   );
 
   // 4. Window created — BrowserWindow construction executed.
@@ -77,6 +87,8 @@ function evaluateValidation(input) {
   );
 
   // 6. Database accessible — the backend opened + reconciled the DB before serving.
+  // The URL is redacted: this report is uploaded as a PUBLIC release asset, and a
+  // DATABASE_URL could (in other deployments) embed credentials.
   const dbOk = backendReport
     ? backendReport.status === "serving" && !!backendReport.database_url
     : !!(report && report.databaseUrl) && !!backend && backend.status === "healthy";
@@ -84,8 +96,8 @@ function evaluateValidation(input) {
     "database_accessible",
     dbOk,
     backendReport
-      ? `backend status=${backendReport.status} db=${backendReport.database_url || "?"}`
-      : `db=${(report && report.databaseUrl) || "unknown"}`,
+      ? `backend status=${backendReport.status} db=${redactUrl(backendReport.database_url) || "?"}`
+      : `db=${redactUrl(report && report.databaseUrl) || "unknown"}`,
   );
 
   // 7. Startup report generated — the report exists and the run completed (reached ready).
@@ -168,7 +180,7 @@ async function runValidation(o) {
     packaged: report ? report.packaged : null,
     portable: report ? report.portable : null,
     platform: report ? report.platform : null,
-    healthUrl: healthUrl || null,
+    healthUrl: redactUrl(healthUrl) || null,
     launchError,
     checks: evald.checks,
     startupTimeline: report && report.startup ? report.startup.timeline : null,
@@ -180,4 +192,4 @@ async function runValidation(o) {
   return result;
 }
 
-module.exports = { evaluateValidation, runValidation, isTerminal, CHECK_NAMES };
+module.exports = { evaluateValidation, runValidation, isTerminal, redactUrl, CHECK_NAMES };

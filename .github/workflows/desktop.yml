@@ -7,6 +7,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Least privilege: build/test only needs to read the code. No secrets are used,
+# and fork PRs (pull_request, not pull_request_target) get no secret access.
+permissions:
+  contents: read
+
 concurrency:
   group: desktop-${{ github.ref }}
   cancel-in-progress: true

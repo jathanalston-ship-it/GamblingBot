@@ -10,7 +10,12 @@
  */
 
 const assert = require("node:assert");
-const { evaluateValidation, runValidation, CHECK_NAMES } = require("./release-validation.cjs");
+const {
+  evaluateValidation,
+  runValidation,
+  redactUrl,
+  CHECK_NAMES,
+} = require("./release-validation.cjs");
 
 /** A startup-report.json from a fully healthy launch. */
 function healthyReport() {
@@ -87,6 +92,29 @@ test("renderer that never paints fails renderer_loaded", () => {
   const r = evaluateValidation({ report: rep, backendReport: servingBackend(), health: okHealth() });
   assert.strictEqual(Object.fromEntries(r.checks.map((c) => [c.name, c.ok])).renderer_loaded, false);
   assert.strictEqual(r.ok, false);
+});
+
+test("redactUrl strips credentials from any URL (public artifact safety)", () => {
+  assert.strictEqual(
+    redactUrl("postgresql://user:s3cr3t@db.example.com/momentum"),
+    "postgresql://***@db.example.com/momentum",
+  );
+  // SQLite paths and loopback URLs are unchanged (no credentials).
+  assert.strictEqual(redactUrl("sqlite:///C:/x/momentum.db"), "sqlite:///C:/x/momentum.db");
+  assert.strictEqual(redactUrl("http://127.0.0.1:51234/health"), "http://127.0.0.1:51234/health");
+  assert.strictEqual(redactUrl(null), null);
+});
+
+test("database_accessible detail never leaks DB credentials", () => {
+  const rep = healthyReport();
+  const r = evaluateValidation({
+    report: rep,
+    backendReport: { status: "serving", database_url: "postgres://u:p4ss@h/db" },
+    health: okHealth(),
+  });
+  const detail = r.checks.find((c) => c.name === "database_accessible").detail;
+  assert.ok(!detail.includes("p4ss"), "the DB password must be redacted in the artifact");
+  assert.ok(detail.includes("***@"), "redaction marker present");
 });
 
 test("backend serving but DB not opened fails database_accessible", () => {
