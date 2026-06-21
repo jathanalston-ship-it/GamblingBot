@@ -43,6 +43,35 @@ let backend: ChildProcess | null = null;
 let win: BrowserWindow | null = null;
 let apiPort = 8000;
 
+// --- backend startup-reliability state ------------------------------------- //
+const MAX_START_ATTEMPTS = 2; // initial bring-up tries before asking the user
+const STARTUP_TIMEOUT_MS = 30_000; // health-poll budget per attempt
+const MAX_RUNTIME_RESTARTS = 3; // crash-recovery cap once the window is up
+const BACKEND_LOG_LINES = 120; // ring buffer of captured backend output
+
+const backendLog: string[] = [];
+let backendExited = false; // set by the current backend's error/exit events
+let shuttingDown = false; // true once the app is intentionally quitting
+let recoveryEnabled = false; // true once the window is up (enables crash respawn)
+let runtimeRestarts = 0;
+let restartTimer: NodeJS.Timeout | null = null;
+
+function pushBackendLog(chunk: string): void {
+  for (const raw of chunk.split(/\r?\n/)) {
+    const line = raw.trimEnd();
+    if (!line) continue;
+    backendLog.push(line);
+    if (backendLog.length > BACKEND_LOG_LINES) backendLog.shift();
+    console.error(`[backend] ${line}`);
+  }
+}
+
+/** The last few lines of backend output — the actual cause to show the user. */
+function backendTail(n = 18): string {
+  return backendLog.slice(-n).join("\n") || "(no backend output was captured)";
+}
+
+
 /** Find a free loopback TCP port (prod), so a busy 8000 never blocks launch. */
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -100,9 +129,29 @@ function startBackend(): void {
     // API keys -> .env). The bundled config/ templates are read-only.
     env.MRP_USER_DIR = process.env.MRP_USER_DIR ?? app.getPath("userData");
   }
-  backend = spawn(cmd, args, { cwd, env, stdio: "inherit" });
-  backend.on("exit", (code) => {
-    if (code && code !== 0) console.error(`[backend] exited with code ${code}`);
+
+  backendExited = false;
+  try {
+    // Pipe (not inherit) so we can capture the cause of a failed start and show it.
+    backend = spawn(cmd, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
+  } catch (err) {
+    backendExited = true;
+    pushBackendLog(`[spawn failed] ${String((err as Error)?.message ?? err)}`);
+    return;
+  }
+
+  backend.stdout?.on("data", (b: Buffer) => pushBackendLog(b.toString()));
+  backend.stderr?.on("data", (b: Buffer) => pushBackendLog(b.toString()));
+  // 'error' fires when the binary is missing or cannot be executed (no throw).
+  backend.on("error", (err) => {
+    backendExited = true;
+    pushBackendLog(`[spawn error] ${err.message}`);
+  });
+  backend.on("exit", (code, signal) => {
+    backendExited = true;
+    if (code && code !== 0) pushBackendLog(`[backend exited] code=${code} signal=${signal ?? "-"}`);
+    // Crash recovery: respawn if the app isn't quitting and the window is up.
+    if (recoveryEnabled && !shuttingDown) scheduleBackendRestart();
   });
 }
 
@@ -136,10 +185,12 @@ function stopBackend(): void {
   }
 }
 
-async function waitForBackend(timeoutMs = 60_000): Promise<void> {
+async function waitForBackend(timeoutMs = STARTUP_TIMEOUT_MS): Promise<void> {
   const base = `http://${API_HOST}:${apiPort}`;
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    // Fail fast: don't keep polling a port whose process already died.
+    if (backendExited) throw new Error("backend process exited before becoming healthy");
     try {
       const res = await fetch(`${base}/health`);
       if (res.ok) return;
@@ -148,7 +199,67 @@ async function waitForBackend(timeoutMs = 60_000): Promise<void> {
     }
     await new Promise((r) => setTimeout(r, 300));
   }
-  throw new Error("backend did not become healthy in time");
+  throw new Error("backend did not become healthy within the startup timeout");
+}
+
+/** Spawn + health-verify the backend, retrying a few times. */
+async function bringUpBackend(): Promise<boolean> {
+  for (let attempt = 1; attempt <= MAX_START_ATTEMPTS; attempt++) {
+    startBackend();
+    try {
+      await waitForBackend();
+      return true;
+    } catch (err) {
+      pushBackendLog(`[startup] attempt ${attempt}/${MAX_START_ATTEMPTS} failed: ${String(err)}`);
+      stopBackend(); // recovery is off during bring-up, so this won't auto-respawn
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+  return false;
+}
+
+/** A modal "Retry / Quit" dialog showing the captured backend error. */
+function promptBackendFailure(headline: string): boolean {
+  if (shuttingDown) return false;
+  const logHint = app.isPackaged ? `\n\nDetails: ${join(userPaths().logDir, "mrp.log")}` : "";
+  const choice = dialog.showMessageBoxSync({
+    type: "error",
+    title: "Momentum Lab",
+    message: headline,
+    detail: `${backendTail()}${logHint}`,
+    buttons: ["Retry", "Quit"],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  });
+  return choice === 0;
+}
+
+/** Crash recovery once the window is up: respawn (bounded), reload on success. */
+function scheduleBackendRestart(): void {
+  if (restartTimer || shuttingDown) return;
+  if (runtimeRestarts >= MAX_RUNTIME_RESTARTS) {
+    if (promptBackendFailure("The backend stopped and could not be restarted.")) {
+      runtimeRestarts = 0;
+      scheduleBackendRestart();
+    } else {
+      app.quit();
+    }
+    return;
+  }
+  runtimeRestarts++;
+  restartTimer = setTimeout(async () => {
+    restartTimer = null;
+    if (shuttingDown) return;
+    startBackend();
+    try {
+      await waitForBackend();
+      runtimeRestarts = 0;
+      win?.webContents.reload(); // re-fetch data so stale "backend down" errors clear
+    } catch {
+      stopBackend(); // its exit event re-enters scheduleBackendRestart (bounded)
+    }
+  }, 800);
 }
 
 /** Application menu, including "Check for Updates…" which routes the renderer. */
@@ -349,19 +460,17 @@ if (!app.requestSingleInstanceLock()) {
     process.env.MRP_APP_VERSION = app.getVersion();
     process.env.MRP_PACKAGED = app.isPackaged ? "1" : "0";
 
-    startBackend();
-    try {
-      await waitForBackend();
-    } catch (err) {
-      dialog.showErrorBox(
-        "Momentum Lab",
-        `The backend service failed to start.\n\n${String(err)}\n\n` +
-          "Please reopen the app. If the problem persists, reinstall Momentum Lab.",
-      );
-      app.quit();
-      return;
+    // Bring the backend up, retrying; if it still fails, let the user Retry or Quit
+    // (with the captured error) instead of dropping them into a blank/500 window.
+    while (!(await bringUpBackend())) {
+      if (!promptBackendFailure("The backend service failed to start.")) {
+        app.quit();
+        return;
+      }
     }
+
     await createWindow();
+    recoveryEnabled = true; // window is up — auto-respawn the backend if it crashes
     initAutoUpdates();
 
     app.on("activate", () => {
@@ -376,6 +485,15 @@ app.on("window-all-closed", () => {
 
 // Tear the sidecar down on every shutdown path (normal close, "Restart &
 // install", or the failed-startup quit above) so it can never be orphaned.
-app.on("before-quit", stopBackend);
-app.on("quit", stopBackend);
-app.on("will-quit", stopBackend);
+// `shuttingDown` first, so the backend's exit event doesn't trigger crash recovery.
+function shutdown(): void {
+  shuttingDown = true;
+  if (restartTimer) {
+    clearTimeout(restartTimer);
+    restartTimer = null;
+  }
+  stopBackend();
+}
+app.on("before-quit", shutdown);
+app.on("quit", shutdown);
+app.on("will-quit", shutdown);
