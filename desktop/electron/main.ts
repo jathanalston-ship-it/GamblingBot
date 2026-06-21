@@ -106,6 +106,36 @@ function startBackend(): void {
   });
 }
 
+/**
+ * Stop the backend sidecar — killing the whole process TREE.
+ *
+ * `child.kill()` only signals the immediate PID, but the packaged backend
+ * (`mrp-backend.exe`, a PyInstaller binary) spawns a child of its own. Killing
+ * just the parent orphans that child, which keeps holding the loopback port and
+ * locking files in the install directory — which is what makes the next
+ * installer fail with "Momentum Lab cannot be closed". So on Windows we use
+ * `taskkill /T` to take down the entire tree.
+ */
+function stopBackend(): void {
+  const proc = backend;
+  backend = null;
+  if (!proc || proc.killed) return;
+  const pid = proc.pid;
+  if (process.platform === "win32" && pid) {
+    try {
+      spawn("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" });
+      return;
+    } catch {
+      /* fall through to a plain kill */
+    }
+  }
+  try {
+    proc.kill();
+  } catch {
+    /* already gone */
+  }
+}
+
 async function waitForBackend(timeoutMs = 60_000): Promise<void> {
   const base = `http://${API_HOST}:${apiPort}`;
   const deadline = Date.now() + timeoutMs;
@@ -344,7 +374,8 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-app.on("quit", () => {
-  backend?.kill();
-  backend = null;
-});
+// Tear the sidecar down on every shutdown path (normal close, "Restart &
+// install", or the failed-startup quit above) so it can never be orphaned.
+app.on("before-quit", stopBackend);
+app.on("quit", stopBackend);
+app.on("will-quit", stopBackend);

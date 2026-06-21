@@ -60,6 +60,14 @@ they belong in a dedicated market-data slice with its own tests:
   options-qualification gate against real quotes before display (replace the approximate
   Brenner–Subrahmanyam pricing with chain mids/greeks).
 
+## Desktop packaging
+
+- **Build the backend as PyInstaller `onedir` (not `onefile`)** — onefile spawns a
+  bootloader child + extracts to a temp dir on every launch (slower first paint, AV
+  temp-extraction locks, and the double-process that motivated the `taskkill /T`
+  tree-kill). onedir avoids the extra process and speeds startup; revisit
+  `desktop/build/backend.spec` + `electron-builder.yml` extraResources.
+
 ## QA findings (from docs/PRODUCTION_READINESS_TESTS.md)
 
 - **Harden the scanner against malformed bars** (FINDING-1, medium) —

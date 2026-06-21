@@ -201,3 +201,13 @@ The workflow:
 - **First launch** is the slowest (PyInstaller unpacks the backend and the DB is
   created); subsequent launches are fast.
 - **Live trading** is out of scope — Momentum Lab is paper/research only.
+
+## Troubleshooting
+
+- **"Momentum Lab cannot be closed" during install (with no Momentum Lab in Task
+  Manager):** the offender is the **backend sidecar `mrp-backend.exe`** (which runs
+  from inside the install dir), not the app itself. The app now kills the whole
+  backend process **tree** on every shutdown path (`stopBackend` → `taskkill /T`),
+  so it should not orphan; if you still hit it, end `mrp-backend.exe` (and any
+  `Momentum Lab.exe`) under Task Manager → **Details**, or just **reboot** and run
+  the installer before opening the app.
