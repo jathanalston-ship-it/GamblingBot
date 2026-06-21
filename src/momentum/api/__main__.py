@@ -17,9 +17,9 @@ import uvicorn
 from momentum.api.app import create_app
 from momentum.api.user_settings import load_user_env
 from momentum.persistence.database import (
-    create_all,
     create_db_engine,
     create_session_factory,
+    reconcile_schema,
 )
 
 
@@ -32,7 +32,9 @@ def main() -> None:
     load_user_env()
 
     engine = create_db_engine()
-    create_all(engine)  # ensure the SQLite schema exists on first launch
+    # Create the schema on first launch AND self-heal an older database after an
+    # app upgrade (add any new tables/columns) so reads never hit "no such column".
+    reconcile_schema(engine)
     app = create_app(create_session_factory(engine))
 
     uvicorn.run(app, host=host, port=port, log_level="info")
