@@ -173,6 +173,66 @@ def test_command_center_never_500_on_missing_run(client):
     assert client.get("/command-center").status_code == 200
 
 
+def _empty_client():
+    """A client over a fresh, fully-empty (but schema-complete) database."""
+    from fastapi.testclient import TestClient
+    from sqlalchemy import create_engine
+    from sqlalchemy.pool import StaticPool
+
+    from momentum.api.app import create_app
+    from momentum.persistence.database import create_session_factory
+    from momentum.persistence.models import Base
+
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
+    )
+    Base.metadata.create_all(engine)
+    return TestClient(create_app(session_factory=create_session_factory(engine)))
+
+
+def test_command_center_empty_db_returns_valid_empty_state():
+    """Fresh install / empty DB: 200 with a valid empty-state, never a 500."""
+    r = _empty_client().get("/command-center")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["regime"] is None
+    assert body["daily"] == [] and body["weekly"] == [] and body["monthly"] == []
+    assert body["highest_conviction"] is None
+    assert body["equity"] is None and body["portfolio_heat"] is None
+    assert body["performance"]["n_trades"] == 0
+    assert body["recent_triggered"] == []
+
+
+def test_command_center_survives_missing_column(client, session_factory):
+    """An upgraded DB missing a column a query selects must NOT 500 the page."""
+    from sqlalchemy import text
+
+    # Drop a column command-center reads (the original 500 repro).
+    with session_factory() as s:
+        s.execute(text("ALTER TABLE portfolio_snapshots DROP COLUMN daily_pnl"))
+        s.commit()
+
+    r = client.get("/command-center")
+    assert r.status_code == 200  # was 500: "no such column: portfolio_snapshots.daily_pnl"
+    body = r.json()
+    # The broken section degrades to empty; the rest still serves.
+    assert body["equity"] is None
+    assert isinstance(body["recent_triggered"], list)
+
+
+def test_command_center_survives_missing_table(client, session_factory):
+    """A missing table (schema drift) degrades gracefully instead of 500ing."""
+    from sqlalchemy import text
+
+    with session_factory() as s:
+        s.execute(text("DROP TABLE watchlist_entries"))
+        s.commit()
+
+    r = client.get("/command-center")
+    assert r.status_code == 200
+    assert r.json()["daily"] == []
+
+
 def test_lifecycle_endpoints(client, session_factory):
     from momentum.api.lifecycle_service import refresh_lifecycles
 

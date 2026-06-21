@@ -3,9 +3,22 @@
 Pulls together the regime, the multi-horizon opportunities, the standout setups,
 portfolio heat, recent performance, watchlist changes and freshly-triggered
 setups by reusing the existing service layer — it owns no new persistence.
+
+Resilience contract: this is the default landing page, so it must **never** 500
+because data is missing or a schema/sub-service gap exists. Every independent
+section is computed behind :func:`_safe`, which logs and falls back to an empty
+value (rolling the session back so one failed query can't cascade). A fresh /
+empty / partially-migrated / live database all yield a valid response — at worst
+a fully empty-state one.
 """
 
 from __future__ import annotations
+
+import datetime as dt
+import logging
+import math
+from collections.abc import Callable
+from typing import TypeVar
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -15,13 +28,46 @@ from momentum.api.schemas import (
     CommandCenterOut,
     CommandPerformanceOut,
     ConvictionScoreOut,
+    LifecycleOut,
+    RegimeOut,
     SectorHighlightOut,
     WatchlistComparisonOut,
     WatchlistEntryOut,
 )
 from momentum.persistence.models import ConvictionScore, PortfolioSnapshot, Run
 
+_log = logging.getLogger("momentum.api.command_center")
 _TOP_N = 5
+
+T = TypeVar("T")
+
+
+def _safe(session: Session, label: str, fn: Callable[[], T], default: T) -> T:
+    """Run one aggregation section; on ANY failure log it and return *default*.
+
+    Read-only landing-page sections are independent, so a single broken one (a
+    missing column on an upgraded DB, a missing table, a bad sub-service) must
+    degrade to empty rather than 500 the whole page. The session is rolled back so
+    a failed query doesn't poison the connection for the remaining sections.
+    """
+    try:
+        return fn()
+    except Exception:  # noqa: BLE001 — landing page must never 500 on missing data
+        _log.warning(
+            "command_center: section %r failed; using empty fallback", label, exc_info=True
+        )
+        try:
+            session.rollback()
+        except Exception:  # noqa: BLE001 — best-effort recovery
+            _log.debug("command_center: rollback after %r failed", label, exc_info=True)
+        return default
+
+
+def _finite(value: float | None) -> float | None:
+    """Map a non-finite float (inf/-inf/NaN) to ``None`` (valid-JSON guarantee)."""
+    if value is None:
+        return None
+    return value if math.isfinite(value) else None
 
 
 def _effective_run_id(session: Session, run_id: str | None) -> str | None:
@@ -38,85 +84,142 @@ def _effective_run_id(session: Session, run_id: str | None) -> str | None:
     return run_id if exists is not None else None
 
 
-def command_center(session: Session, *, run_id: str | None = None) -> CommandCenterOut:
-    run_id = _effective_run_id(session, run_id)
-    regime = services.latest_regime(session)
-
-    # Multi-horizon opportunities (top 5 each) + the best reward:risk across them.
+def _watchlists(
+    session: Session, run_id: str | None
+) -> tuple[
+    dt.date | None,
+    list[WatchlistEntryOut],
+    list[WatchlistEntryOut],
+    list[WatchlistEntryOut],
+    WatchlistEntryOut | None,
+]:
+    """The multi-horizon opportunities (top 5 each) + the best reward:risk."""
     watchlists = watchlist_service.get_watchlists(session, run_id=run_id)
     by_h = {h.horizon: h.entries for h in watchlists.horizons}
-    daily = by_h.get("daily", [])[:_TOP_N]
-    weekly = by_h.get("weekly", [])[:_TOP_N]
-    monthly = by_h.get("monthly", [])[:_TOP_N]
     all_entries = [e for h in watchlists.horizons for e in h.entries]
-    best_rr: WatchlistEntryOut | None = max(
+    best: WatchlistEntryOut | None = max(
         (e for e in all_entries if e.reward_risk is not None),
         key=lambda e: e.reward_risk or 0.0,
         default=None,
     )
+    return (
+        watchlists.as_of,
+        by_h.get("daily", [])[:_TOP_N],
+        by_h.get("weekly", [])[:_TOP_N],
+        by_h.get("monthly", [])[:_TOP_N],
+        best,
+    )
 
-    # Highest-conviction setup.
-    hc_stmt = select(ConvictionScore).order_by(ConvictionScore.score.desc()).limit(1)
+
+def _highest_conviction(session: Session, run_id: str | None) -> ConvictionScoreOut | None:
+    stmt = select(ConvictionScore).order_by(ConvictionScore.score.desc()).limit(1)
     if run_id is not None:
-        hc_stmt = hc_stmt.where(ConvictionScore.run_id == run_id)
-    hc_row = session.scalars(hc_stmt).first()
-    highest_conviction = ConvictionScoreOut.model_validate(hc_row) if hc_row is not None else None
+        stmt = stmt.where(ConvictionScore.run_id == run_id)
+    row = session.scalars(stmt).first()
+    return ConvictionScoreOut.model_validate(row) if row is not None else None
 
-    # Most attractive sector (highest average conviction across current candidates).
+
+def _top_sector(session: Session, run_id: str | None) -> SectorHighlightOut | None:
+    """Most attractive sector (highest average conviction across candidates)."""
     candidates, _ = watchlist_service._load_candidates(session, run_id)
     sector_scores: dict[str, list[float]] = {}
     for cand in candidates:
         if cand.sector:
             sector_scores.setdefault(cand.sector, []).append(cand.base_conviction)
-    top_sector: SectorHighlightOut | None = None
-    if sector_scores:
-        # Prefer sectors with breadth (>= 2 names) so a single hot stock doesn't win.
-        pool = {s: v for s, v in sector_scores.items() if len(v) >= 2} or sector_scores
-        sector, scores = max(pool.items(), key=lambda kv: sum(kv[1]) / len(kv[1]))
-        top_sector = SectorHighlightOut(
-            sector=sector, avg_conviction=round(sum(scores) / len(scores), 1), count=len(scores)
-        )
-
-    # Portfolio heat / equity / daily P&L from the latest snapshot.
-    snap_stmt = select(PortfolioSnapshot)
-    if run_id is not None:
-        snap_stmt = snap_stmt.where(PortfolioSnapshot.run_id == run_id)
-    snap = session.scalars(
-        snap_stmt.order_by(PortfolioSnapshot.session_date.desc()).limit(1)
-    ).first()
-    portfolio_heat = snap.portfolio_heat if snap is not None else None
-    equity = snap.equity if snap is not None else None
-    daily_pnl = None
-    if snap is not None:
-        daily_pnl = snap.daily_pnl
-        if daily_pnl is None and snap.daily_return is not None:
-            daily_pnl = snap.equity * snap.daily_return
-
-    # Recent performance headline.
-    perf = services.performance_summary(session, run_id=run_id)
-    ts = perf.trade_stats
-    performance = CommandPerformanceOut(
-        n_trades=perf.n_trades,
-        expectancy_r=ts.get("expectancy_r"),
-        profit_factor=ts.get("profit_factor"),
-        win_rate=ts.get("win_rate"),
-        net_pnl=ts.get("net_profit"),
+    if not sector_scores:
+        return None
+    # Prefer sectors with breadth (>= 2 names) so a single hot stock doesn't win.
+    pool = {s: v for s, v in sector_scores.items() if len(v) >= 2} or sector_scores
+    sector, scores = max(pool.items(), key=lambda kv: sum(kv[1]) / len(kv[1]))
+    return SectorHighlightOut(
+        sector=sector,
+        avg_conviction=_finite(round(sum(scores) / len(scores), 1)) or 0.0,
+        count=len(scores),
     )
 
-    # Watchlist changes — diff the two most recent daily generations.
+
+def _portfolio(
+    session: Session, run_id: str | None
+) -> tuple[float | None, float | None, float | None]:
+    """Portfolio heat / equity / daily P&L from the latest snapshot."""
+    stmt = select(PortfolioSnapshot)
+    if run_id is not None:
+        stmt = stmt.where(PortfolioSnapshot.run_id == run_id)
+    snap = session.scalars(stmt.order_by(PortfolioSnapshot.session_date.desc()).limit(1)).first()
+    if snap is None:
+        return None, None, None
+    daily_pnl = snap.daily_pnl
+    if daily_pnl is None and snap.daily_return is not None and snap.equity is not None:
+        daily_pnl = snap.equity * snap.daily_return
+    return _finite(snap.portfolio_heat), _finite(snap.equity), _finite(daily_pnl)
+
+
+def _performance(session: Session, run_id: str | None) -> CommandPerformanceOut:
+    perf = services.performance_summary(session, run_id=run_id)
+    ts = perf.trade_stats
+    return CommandPerformanceOut(
+        n_trades=perf.n_trades,
+        expectancy_r=_finite(ts.get("expectancy_r")),
+        profit_factor=_finite(ts.get("profit_factor")),
+        win_rate=_finite(ts.get("win_rate")),
+        net_pnl=_finite(ts.get("net_profit")),
+    )
+
+
+def _watchlist_changes(session: Session, run_id: str | None) -> WatchlistComparisonOut | None:
+    """Diff the two most recent daily generations."""
     dates = watchlist_service.watchlist_dates(session, run_id=run_id, limit=2)
-    changes: WatchlistComparisonOut | None = None
-    if len(dates) >= 2:
-        changes = watchlist_service.compare_watchlists(
-            session, horizon="daily", base=dates[1], against=dates[0], run_id=run_id
-        )
+    if len(dates) < 2:
+        return None
+    return watchlist_service.compare_watchlists(
+        session, horizon="daily", base=dates[1], against=dates[0], run_id=run_id
+    )
 
-    # Recently-triggered setups.
-    recent_triggered = lifecycle_service.list_lifecycles(session, run_id=run_id, state="Triggered")[
-        :8
-    ]
 
-    as_of = watchlists.as_of or (regime.as_of if regime is not None else None)
+_EMPTY_PERF = CommandPerformanceOut(
+    n_trades=0, expectancy_r=None, profit_factor=None, win_rate=None, net_pnl=None
+)
+_EMPTY_WATCHLISTS: tuple[
+    dt.date | None,
+    list[WatchlistEntryOut],
+    list[WatchlistEntryOut],
+    list[WatchlistEntryOut],
+    WatchlistEntryOut | None,
+] = (None, [], [], [], None)
+_EMPTY_PORTFOLIO: tuple[float | None, float | None, float | None] = (None, None, None)
+_EMPTY_TRIGGERED: list[LifecycleOut] = []
+
+
+def command_center(session: Session, *, run_id: str | None = None) -> CommandCenterOut:
+    """One aggregate. Every section is independently guarded — it never 500s."""
+    run_id = _safe(session, "run_id", lambda: _effective_run_id(session, run_id), None)
+    regime: RegimeOut | None = _safe(
+        session, "regime", lambda: services.latest_regime(session), None
+    )
+
+    wl_as_of, daily, weekly, monthly, best_rr = _safe(
+        session,
+        "watchlists",
+        lambda: _watchlists(session, run_id),
+        _EMPTY_WATCHLISTS,
+    )
+    highest_conviction = _safe(
+        session, "highest_conviction", lambda: _highest_conviction(session, run_id), None
+    )
+    top_sector = _safe(session, "top_sector", lambda: _top_sector(session, run_id), None)
+    portfolio_heat, equity, daily_pnl = _safe(
+        session, "portfolio", lambda: _portfolio(session, run_id), _EMPTY_PORTFOLIO
+    )
+    performance = _safe(session, "performance", lambda: _performance(session, run_id), _EMPTY_PERF)
+    changes = _safe(session, "watchlist_changes", lambda: _watchlist_changes(session, run_id), None)
+    recent_triggered = _safe(
+        session,
+        "recent_triggered",
+        lambda: lifecycle_service.list_lifecycles(session, run_id=run_id, state="Triggered")[:8],
+        _EMPTY_TRIGGERED,
+    )
+
+    as_of = wl_as_of or (regime.as_of if regime is not None else None)
     return CommandCenterOut(
         run_id=run_id,
         as_of=as_of,
