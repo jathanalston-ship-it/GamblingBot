@@ -82,6 +82,11 @@ class WatchlistEngine:
             if cand.atr is not None and cand.price is not None and cand.price > 0
             else None
         )
+        # Guard against degenerate inputs (e.g. a non-finite ATR) so non-finite
+        # values are never persisted — JSON cannot encode NaN/Inf and they would
+        # otherwise crash the read endpoints (allow_nan=False).
+        if atr_pct is not None and not math.isfinite(atr_pct):
+            atr_pct = None
         expected_risk_pct = (
             round(atr_pct * profile.stop_atr_mult, 4) if atr_pct is not None else None
         )

@@ -8,6 +8,7 @@ watchlists can be queried by date and compared over time.
 from __future__ import annotations
 
 import datetime as dt
+import math
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -20,8 +21,32 @@ from momentum.api.schemas import (
     WatchlistSetOut,
 )
 from momentum.persistence.models import ConvictionScore, ScanResult
+from momentum.persistence.models.watchlist_entry import WatchlistEntryRow
 from momentum.persistence.repositories.watchlist_entries import WatchlistRepository
 from momentum.watchlist import WatchlistCandidate, WatchlistEngine, default_config
+
+
+def _finite(value: float | None) -> float | None:
+    """Map a non-finite float (NaN/Inf) to None — JSON cannot encode them.
+
+    Starlette's ``JSONResponse`` renders with ``allow_nan=False``, so a single
+    non-finite value anywhere in the response raises and becomes an HTTP 500. A
+    legacy row whose ATR/price math produced an inf/NaN excursion would otherwise
+    crash ``GET /watchlists`` on read.
+    """
+    return value if value is None or math.isfinite(value) else None
+
+
+def _entry_out(row: WatchlistEntryRow) -> WatchlistEntryOut:
+    """Row -> response model with the optional excursion floats sanitised."""
+    out = WatchlistEntryOut.model_validate(row)
+    return out.model_copy(
+        update={
+            "expected_move_pct": _finite(out.expected_move_pct),
+            "expected_risk_pct": _finite(out.expected_risk_pct),
+            "reward_risk": _finite(out.reward_risk),
+        }
+    )
 
 
 def _ordered_horizons() -> list[tuple[str, str]]:
@@ -107,7 +132,7 @@ def get_watchlists(
     grouped: dict[str, list[WatchlistEntryOut]] = {}
     if target is not None:
         for row in repo.for_date(target, run_id=run_id):
-            grouped.setdefault(row.horizon, []).append(WatchlistEntryOut.model_validate(row))
+            grouped.setdefault(row.horizon, []).append(_entry_out(row))
     for key, label in _ordered_horizons():
         entries = sorted(grouped.get(key, []), key=lambda e: e.rank)
         horizons.append(WatchlistOut(horizon=key, label=label, as_of=target, entries=entries))
@@ -128,7 +153,7 @@ def get_watchlist(
     entries: list[WatchlistEntryOut] = []
     if target is not None:
         rows = repo.for_date(target, horizon=horizon, run_id=run_id)
-        entries = [WatchlistEntryOut.model_validate(r) for r in rows]
+        entries = [_entry_out(r) for r in rows]
     return WatchlistOut(horizon=horizon, label=label, as_of=target, entries=entries)
 
 
@@ -152,10 +177,8 @@ def compare_watchlists(
     base_by = {r.symbol: r for r in repo.for_date(base, horizon=horizon, run_id=run_id)}
     against_by = {r.symbol: r for r in repo.for_date(against, horizon=horizon, run_id=run_id)}
 
-    added = [WatchlistEntryOut.model_validate(r) for s, r in against_by.items() if s not in base_by]
-    removed = [
-        WatchlistEntryOut.model_validate(r) for s, r in base_by.items() if s not in against_by
-    ]
+    added = [_entry_out(r) for s, r in against_by.items() if s not in base_by]
+    removed = [_entry_out(r) for s, r in base_by.items() if s not in against_by]
     moved: list[WatchlistMoveOut] = []
     for symbol, br in base_by.items():
         ar = against_by.get(symbol)

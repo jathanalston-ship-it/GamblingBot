@@ -110,3 +110,26 @@ def test_risk_rating_bands():
     out = eng.generate([low, med, high], as_of=AS_OF)["daily"]
     by = {e.symbol: e.risk_rating for e in out}
     assert by["LOW"] == "Low" and by["MED"] == "Medium" and by["HI"] == "High"
+
+
+def test_engine_never_emits_non_finite_excursions():
+    """A non-finite ATR must yield finite-or-None move/risk/reward, never NaN/Inf."""
+    import datetime as dt
+    import math
+
+    from momentum.watchlist import WatchlistCandidate, WatchlistEngine
+
+    cand = WatchlistCandidate(
+        symbol="X",
+        base_conviction=80.0,
+        band="HIGH",
+        factors={"momentum_score": 0.8},
+        sector="Tech",
+        price=100.0,
+        atr=float("inf"),  # degenerate input
+    )
+    produced = WatchlistEngine().generate([cand], as_of=dt.date(2026, 6, 20), run_id="r")
+    for entries in produced.values():
+        for e in entries:
+            for f in (e.expected_move_pct, e.expected_risk_pct, e.reward_risk):
+                assert f is None or math.isfinite(f)

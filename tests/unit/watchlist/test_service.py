@@ -127,3 +127,54 @@ def test_compare_across_dates(session_factory):
     # AMD moved up to rank 1 (rank_change positive = toward 1)
     assert moved["AMD"].against_rank == 1
     assert moved["AMD"].rank_change >= 1
+
+
+def test_get_watchlists_sanitises_non_finite_floats(session_factory):
+    """A legacy/poisoned row with NaN/Inf must not crash GET /watchlists.
+
+    Starlette renders JSON with allow_nan=False, so any non-finite value in the
+    response is an HTTP 500. The read path must coerce them to None.
+    """
+    import json
+    import math
+
+    from momentum.persistence.models.watchlist_entry import WatchlistEntryRow
+
+    with session_factory() as s:
+        s.add(
+            WatchlistEntryRow(
+                run_id="scan-1",
+                as_of=dt.date(2026, 6, 20),
+                horizon="daily",
+                horizon_label="Today",
+                rank=1,
+                symbol="AAPL",
+                conviction=82.0,
+                base_conviction=80.0,
+                band="HIGH",
+                sector="Tech",
+                risk_rating="Low",
+                horizon_days=1,
+                expected_move_pct=float("nan"),
+                expected_risk_pct=0.0,
+                reward_risk=float("inf"),
+                model_version="v1",
+            )
+        )
+        s.commit()
+
+    with session_factory() as s:
+        res = watchlist_service.get_watchlists(s, run_id="scan-1")
+
+    entry = res.horizons[0].entries[0]
+    assert entry.expected_move_pct is None  # NaN -> None
+    assert entry.reward_risk is None  # Inf -> None
+    # the whole response must be JSON-renderable the way Starlette renders it
+    payload = res.model_dump(mode="json")
+    json.dumps(payload, allow_nan=False)  # raises if any non-finite remains
+    assert all(
+        v is None or math.isfinite(v)
+        for h in res.horizons
+        for e in h.entries
+        for v in (e.expected_move_pct, e.expected_risk_pct, e.reward_risk)
+    )
