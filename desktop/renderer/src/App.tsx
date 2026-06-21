@@ -9,6 +9,7 @@ import CommandCenter from "./views/CommandCenter";
 import Analytics from "./views/Analytics";
 import Backtesting from "./views/Backtesting";
 import Conviction from "./views/Conviction";
+import Developer from "./views/Developer";
 import Lifecycle from "./views/Lifecycle";
 import Paper from "./views/Paper";
 import Portfolio from "./views/Portfolio";
@@ -63,6 +64,7 @@ export default function App() {
         <Route path="signal-audit" element={<SignalAudit />} />
         <Route path="settings" element={<Settings />} />
         <Route path="updates" element={<Updates />} />
+        <Route path="developer" element={<Developer />} />
         </Route>
       </Routes>
     </BackendGate>

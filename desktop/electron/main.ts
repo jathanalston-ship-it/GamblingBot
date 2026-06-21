@@ -12,7 +12,7 @@
  * Security: contextIsolation on, nodeIntegration off; the renderer talks to the
  * backend only over http://127.0.0.1:<port> via the typed preload bridge.
  */
-import { mkdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, watch, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
 
@@ -35,6 +35,9 @@ const isDev = process.env.NODE_ENV === "development";
 // CI startup validation: boot the window from the built renderer WITHOUT the
 // backend, confirm it paints, print a sentinel and exit. Set by `npm run smoke`.
 const isSmoke = process.env.MRP_SMOKE === "1";
+// Development Mode (`npm run dev-app`): runs from source with a visible banner, a
+// Developer Panel, and backend auto-restart on Python changes. Isolated state.
+const isDevApp = process.env.MRP_DEV_APP === "1";
 const SHUTDOWN_TIMEOUT_MS = 5_000; // graceful window before force-killing the tree
 
 let win: BrowserWindow | null = null;
@@ -65,24 +68,34 @@ function freePort(): Promise<number> {
   });
 }
 
-/** Per-user, writable paths for the database and logs (created if missing). */
-function userPaths(): { dbUrl: string; logDir: string } {
-  const userData = app.getPath("userData");
-  const dataDir = join(userData, "data");
-  const logDir = join(userData, "logs");
+/** The repo root when running from source (`dist-electron/` is two levels deep). */
+function repoRoot(): string {
+  return join(__dirname, "..", "..");
+}
+
+/**
+ * Per-user, writable paths for the database, logs and editable config.
+ *
+ * Development Mode isolates everything under a visible, git-ignored `<repo>/.dev`
+ * so the developer can find the DB/logs/config and the Developer Panel can open
+ * those folders; the packaged app uses the per-user `userData` directory.
+ */
+function userPaths(): { root: string; dataDir: string; logDir: string; dbUrl: string } {
+  const root = isDevApp ? join(repoRoot(), ".dev") : app.getPath("userData");
+  const dataDir = join(root, "data");
+  const logDir = join(root, "logs");
   mkdirSync(dataDir, { recursive: true });
   mkdirSync(logDir, { recursive: true });
   // SQLAlchemy SQLite URL wants forward slashes, even on Windows.
   const dbPath = join(dataDir, "momentum.db").replace(/\\/g, "/");
-  return { dbUrl: `sqlite:///${dbPath}`, logDir };
+  return { root, dataDir, logDir, dbUrl: `sqlite:///${dbPath}` };
 }
 
 /** Resolve the backend command: bundled binary in prod, `python -m momentum.api` in dev. */
 function backendCommand(): { cmd: string; args: string[]; cwd: string } {
   if (isDev) {
     const python = process.env.MRP_PYTHON ?? "python3";
-    const repoRoot = join(__dirname, "..", "..");
-    return { cmd: python, args: ["-m", "momentum.api"], cwd: repoRoot };
+    return { cmd: python, args: ["-m", "momentum.api"], cwd: repoRoot() };
   }
   const binary = process.platform === "win32" ? "mrp-backend.exe" : "mrp-backend";
   return {
@@ -103,13 +116,16 @@ function backendEnv(cwd: string): NodeJS.ProcessEnv {
     MRP_PARENT_PID: String(process.pid),
     PYTHONPATH: isDev ? join(cwd, "src") : process.env.PYTHONPATH ?? "",
   };
-  if (!isDev) {
-    const { dbUrl, logDir } = userPaths();
+  // Packaged: per-user dirs. Development Mode: the isolated `<repo>/.dev` dirs, so
+  // the backend writes its DB/logs/diagnostics where the Developer Panel reports
+  // and can open them. Plain `npm run dev` keeps the backend's own defaults.
+  if (!isDev || isDevApp) {
+    const { root, dbUrl, logDir } = userPaths();
     env.DATABASE_URL = process.env.DATABASE_URL ?? dbUrl;
     env.MRP_LOG_DIR = process.env.MRP_LOG_DIR ?? logDir;
     // Writable home for user-editable settings (provider choice -> settings.yaml,
     // API keys -> .env). The bundled config/ templates are read-only.
-    env.MRP_USER_DIR = process.env.MRP_USER_DIR ?? app.getPath("userData");
+    env.MRP_USER_DIR = process.env.MRP_USER_DIR ?? root;
   }
   return env;
 }
@@ -223,6 +239,132 @@ function createManager(): BackendManager {
     }
   });
   return m;
+}
+
+// ── Development Mode ──────────────────────────────────────────────────────── //
+
+/** The current git branch (from `.git/HEAD`), or null when not a source checkout. */
+function gitBranch(): string | null {
+  try {
+    const head = readFileSync(join(repoRoot(), ".git", "HEAD"), "utf-8").trim();
+    const m = head.match(/^ref:\s*refs\/heads\/(.+)$/);
+    return m ? m[1] : head.slice(0, 12); // detached HEAD → short sha
+  } catch {
+    return null;
+  }
+}
+
+/** The diagnostics surfaced by the Developer Panel (everything it cannot fetch over HTTP). */
+function devDiagnostics(): Record<string, unknown> {
+  const { dataDir, logDir, root } = userPaths();
+  const d = manager?.diagnostics ?? null;
+  return {
+    version: app.getVersion(),
+    packaged: app.isPackaged,
+    devApp: isDevApp,
+    platform: process.platform,
+    host: API_HOST,
+    port: apiPort,
+    healthUrl: `http://${API_HOST}:${apiPort}/health`,
+    backendPid: d?.pid ?? null,
+    backendStatus: manager?.status ?? lastBackendStatus,
+    adopted: d?.adopted ?? false,
+    executable: d?.executable ?? null,
+    startupStage: trace.current,
+    startupFailure: trace.failure, // { stage, message, … } | null
+    startupDurationMs: d?.startupDurationMs ?? null,
+    databasePath: process.env.DATABASE_URL ?? join(dataDir, "momentum.db"),
+    configPath: process.env.MRP_USER_DIR ?? root,
+    logPath: logDir,
+    dataDir,
+    branch: gitBranch(),
+    startupReport: join(logDir, "startup-report.json"),
+    backendReport: join(logDir, "backend-startup.json"),
+  };
+}
+
+/**
+ * Bundle the on-disk diagnostics into a timestamped folder under the log dir
+ * (startup report, backend report, the live diagnostics snapshot and the tail of
+ * the backend log buffer), then reveal it. Returns the folder path. Best-effort.
+ */
+async function exportDiagnosticBundle(): Promise<string> {
+  const { logDir } = userPaths();
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const dir = join(logDir, `diagnostic-bundle-${stamp}`);
+  mkdirSync(dir, { recursive: true });
+
+  const summary = {
+    exportedAt: new Date().toISOString(),
+    diagnostics: devDiagnostics(),
+    startup: trace.toReport(),
+    backendLogTail: manager?.logTail ?? null,
+  };
+  writeFileSync(join(dir, "summary.json"), JSON.stringify(summary, null, 2), "utf-8");
+
+  for (const name of ["startup-report.json", "backend-startup.json", "mrp.log"]) {
+    const src = join(logDir, name);
+    if (existsSync(src)) {
+      try {
+        copyFileSync(src, join(dir, name));
+      } catch {
+        /* a locked/rotating log must not fail the bundle */
+      }
+    }
+  }
+  await shell.openPath(dir);
+  return dir;
+}
+
+let backendWatcher: ReturnType<typeof watch> | null = null;
+let watchTimer: NodeJS.Timeout | null = null;
+
+/**
+ * Development backend auto-restart: watch the Python source tree and, on a `.py`
+ * change, restart the backend (debounced) and reload the renderer so it re-fetches.
+ * Dev-app only, best-effort (a watch that can't start just disables the feature).
+ */
+function startBackendWatch(): void {
+  if (!isDevApp || backendWatcher) return;
+  const srcDir = join(repoRoot(), "src", "momentum");
+  try {
+    backendWatcher = watch(srcDir, { recursive: true }, (_event, filename) => {
+      if (!filename || !filename.toString().endsWith(".py")) return;
+      if (watchTimer) clearTimeout(watchTimer);
+      watchTimer = setTimeout(() => {
+        console.error(`[dev] backend source changed (${filename}) — restarting backend`);
+        void manager
+          ?.restart()
+          .then((ok) => {
+            if (ok) win?.webContents.reload();
+          })
+          .catch((err) => console.error("[dev] backend restart failed:", err));
+      }, 400);
+    });
+    console.error(`[dev] watching ${srcDir} for backend changes`);
+  } catch (err) {
+    console.error("[dev] could not start backend source watch:", err);
+  }
+}
+
+/** Register the Developer-Panel IPC surface (dev-app only). */
+function registerDevIpc(): void {
+  ipcMain.handle("mrp:dev:diagnostics", () => devDiagnostics());
+  ipcMain.handle("mrp:dev:restart-backend", async () => {
+    const ok = (await manager?.restart()) ?? false;
+    if (ok) win?.webContents.reload();
+    return { ok, status: manager?.status ?? "stopped" };
+  });
+  ipcMain.handle("mrp:dev:reload-renderer", () => {
+    win?.webContents.reloadIgnoringCache();
+    return true;
+  });
+  ipcMain.handle("mrp:dev:open-path", async (_e, which: string) => {
+    const { dataDir, logDir, root } = userPaths();
+    const target = which === "database" ? dataDir : which === "config" ? root : logDir;
+    return shell.openPath(target);
+  });
+  ipcMain.handle("mrp:dev:export-bundle", () => exportDiagnosticBundle());
 }
 
 /** A modal "Retry / Quit" dialog showing the captured backend error. */
@@ -490,6 +632,7 @@ if (!app.requestSingleInstanceLock()) {
     trace.enter("register-ipc");
     // Lets the renderer seed its initial status on mount (avoids a missed event).
     ipcMain.handle("mrp:backend:get-status", () => lastBackendStatus);
+    if (isDevApp) registerDevIpc();
     // Factory reset → restart: relaunch the whole app so the backend is respawned
     // and the renderer reloads. `app.quit()` first runs the graceful shutdown
     // (before-quit/will-quit) so the old backend is stopped before relaunch.
@@ -511,6 +654,13 @@ if (!app.requestSingleInstanceLock()) {
     trace.enter(healthy ? "backend-healthy" : "backend-failed");
     writeStartupReport();
     while (!healthy) {
+      // Development Mode: never block on a modal or quit. Leave the window up so
+      // the failure stays visible in the Developer Panel; the source-watcher +
+      // "Restart Backend" button let the developer recover without a relaunch.
+      if (isDevApp) {
+        console.error("[dev] backend failed to start — see the Developer Panel; edit & save to retry");
+        break;
+      }
       if (!promptBackendFailure("The backend service failed to start.")) {
         app.quit();
         return;
@@ -519,8 +669,12 @@ if (!app.requestSingleInstanceLock()) {
       trace.enter(healthy ? "backend-healthy" : "backend-failed");
       writeStartupReport();
     }
-    trace.done();
+    if (healthy) trace.done();
     writeStartupReport();
+
+    // Development Mode: auto-restart the backend when its source changes (armed even
+    // if the first start failed, so saving a fix brings the backend up).
+    startBackendWatch();
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) void createWindow();
@@ -544,7 +698,11 @@ app.on("window-all-closed", () => {
 });
 
 // before-quit: stop crash-recovery so the imminent backend exit isn't "recovered".
-app.on("before-quit", () => manager?.markShuttingDown());
+app.on("before-quit", () => {
+  manager?.markShuttingDown();
+  backendWatcher?.close();
+  backendWatcher = null;
+});
 
 // will-quit: defer the quit until the backend is gracefully stopped (then force-
 // killed if it overruns). The cleanupRan guard lets the re-quit proceed.

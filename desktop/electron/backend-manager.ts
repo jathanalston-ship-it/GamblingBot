@@ -301,6 +301,24 @@ export class BackendManager {
     this.shuttingDown = true;
   }
 
+  /**
+   * Stop the backend we own and start a fresh one (development hot-reload).
+   *
+   * Used by the dev source-watcher to pick up Python changes: crash-recovery is
+   * suppressed so the deliberate stop isn't "recovered", the old tree is torn
+   * down, then a clean spawn + health-verify runs. An adopted (externally-owned)
+   * backend is not killed — we just re-probe it.
+   */
+  async restart(): Promise<boolean> {
+    this.recoveryEnabled = false;
+    await this.stop();
+    this.adopted = false;
+    this.shuttingDown = false;
+    this.restarts = 0;
+    this.healthyAtMs = null;
+    return this.start();
+  }
+
   /** Graceful stop → wait → force-kill the tree. Adopted backends are left alone. */
   async stop(): Promise<void> {
     this.shuttingDown = true;

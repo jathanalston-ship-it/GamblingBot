@@ -1,5 +1,8 @@
 import { type ReactNode, useEffect, useState } from "react";
 
+import Developer from "../views/Developer";
+import { DevBanner } from "./DevBanner";
+
 type BackendStatus = "starting" | "healthy" | "failed" | "restarting" | "stopped";
 
 /**
@@ -20,6 +23,19 @@ export function BackendGate({ children }: { children: ReactNode }) {
   }, [hasBridge]);
 
   if (status === "healthy") return <>{children}</>;
+  // Development Mode: a backend that failed to start must not hide the app behind a
+  // dead loading screen — surface the Developer Panel so the failure is visible and
+  // recoverable (Restart Backend / fix-and-save auto-restart).
+  if (window.mrp?.dev && status === "failed") {
+    return (
+      <div className="flex h-full flex-col">
+        <DevBanner />
+        <main className="min-w-0 flex-1 overflow-auto">
+          <Developer />
+        </main>
+      </div>
+    );
+  }
   return <LoadingScreen status={status} />;
 }
 

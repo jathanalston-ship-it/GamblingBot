@@ -186,6 +186,23 @@ test("diagnostics capture an error tail when start fails", async () => {
   assert.ok(d.errorTail, "should capture exit/error lines on failure");
 });
 
+// 11. Dev hot-reload restart: stop the owned backend and spawn a fresh one.
+test("restart() stops the current backend and starts a new one", async () => {
+  const { m, statuses, state } = makeManager({ healthy: false, healthyOnSpawn: true });
+  await m.start();
+  assert.strictEqual(state.spawns, 1);
+  const first = lastProc;
+  first.exitOnSigterm = true; // graceful stop succeeds
+  state.healthy = false; // the old backend is down until the fresh spawn comes up
+
+  const ok = await m.restart();
+  assert.strictEqual(ok, true, "restart should reach healthy again");
+  assert.strictEqual(state.spawns, 2, "a fresh backend was spawned");
+  assert.ok(first.signals.includes("SIGTERM"), "the old backend was stopped");
+  assert.strictEqual(statuses[statuses.length - 1], "healthy");
+  assert.notStrictEqual(lastProc, first, "the manager tracks the new process");
+});
+
 (async () => {
   let failed = 0;
   for (const [name, fn] of tests) {

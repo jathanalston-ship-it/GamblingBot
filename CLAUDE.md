@@ -363,6 +363,25 @@ trading platform for US equities. Python 3.12, strictly typed. See
   Tests prove cleared/schema-preserved/serves-after/repeatable/no-orphans.
   See `docs/DEV_RESET.md`.
 
+- **Startup forensics** (`desktop/electron/startup-trace.ts`, `main.ts`) — a pure
+  `StartupTrace` records every main-process startup stage (module-init → … → ready)
+  with timestamps and the stage a failure died at; the `whenReady` chain is guarded
+  (`fatalStartupError`) so a startup error is traced + reported + surfaced (native
+  dialog) instead of a silent `process.exit`. `startup-report.json` carries the
+  timeline. Fixes the "blue cursor → no window → no process" packaged launch. See
+  `docs/STARTUP_FORENSICS.md`.
+
+- **Development Mode** (`npm run dev-app`; `desktop/electron/main.ts`,
+  `backend-manager.ts`, `preload.ts`; `desktop/.../views/Developer.tsx`,
+  `components/DevBanner.tsx`) — run Electron + backend from source with frontend HMR,
+  **backend auto-restart** on `src/momentum/**/*.py` changes (`BackendManager.restart()`
+  + a recursive watcher), a persistent **DEVELOPMENT MODE banner**, isolated git-ignored
+  `<repo>/.dev` state (DB/logs/settings), and a **Developer Panel** (PID/status/health/
+  db-config-log paths/startup-stage/branch/version + Restart Backend / Reload Renderer /
+  Open Logs|Database / Seed|Reset / Health Audit / Export Diagnostic Bundle). A failed
+  backend keeps the panel reachable (`BackendGate`) — never a silent exit. See
+  `docs/DEVELOPMENT_MODE.md`.
+
 ## Philosophy (what we optimise for)
 
 Optimise for **expectancy, profit factor, average winner, largest winner, trend

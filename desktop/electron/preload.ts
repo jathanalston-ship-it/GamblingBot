@@ -22,12 +22,49 @@ export interface UpdaterEvent {
   } | null;
 }
 
+/** The live diagnostics shown in the Developer Panel (Development Mode only). */
+export interface DevDiagnostics {
+  version: string;
+  packaged: boolean;
+  devApp: boolean;
+  platform: string;
+  host: string;
+  port: number;
+  healthUrl: string;
+  backendPid: number | null;
+  backendStatus: string;
+  adopted: boolean;
+  executable: string | null;
+  startupStage: string | null;
+  startupFailure: { stage: string; message: string } | null;
+  startupDurationMs: number | null;
+  databasePath: string;
+  configPath: string;
+  logPath: string;
+  dataDir: string;
+  branch: string | null;
+  startupReport: string;
+  backendReport: string;
+}
+
 const bridge = {
   apiBaseUrl: `http://127.0.0.1:${API_PORT}`,
   platform: process.platform,
   version: process.env.MRP_APP_VERSION ?? process.env.npm_package_version ?? "0.1.0",
   /** True only in the packaged desktop build, where electron-updater is wired. */
   packaged: process.env.MRP_PACKAGED === "1",
+  /** True only under `npm run dev-app` — gates the banner + Developer Panel. */
+  dev: process.env.MRP_DEV_APP === "1",
+  /** Developer Panel controls (Development Mode only; handlers registered in main). */
+  devtools: {
+    diagnostics: (): Promise<DevDiagnostics> => ipcRenderer.invoke("mrp:dev:diagnostics"),
+    restartBackend: (): Promise<{ ok: boolean; status: string }> =>
+      ipcRenderer.invoke("mrp:dev:restart-backend"),
+    reloadRenderer: (): Promise<boolean> => ipcRenderer.invoke("mrp:dev:reload-renderer"),
+    openPath: (which: "logs" | "database" | "config"): Promise<string> =>
+      ipcRenderer.invoke("mrp:dev:open-path", which),
+    exportBundle: (): Promise<string> => ipcRenderer.invoke("mrp:dev:export-bundle"),
+  },
   onNavigate(cb: (path: string) => void): () => void {
     const listener = (_event: IpcRendererEvent, path: string) => cb(path);
     ipcRenderer.on("mrp:navigate", listener);

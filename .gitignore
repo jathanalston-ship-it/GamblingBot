@@ -49,3 +49,6 @@ htmlcov/
 desktop/build/backend/
 desktop/build/.pyiwork/
 !desktop/renderer/index.html
+
+# Development Mode (`npm run dev-app`) isolated state: DB, logs, settings.
+.dev/

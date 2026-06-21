@@ -64,6 +64,15 @@ export function StageRail() {
           ) : null}
         </NavLink>
       ))}
+      {window.mrp?.dev ? (
+        <>
+          <div className="my-2 border-t border-surface-border" />
+          <NavLink to="/developer" className={itemClass}>
+            <span className="w-4 text-right text-xs text-amber-400">⚙</span>
+            <span className="text-amber-300">Developer</span>
+          </NavLink>
+        </>
+      ) : null}
     </nav>
   );
 }

@@ -12,6 +12,8 @@
     "dev": "concurrently -k -n vite,electron -c cyan,magenta \"npm:dev:renderer\" \"npm:dev:electron\"",
     "dev:renderer": "npm --workspace renderer run dev",
     "dev:electron": "wait-on tcp:5173 && cross-env NODE_ENV=development electron .",
+    "dev-app": "concurrently -k -n vite,electron -c cyan,magenta \"npm:dev:renderer\" \"npm:dev-app:electron\"",
+    "dev-app:electron": "wait-on tcp:5173 && npm run build:electron && cross-env NODE_ENV=development MRP_DEV_APP=1 electron .",
     "build:renderer": "npm --workspace renderer run build",
     "build:electron": "tsc -p electron/tsconfig.json",
     "build": "npm run build:renderer && npm run build:electron",
