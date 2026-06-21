@@ -157,7 +157,17 @@ function PackagedUpdates() {
           </p>
         </Card>
 
-        {err ? <ErrorBox message={err} /> : null}
+        {err ? (
+          <div className="rounded-lg border border-bear/40 bg-bear/10 p-4 text-sm text-bear">
+            <div className="font-medium">Update check failed</div>
+            <div className="mt-1 break-words text-bear/90">{err}</div>
+            <div className="mt-2 text-xs text-slate-400">
+              You can always update manually: download the latest{" "}
+              <span className="text-slate-200">MomentumLab-Setup-*.exe</span> from the project's
+              GitHub Releases and run it (your data is preserved).
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

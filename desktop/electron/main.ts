@@ -191,26 +191,11 @@ function initAutoUpdates(): void {
   if (isDev || isSmoke || !app.isPackaged || updaterReady) return;
   updaterReady = true;
   const { autoUpdater } = electronUpdater;
-  autoUpdater.autoDownload = false;
-  autoUpdater.autoInstallOnAppQuit = true;
 
-  autoUpdater.on("checking-for-update", () => sendUpdateEvent("checking", null));
-  autoUpdater.on("update-available", (info) =>
-    sendUpdateEvent("available", { version: info.version }),
-  );
-  autoUpdater.on("update-not-available", (info) =>
-    sendUpdateEvent("not-available", { version: info.version }),
-  );
-  autoUpdater.on("download-progress", (p) =>
-    sendUpdateEvent("progress", { percent: p.percent, transferred: p.transferred, total: p.total }),
-  );
-  autoUpdater.on("update-downloaded", (info) =>
-    sendUpdateEvent("downloaded", { version: info.version }),
-  );
-  autoUpdater.on("error", (err) =>
-    sendUpdateEvent("error", { message: String(err?.message ?? err) }),
-  );
-
+  // Register the IPC handlers FIRST, so the renderer's Updates screen can never
+  // hit "No handler registered for 'mrp:update:check'" — even if the updater
+  // wiring below throws on a given build (interop / missing app-update.yml /
+  // unsigned-build quirks). Each handler surfaces its own failure to the screen.
   ipcMain.handle("mrp:update:check", async () => {
     const r = await autoUpdater.checkForUpdates();
     return { version: r?.updateInfo?.version ?? null };
@@ -225,9 +210,41 @@ function initAutoUpdates(): void {
     return true;
   });
 
-  if (process.env.MRP_DISABLE_AUTOUPDATE !== "1") {
-    void autoUpdater.checkForUpdates().catch((err) => {
-      console.error("[auto-update] launch check failed:", err);
+  try {
+    autoUpdater.autoDownload = false;
+    autoUpdater.autoInstallOnAppQuit = true;
+
+    autoUpdater.on("checking-for-update", () => sendUpdateEvent("checking", null));
+    autoUpdater.on("update-available", (info) =>
+      sendUpdateEvent("available", { version: info.version }),
+    );
+    autoUpdater.on("update-not-available", (info) =>
+      sendUpdateEvent("not-available", { version: info.version }),
+    );
+    autoUpdater.on("download-progress", (p) =>
+      sendUpdateEvent("progress", {
+        percent: p.percent,
+        transferred: p.transferred,
+        total: p.total,
+      }),
+    );
+    autoUpdater.on("update-downloaded", (info) =>
+      sendUpdateEvent("downloaded", { version: info.version }),
+    );
+    autoUpdater.on("error", (err) =>
+      sendUpdateEvent("error", { message: String(err?.message ?? err) }),
+    );
+
+    if (process.env.MRP_DISABLE_AUTOUPDATE !== "1") {
+      void autoUpdater.checkForUpdates().catch((err) => {
+        console.error("[auto-update] launch check failed:", err);
+      });
+    }
+  } catch (err) {
+    // Never let a wiring failure leave the screen with a dead IPC channel.
+    console.error("[auto-update] init failed:", err);
+    sendUpdateEvent("error", {
+      message: `Auto-update could not start: ${String((err as Error)?.message ?? err)}`,
     });
   }
 }
