@@ -25,7 +25,12 @@ import {
   type MenuItemConstructorOptions,
   shell,
 } from "electron";
-import electronUpdater from "electron-updater";
+// electron-updater is a CommonJS module whose `autoUpdater` is a LAZY named
+// export (a getter) and which has NO default export. A default import resolves to
+// `.default` (undefined) and crashes the PACKAGED app at startup
+// ("Cannot destructure property 'autoUpdater' of … default … undefined"). Import
+// it by name so it is resolved lazily, at the call site, inside the packaged guard.
+import { autoUpdater } from "electron-updater";
 
 import { BackendManager, type BackendStatus } from "./backend-manager";
 import { PORTABLE_MARKER, resolveDataRoot } from "./paths";
@@ -484,7 +489,6 @@ let updaterReady = false;
 function initAutoUpdates(): void {
   if (isDev || isSmoke || !app.isPackaged || updaterReady) return;
   updaterReady = true;
-  const { autoUpdater } = electronUpdater;
 
   // Register the IPC handlers FIRST, so the renderer's Updates screen can never
   // hit "No handler registered for 'mrp:update:check'" — even if the updater
@@ -680,7 +684,12 @@ if (!app.requestSingleInstanceLock()) {
     await createWindow();
     sendBackendStatus(manager.status);
     trace.enter("init-auto-updates");
-    initAutoUpdates();
+    // Auto-update is non-essential: a failure here must never abort the launch.
+    try {
+      initAutoUpdates();
+    } catch (err) {
+      console.error("[auto-update] init crashed (non-fatal):", err);
+    }
 
     trace.enter("backend-start");
     let healthy = await manager.start();
