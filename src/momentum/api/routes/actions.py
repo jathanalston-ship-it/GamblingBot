@@ -150,6 +150,26 @@ def start_refresh_lifecycles(request: Request, params: ActionParams | None = Non
     return JobOut(**_jobs(request).submit("refresh-lifecycles", fn).to_dict())
 
 
+@router.post("/track-watchlist-performance", response_model=JobOut, status_code=202)
+def start_track_watchlist_performance(
+    request: Request, params: ActionParams | None = None
+) -> JobOut:
+    p = params or ActionParams()
+    sf = _session_factory(request)
+    provider = _provider(request)
+
+    def fn(progress: Progress) -> dict[str, object]:
+        return actions.track_watchlist_performance(
+            session_factory=sf,
+            provider=provider,
+            run_id=p.run_id,
+            lookback_days=p.lookback_days,
+            progress=progress,
+        )
+
+    return JobOut(**_jobs(request).submit("track-watchlist-performance", fn).to_dict())
+
+
 @router.post("/paper-session", response_model=JobOut, status_code=202)
 def start_paper_session(request: Request, params: ActionParams | None = None) -> JobOut:
     p = params or ActionParams()

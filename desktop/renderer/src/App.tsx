@@ -17,6 +17,7 @@ import Settings from "./views/Settings";
 import SignalEvaluation from "./views/SignalEvaluation";
 import TradePlan from "./views/TradePlan";
 import Updates from "./views/Updates";
+import WatchlistPerformance from "./views/WatchlistPerformance";
 import Watchlists from "./views/Watchlists";
 
 export default function App() {
@@ -52,6 +53,7 @@ export default function App() {
         <Route path="tradeplan" element={<TradePlan />} />
         <Route path="lifecycle" element={<Lifecycle />} />
         <Route path="watchlists" element={<Watchlists />} />
+        <Route path="watchlist-performance" element={<WatchlistPerformance />} />
         <Route path="portfolio" element={<Portfolio />} />
         <Route path="analytics" element={<Analytics />} />
         <Route path="signal-eval" element={<SignalEvaluation />} />

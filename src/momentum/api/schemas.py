@@ -731,3 +731,86 @@ class AuditEventOut(_ORMModel):
     symbol: str | None = None
     entity_type: str | None = None
     summary: str | None = None
+
+
+class WatchlistCalibrationBucketOut(BaseModel):
+    """One conviction bucket: avg conviction vs realised 1-month return."""
+
+    label: str
+    lo: float
+    hi: float
+    count: int
+    avg_conviction: float
+    avg_ret_1m: float | None
+    hit_rate: float | None
+
+
+class WatchlistScorecardOut(BaseModel):
+    """Aggregate forward performance for one horizon's watchlist entries."""
+
+    horizon: str
+    label: str
+    n: int
+    n_complete: int
+    avg_ret_1d: float | None
+    avg_ret_1w: float | None
+    avg_ret_1m: float | None
+    hit_rate_1m: float | None
+    avg_mfe: float | None
+    avg_mae: float | None
+    e_ratio: float | None
+    avg_expected_move: float | None
+    move_capture: float | None
+    expected_move_hit_rate: float | None
+    top_rank_avg_ret_1m: float | None
+    rest_avg_ret_1m: float | None
+    top_minus_rest: float | None
+
+
+class WatchlistPredictionQualityOut(BaseModel):
+    """How well a horizon's conviction/rank predicted realised returns."""
+
+    horizon: str
+    label: str
+    n: int
+    ic_conviction: float | None
+    rank_ic: float | None
+    hit_rate_1m: float | None
+    monotonic_calibration: bool
+    quality_score: float
+    calibration: list[WatchlistCalibrationBucketOut]
+
+
+class WatchlistPerformanceReportOut(BaseModel):
+    """Watchlist-performance dashboard: scorecards + quality per horizon."""
+
+    n_total: int
+    n_complete: int
+    generations: int
+    best_horizon: str | None
+    scorecards: list[WatchlistScorecardOut]
+    quality: list[WatchlistPredictionQualityOut]
+    generated_at: str
+
+
+class WatchlistPerfEntryOut(_ORMModel):
+    """One tracked watchlist entry (prediction + realised forward outcome)."""
+
+    as_of: dt.date
+    run_id: str | None
+    horizon: str
+    horizon_label: str
+    symbol: str
+    conviction: float
+    rank: int
+    expected_move_pct: float | None
+    horizon_days: int
+    reference_price: float
+    ret_1d: float | None
+    ret_1w: float | None
+    ret_1m: float | None
+    mfe: float | None
+    mae: float | None
+    bars_tracked: int
+    complete: bool
+    last_tracked_date: dt.date | None

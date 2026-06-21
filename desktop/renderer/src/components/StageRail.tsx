@@ -17,6 +17,7 @@ const UTILITIES: { to: string; label: string }[] = [
   { to: "/tradeplan", label: "Trade Plan" },
   { to: "/lifecycle", label: "Lifecycle" },
   { to: "/watchlists", label: "Watchlists" },
+  { to: "/watchlist-performance", label: "WL Performance" },
   { to: "/portfolio", label: "Portfolio" },
   { to: "/analytics", label: "Analytics" },
   { to: "/signal-eval", label: "Signal Eval" },

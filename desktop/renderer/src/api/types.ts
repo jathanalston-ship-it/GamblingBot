@@ -567,3 +567,76 @@ export interface ReplayResult {
   closed_trades: Record<string, unknown>[];
   events: Record<string, unknown>[];
 }
+
+export interface WatchlistCalibrationBucket {
+  label: string;
+  lo: number;
+  hi: number;
+  count: number;
+  avg_conviction: number;
+  avg_ret_1m: number | null;
+  hit_rate: number | null;
+}
+
+export interface WatchlistScorecard {
+  horizon: string;
+  label: string;
+  n: number;
+  n_complete: number;
+  avg_ret_1d: number | null;
+  avg_ret_1w: number | null;
+  avg_ret_1m: number | null;
+  hit_rate_1m: number | null;
+  avg_mfe: number | null;
+  avg_mae: number | null;
+  e_ratio: number | null;
+  avg_expected_move: number | null;
+  move_capture: number | null;
+  expected_move_hit_rate: number | null;
+  top_rank_avg_ret_1m: number | null;
+  rest_avg_ret_1m: number | null;
+  top_minus_rest: number | null;
+}
+
+export interface WatchlistPredictionQuality {
+  horizon: string;
+  label: string;
+  n: number;
+  ic_conviction: number | null;
+  rank_ic: number | null;
+  hit_rate_1m: number | null;
+  monotonic_calibration: boolean;
+  quality_score: number;
+  calibration: WatchlistCalibrationBucket[];
+}
+
+export interface WatchlistPerformanceReport {
+  n_total: number;
+  n_complete: number;
+  generations: number;
+  best_horizon: string | null;
+  scorecards: WatchlistScorecard[];
+  quality: WatchlistPredictionQuality[];
+  generated_at: string;
+}
+
+export interface WatchlistPerfEntry {
+  as_of: string;
+  run_id: string | null;
+  horizon: string;
+  horizon_label: string;
+  symbol: string;
+  conviction: number;
+  rank: number;
+  expected_move_pct: number | null;
+  horizon_days: number;
+  reference_price: number;
+  ret_1d: number | null;
+  ret_1w: number | null;
+  ret_1m: number | null;
+  mfe: number | null;
+  mae: number | null;
+  bars_tracked: number;
+  complete: boolean;
+  last_tracked_date: string | null;
+}

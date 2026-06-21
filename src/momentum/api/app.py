@@ -43,6 +43,7 @@ from momentum.api.routes import (
     tradeplan,
     universe,
     update,
+    watchlist_performance,
     watchlists,
 )
 from momentum.api.jobs import JobManager
@@ -75,6 +76,7 @@ _ROUTERS = (
     signal_eval,
     options_eligibility,
     options_recommendation,
+    watchlist_performance,
 )
 
 

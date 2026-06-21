@@ -1,0 +1,27 @@
+# Watchlist-performance tracking thresholds. Copy to watchlist_performance.yaml
+# to override.
+#
+# After a watchlist is generated, every entry is tracked forward against real bars:
+# 1-day / 1-week / 1-month returns plus the maximum favorable/adverse excursion over
+# the tracking window. Scorecards and prediction-quality rankings then say whether the
+# recommendations were actually useful, per horizon (Today / This Week / This Month).
+model_version: v1
+
+# Forward windows in TRADING days.
+day_window: 1
+week_window: 5
+month_window: 21 # also the window over which MFE/MAE are measured
+
+# A horizon's scorecard metric needs at least this many tracked entries to be stable.
+min_sample: 3
+# "Top picks" subset used for the top-rank-vs-rest spread.
+top_rank_cutoff: 5
+
+# Conviction calibration buckets (0-100). Each bucket reports avg conviction vs the
+# realised 1-month return + hit rate.
+conviction_buckets:
+  - [0, 20]
+  - [20, 40]
+  - [40, 60]
+  - [60, 80]
+  - [80, 100]

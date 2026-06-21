@@ -37,8 +37,14 @@ from momentum.persistence.models.setup_lifecycle import SetupLifecycle
 from momentum.persistence.models.signal import Signal
 from momentum.persistence.models.trade import Trade
 from momentum.persistence.models.watchlist_entry import WatchlistEntryRow
+from momentum.persistence.models.watchlist_performance import WatchlistPerformance
 from momentum.persistence.repositories.watchlist_entries import WatchlistRepository
+from momentum.persistence.repositories.watchlist_performance import (
+    WatchlistPerformanceRepository,
+)
 from momentum.watchlist import WatchlistEngine
+from momentum.watchlist_performance import PerformanceRecord
+from momentum.watchlist_performance import default_config as wperf_config
 
 DEMO_TAG = "demo"
 SEED = 7
@@ -97,6 +103,7 @@ def reset(session: Session) -> None:
     session.execute(delete(RiskMetric).where(RiskMetric.run_id == DEMO_TAG))
     session.execute(delete(OptimizationResult).where(OptimizationResult.run_id == DEMO_TAG))
     session.execute(delete(WatchlistEntryRow).where(WatchlistEntryRow.run_id == DEMO_TAG))
+    session.execute(delete(WatchlistPerformance).where(WatchlistPerformance.run_id == DEMO_TAG))
     session.execute(delete(SetupLifecycle).where(SetupLifecycle.run_id == DEMO_TAG))
     session.flush()
 
@@ -529,6 +536,8 @@ def seed_all(session: Session, *, progress: ProgressFn | None = None) -> dict[st
     n_opt = seed_optimizations(session, rng)
     session.flush()
     n_watch = seed_watchlists(session, as_of, rng)
+    session.flush()
+    n_wperf = seed_watchlist_performance(session, rng)
     n_life = seed_lifecycles(session)
 
     _report(progress, 1.0, "done")
@@ -543,6 +552,7 @@ def seed_all(session: Session, *, progress: ProgressFn | None = None) -> dict[st
         "risk_metrics": 3,
         "optimization_results": n_opt,
         "watchlist_entries": n_watch,
+        "watchlist_performance": n_wperf,
         "setup_lifecycles": n_life,
         "runs": 1,
     }
@@ -652,3 +662,52 @@ def seed_watchlists(session: Session, as_of: dt.date, rng: np.random.Generator) 
         repo.replace_for(as_of=when, run_id=DEMO_TAG, entries=flat)
         total += len(flat)
     return total
+
+
+def seed_watchlist_performance(session: Session, rng: np.random.Generator) -> int:
+    """Synthesize forward performance for the seeded watchlists (conviction-correlated).
+
+    Returns are drawn so higher conviction / better rank tends to do better — enough
+    signal that the scorecards and prediction-quality rankings are non-trivial.
+    """
+    cfg = wperf_config()
+    repo = WatchlistRepository(session)
+    perf_repo = WatchlistPerformanceRepository(session)
+    records: list[PerformanceRecord] = []
+    for as_of in repo.dates(DEMO_TAG, limit=365):
+        for row in repo.for_date(as_of, run_id=DEMO_TAG):
+            edge = (row.conviction - 60.0) / 100.0  # skill signal
+            ret_1m = float(edge * 0.25 + rng.normal(0.0, 0.06))
+            ret_1d = float(ret_1m * 0.15 + rng.normal(0.0, 0.01))
+            ret_1w = float(ret_1m * 0.5 + rng.normal(0.0, 0.03))
+            mfe = float(max(ret_1m, 0.0) + abs(rng.normal(0.03, 0.02)))
+            mae = float(min(ret_1m, 0.0) - abs(rng.normal(0.03, 0.02)))
+            ref = 100.0
+            records.append(
+                PerformanceRecord(
+                    run_id=DEMO_TAG,
+                    as_of=as_of,
+                    horizon=row.horizon,
+                    horizon_label=row.horizon_label,
+                    symbol=row.symbol,
+                    conviction=row.conviction,
+                    rank=row.rank,
+                    expected_move_pct=row.expected_move_pct,
+                    horizon_days=row.horizon_days,
+                    watchlist_entry_id=row.id,
+                    reference_price=ref,
+                    ret_1d=ret_1d,
+                    ret_1w=ret_1w,
+                    ret_1m=ret_1m,
+                    mfe=mfe,
+                    mae=mae,
+                    bars_tracked=cfg.month_window,
+                    complete=True,
+                    last_price=ref * (1.0 + ret_1m),
+                    last_tracked_date=as_of + dt.timedelta(days=30),
+                    model_version=cfg.model_version,
+                    config_hash=cfg.config_hash(),
+                )
+            )
+    n = perf_repo.upsert_many(records)
+    return n

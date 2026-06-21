@@ -184,6 +184,20 @@ trading platform for US equities. Python 3.12, strictly typed. See
   history date selector, generate, over-time comparison). Demo seeds two dated
   watchlists. See `docs/WATCHLISTS.md`.
 
+- **Watchlist performance tracking** (`src/momentum/watchlist_performance/`,
+  `watchlist_performance` table + migration `0014`) — does the advice work? Every
+  stored watchlist entry (date/ticker/conviction/rank/expected move/horizon) is tracked
+  forward against real bars: **1d/1w/1m returns + MFE/MAE** (pure `tracking.py`), then
+  scored into per-horizon **scorecards** (avg returns, hit rate, E-ratio, expected-move
+  capture, top-5 rank edge) and **prediction quality** (conviction/rank information
+  coefficient, calibration, a 0-100 quality score; `scoring.py`) so Daily/Weekly/Monthly
+  can be compared and the best horizon surfaced. Idempotent upsert per
+  `(run_id, as_of, horizon, symbol)`; tracking is pure given bars
+  (`api/watchlist_performance_service.py`), wired to a bars-pulling action
+  (`actions.track_watchlist_performance`, `POST /actions/track-watchlist-performance`).
+  Reads: `GET /watchlist-performance[/entries]`; desktop **WL Performance** view; demo
+  seeds conviction-correlated outcomes. See `docs/WATCHLIST_PERFORMANCE.md`.
+
 - **Options-eligibility engine** (`src/momentum/options_eligibility/`,
   `api/options_eligibility_service.py`) — read-only go/no-go gate: is a setup
   suitable for options **leverage** or should it be traded as **shares**? Scores six

@@ -301,6 +301,41 @@ def generate_watchlists(
     return counts
 
 
+def track_watchlist_performance(
+    *,
+    session_factory: sessionmaker[Session],
+    provider: MarketDataProvider,
+    run_id: str | None = None,
+    lookback_days: int = 400,
+    progress: Progress,
+) -> dict[str, Any]:
+    """Pull bars for every watchlisted symbol and track forward performance.
+
+    Bars cover ``lookback_days`` ending today, so they contain the forward bars for
+    prior watchlist generations — 1d/1w/1m returns + MFE/MAE are computed and
+    upserted (idempotent per generation).
+    """
+    from momentum.api import watchlist_performance_service as wperf
+
+    progress(0.1, "loading watchlist symbols")
+    with session_factory() as session:
+        symbols = wperf.tracking_symbols(session, run_id)
+    if not symbols:
+        progress(1.0, "no watchlists to track")
+        return {"tracked": 0, "symbols": 0, "generations": 0, "complete": 0}
+
+    progress(0.35, f"pulling bars for {len(symbols)} symbols")
+    bars = pull_bars(provider, symbols, end=_today(), lookback_days=lookback_days)
+    if not bars:
+        raise RuntimeError("no market data available to track watchlist performance")
+
+    progress(0.8, "computing forward performance")
+    with session_factory() as session:
+        result = wperf.track_performance(session, bars, run_id=run_id)
+    progress(1.0, "done")
+    return result
+
+
 # --------------------------------------------------------------------------- #
 # Replay (synchronous read)
 # --------------------------------------------------------------------------- #
