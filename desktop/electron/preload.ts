@@ -33,6 +33,13 @@ const bridge = {
     ipcRenderer.on("mrp:navigate", listener);
     return () => ipcRenderer.removeListener("mrp:navigate", listener);
   },
+  /** Backend lifecycle status: starting | healthy | failed | restarting | stopped. */
+  onBackendStatus(cb: (status: string) => void): () => void {
+    const listener = (_event: IpcRendererEvent, status: string) => cb(status);
+    ipcRenderer.on("mrp:backend:status", listener);
+    return () => ipcRenderer.removeListener("mrp:backend:status", listener);
+  },
+  getBackendStatus: (): Promise<string> => ipcRenderer.invoke("mrp:backend:get-status"),
   /** In-app auto-update controls (packaged build only). */
   updater: {
     check: (): Promise<{ version: string | null }> => ipcRenderer.invoke("mrp:update:check"),

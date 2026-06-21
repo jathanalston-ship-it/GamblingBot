@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Route, Routes, useNavigate } from "react-router-dom";
 
 import { AppShell } from "./components/AppShell";
+import { BackendGate } from "./components/BackendGate";
 import { Placeholder } from "./components/Placeholder";
 import Analogs from "./views/Analogs";
 import CommandCenter from "./views/CommandCenter";
@@ -31,8 +32,9 @@ export default function App() {
   }, [navigate]);
 
   return (
-    <Routes>
-      <Route element={<AppShell />}>
+    <BackendGate>
+      <Routes>
+        <Route element={<AppShell />}>
         <Route index element={<CommandCenter />} />
         <Route path="command-center" element={<CommandCenter />} />
         <Route path="scan" element={<Scan />} />
@@ -61,7 +63,8 @@ export default function App() {
         <Route path="signal-audit" element={<SignalAudit />} />
         <Route path="settings" element={<Settings />} />
         <Route path="updates" element={<Updates />} />
-      </Route>
-    </Routes>
+        </Route>
+      </Routes>
+    </BackendGate>
   );
 }

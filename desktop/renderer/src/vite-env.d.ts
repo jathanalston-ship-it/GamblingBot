@@ -21,6 +21,10 @@ export interface MrpBridge {
   packaged?: boolean;
   /** Subscribe to navigation requests from the Electron menu; returns an unsubscribe fn. */
   onNavigate?: (cb: (path: string) => void) => () => void;
+  /** Subscribe to backend lifecycle status; returns an unsubscribe fn. */
+  onBackendStatus?: (cb: (status: string) => void) => () => void;
+  /** The current backend status (for seeding on mount). */
+  getBackendStatus?: () => Promise<string>;
   /** In-app auto-update controls (packaged build only). */
   updater?: {
     check: () => Promise<{ version: string | null }>;

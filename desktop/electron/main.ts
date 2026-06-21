@@ -1,23 +1,17 @@
 /**
  * Electron main process for Momentum Lab.
  *
- * Responsibilities:
- *   1. Spawn the FastAPI backend as a private, loopback-only sidecar.
- *   2. Wait for the backend's /health before showing the window.
- *   3. Create the BrowserWindow (Vite dev server in dev, built files in prod).
- *   4. Tear the sidecar down on quit.
- *
- * Production installability:
- *   - The SQLite database and logs live under app.getPath("userData") — a
- *     per-user, writable location — never under Program Files.
- *   - A free TCP port is chosen at launch so a busy 8000 never blocks startup.
- *   - A single-instance lock prevents a second backend if the app is opened twice.
- *   - A failed backend shows a dialog instead of a blank window.
+ * Owns the FastAPI backend lifecycle via `BackendManager`:
+ *   1. Spawn (or adopt an already-running) backend and verify GET /health.
+ *   2. Show the window immediately with a loading screen until the backend is healthy.
+ *   3. Recover (bounded respawn) if the backend crashes; reload the window on recovery.
+ *   4. Graceful → wait → force shutdown of the whole process tree on quit, with
+ *      synchronous safety nets for crashes and a backend-side parent watchdog so the
+ *      sidecar can never be orphaned.
  *
  * Security: contextIsolation on, nodeIntegration off; the renderer talks to the
  * backend only over http://127.0.0.1:<port> via the typed preload bridge.
  */
-import { ChildProcess, spawn, spawnSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
@@ -33,44 +27,20 @@ import {
 } from "electron";
 import electronUpdater from "electron-updater";
 
+import { BackendManager, type BackendStatus } from "./backend-manager";
+
 const API_HOST = "127.0.0.1";
 const isDev = process.env.NODE_ENV === "development";
 // CI startup validation: boot the window from the built renderer WITHOUT the
 // backend, confirm it paints, print a sentinel and exit. Set by `npm run smoke`.
 const isSmoke = process.env.MRP_SMOKE === "1";
+const SHUTDOWN_TIMEOUT_MS = 5_000; // graceful window before force-killing the tree
 
-let backend: ChildProcess | null = null;
 let win: BrowserWindow | null = null;
 let apiPort = 8000;
-
-// --- backend startup-reliability state ------------------------------------- //
-const MAX_START_ATTEMPTS = 2; // initial bring-up tries before asking the user
-const STARTUP_TIMEOUT_MS = 30_000; // health-poll budget per attempt
-const MAX_RUNTIME_RESTARTS = 3; // crash-recovery cap once the window is up
-const BACKEND_LOG_LINES = 120; // ring buffer of captured backend output
-
-const backendLog: string[] = [];
-let backendExited = false; // set by the current backend's error/exit events
-let shuttingDown = false; // true once the app is intentionally quitting
-let recoveryEnabled = false; // true once the window is up (enables crash respawn)
-let runtimeRestarts = 0;
-let restartTimer: NodeJS.Timeout | null = null;
-
-function pushBackendLog(chunk: string): void {
-  for (const raw of chunk.split(/\r?\n/)) {
-    const line = raw.trimEnd();
-    if (!line) continue;
-    backendLog.push(line);
-    if (backendLog.length > BACKEND_LOG_LINES) backendLog.shift();
-    console.error(`[backend] ${line}`);
-  }
-}
-
-/** The last few lines of backend output — the actual cause to show the user. */
-function backendTail(n = 18): string {
-  return backendLog.slice(-n).join("\n") || "(no backend output was captured)";
-}
-
+let manager: BackendManager | null = null;
+let lastBackendStatus: BackendStatus = "starting";
+let cleanupRan = false;
 
 /** Find a free loopback TCP port (prod), so a busy 8000 never blocks launch. */
 function freePort(): Promise<number> {
@@ -113,8 +83,8 @@ function backendCommand(): { cmd: string; args: string[]; cwd: string } {
   };
 }
 
-function startBackend(): void {
-  const { cmd, args, cwd } = backendCommand();
+/** The environment the backend is launched with. */
+function backendEnv(cwd: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     MRP_API_HOST: API_HOST,
@@ -132,169 +102,53 @@ function startBackend(): void {
     // API keys -> .env). The bundled config/ templates are read-only.
     env.MRP_USER_DIR = process.env.MRP_USER_DIR ?? app.getPath("userData");
   }
-
-  backendExited = false;
-  try {
-    // Pipe (not inherit) so we can capture the cause of a failed start and show it.
-    backend = spawn(cmd, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
-  } catch (err) {
-    backendExited = true;
-    pushBackendLog(`[spawn failed] ${String((err as Error)?.message ?? err)}`);
-    return;
-  }
-
-  backend.stdout?.on("data", (b: Buffer) => pushBackendLog(b.toString()));
-  backend.stderr?.on("data", (b: Buffer) => pushBackendLog(b.toString()));
-  // 'error' fires when the binary is missing or cannot be executed (no throw).
-  backend.on("error", (err) => {
-    backendExited = true;
-    pushBackendLog(`[spawn error] ${err.message}`);
-  });
-  backend.on("exit", (code, signal) => {
-    backendExited = true;
-    if (code && code !== 0) pushBackendLog(`[backend exited] code=${code} signal=${signal ?? "-"}`);
-    // Crash recovery: respawn if the app isn't quitting and the window is up.
-    if (recoveryEnabled && !shuttingDown) scheduleBackendRestart();
-  });
+  return env;
 }
 
-const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+/** Push the backend status to the renderer (drives the loading screen). */
+function sendBackendStatus(status: BackendStatus): void {
+  lastBackendStatus = status;
+  win?.webContents.send("mrp:backend:status", status);
+}
 
-/**
- * Kill the backend's whole process TREE.
- *
- * `child.kill()` only signals the immediate PID, but the packaged backend
- * (`mrp-backend.exe`, a PyInstaller binary) spawns a child of its own. Killing
- * just the parent orphans that child, which keeps holding the loopback port and
- * locking files in the install directory. On Windows we use `taskkill /T` to take
- * down the entire tree; `force=false` requests a graceful close first.
- *
- * `sync` uses spawnSync so the kill completes even inside a `process.exit`/crash
- * handler, where the event loop won't run async work.
- */
-function killTree(proc: ChildProcess, { force, sync }: { force: boolean; sync: boolean }): void {
-  const pid = proc.pid;
-  try {
-    if (process.platform === "win32" && pid) {
-      const args = force ? ["/pid", String(pid), "/T", "/F"] : ["/pid", String(pid), "/T"];
-      if (sync) spawnSync("taskkill", args, { stdio: "ignore" });
-      else spawn("taskkill", args, { stdio: "ignore" });
+/** Build the process manager and wire its lifecycle events to the UI. */
+function createManager(): BackendManager {
+  const { cmd, args, cwd } = backendCommand();
+  const m = new BackendManager({
+    host: API_HOST,
+    port: apiPort,
+    command: cmd,
+    args,
+    cwd,
+    env: backendEnv(cwd),
+    log: (line) => console.error(`[backend-manager] ${line}`),
+  });
+  m.onStatus(sendBackendStatus);
+  m.onRestarted(() => win?.webContents.reload()); // re-fetch after a recovery
+  m.onGiveUp(() => {
+    if (promptBackendFailure("The backend stopped and could not be restarted.")) {
+      void m.start();
     } else {
-      proc.kill(force ? "SIGKILL" : "SIGTERM");
+      app.quit();
     }
-  } catch {
-    /* best effort */
-  }
-}
-
-/** Fast, force-kill the current sidecar (used by startup retries / crash recovery). */
-function stopBackend(): void {
-  const proc = backend;
-  backend = null;
-  if (!proc || proc.exitCode !== null) return;
-  killTree(proc, { force: true, sync: false });
-}
-
-/** Synchronous force-kill — the last-resort safety net for `process.exit`/crashes. */
-function forceKillBackendSync(): void {
-  const proc = backend;
-  if (!proc || proc.exitCode !== null) return;
-  killTree(proc, { force: true, sync: true });
-}
-
-/**
- * Graceful shutdown for the normal quit path: ask the backend to stop, wait for it
- * to exit, then force-kill the tree if it overruns the timeout.
- */
-async function gracefulStopBackend(timeoutMs: number): Promise<void> {
-  const proc = backend;
-  backend = null;
-  if (!proc || proc.exitCode !== null) return;
-  const exited = new Promise<void>((resolve) => proc.once("exit", () => resolve()));
-
-  killTree(proc, { force: false, sync: false }); // 1. graceful (SIGTERM / taskkill /T)
-  await Promise.race([exited, delay(timeoutMs)]);
-  if (proc.exitCode !== null) return; // exited cleanly
-
-  killTree(proc, { force: true, sync: false }); // 2. force the whole tree
-  await Promise.race([exited, delay(2000)]);
-}
-
-async function waitForBackend(timeoutMs = STARTUP_TIMEOUT_MS): Promise<void> {
-  const base = `http://${API_HOST}:${apiPort}`;
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    // Fail fast: don't keep polling a port whose process already died.
-    if (backendExited) throw new Error("backend process exited before becoming healthy");
-    try {
-      const res = await fetch(`${base}/health`);
-      if (res.ok) return;
-    } catch {
-      /* not up yet */
-    }
-    await new Promise((r) => setTimeout(r, 300));
-  }
-  throw new Error("backend did not become healthy within the startup timeout");
-}
-
-/** Spawn + health-verify the backend, retrying a few times. */
-async function bringUpBackend(): Promise<boolean> {
-  for (let attempt = 1; attempt <= MAX_START_ATTEMPTS; attempt++) {
-    startBackend();
-    try {
-      await waitForBackend();
-      return true;
-    } catch (err) {
-      pushBackendLog(`[startup] attempt ${attempt}/${MAX_START_ATTEMPTS} failed: ${String(err)}`);
-      stopBackend(); // recovery is off during bring-up, so this won't auto-respawn
-      await new Promise((r) => setTimeout(r, 500));
-    }
-  }
-  return false;
+  });
+  return m;
 }
 
 /** A modal "Retry / Quit" dialog showing the captured backend error. */
 function promptBackendFailure(headline: string): boolean {
-  if (shuttingDown) return false;
   const logHint = app.isPackaged ? `\n\nDetails: ${join(userPaths().logDir, "mrp.log")}` : "";
   const choice = dialog.showMessageBoxSync({
     type: "error",
     title: "Momentum Lab",
     message: headline,
-    detail: `${backendTail()}${logHint}`,
+    detail: `${manager?.logTail ?? ""}${logHint}`,
     buttons: ["Retry", "Quit"],
     defaultId: 0,
     cancelId: 1,
     noLink: true,
   });
   return choice === 0;
-}
-
-/** Crash recovery once the window is up: respawn (bounded), reload on success. */
-function scheduleBackendRestart(): void {
-  if (restartTimer || shuttingDown) return;
-  if (runtimeRestarts >= MAX_RUNTIME_RESTARTS) {
-    if (promptBackendFailure("The backend stopped and could not be restarted.")) {
-      runtimeRestarts = 0;
-      scheduleBackendRestart();
-    } else {
-      app.quit();
-    }
-    return;
-  }
-  runtimeRestarts++;
-  restartTimer = setTimeout(async () => {
-    restartTimer = null;
-    if (shuttingDown) return;
-    startBackend();
-    try {
-      await waitForBackend();
-      runtimeRestarts = 0;
-      win?.webContents.reload(); // re-fetch data so stale "backend down" errors clear
-    } catch {
-      stopBackend(); // its exit event re-enters scheduleBackendRestart (bounded)
-    }
-  }, 800);
 }
 
 /** Application menu, including "Check for Updates…" which routes the renderer. */
@@ -344,7 +198,6 @@ function buildMenu(target: BrowserWindow): Menu {
   return Menu.buildFromTemplate(template);
 }
 
-/**
 /** Forward an updater lifecycle event to the renderer (the Updates screen). */
 function sendUpdateEvent(kind: string, payload: unknown): void {
   win?.webContents.send("mrp:update:event", { kind, payload });
@@ -417,7 +270,6 @@ function initAutoUpdates(): void {
       });
     }
   } catch (err) {
-    // Never let a wiring failure leave the screen with a dead IPC channel.
     console.error("[auto-update] init failed:", err);
     sendUpdateEvent("error", {
       message: `Auto-update could not start: ${String((err as Error)?.message ?? err)}`,
@@ -446,6 +298,11 @@ async function createWindow(): Promise<void> {
   win.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
     return { action: "deny" };
+  });
+
+  // Every (re)load gets the current backend status, so the loading screen is right.
+  win.webContents.on("did-finish-load", () => {
+    win?.webContents.send("mrp:backend:status", lastBackendStatus);
   });
 
   if (isDev) {
@@ -495,18 +352,24 @@ if (!app.requestSingleInstanceLock()) {
     process.env.MRP_APP_VERSION = app.getVersion();
     process.env.MRP_PACKAGED = app.isPackaged ? "1" : "0";
 
-    // Bring the backend up, retrying; if it still fails, let the user Retry or Quit
-    // (with the captured error) instead of dropping them into a blank/500 window.
-    while (!(await bringUpBackend())) {
+    manager = createManager();
+    // Lets the renderer seed its initial status on mount (avoids a missed event).
+    ipcMain.handle("mrp:backend:get-status", () => lastBackendStatus);
+
+    // Show the window first (loading screen) so the user sees "Backend Starting"
+    // immediately, then bring the backend up.
+    await createWindow();
+    sendBackendStatus(manager.status);
+    initAutoUpdates();
+
+    let healthy = await manager.start();
+    while (!healthy) {
       if (!promptBackendFailure("The backend service failed to start.")) {
         app.quit();
         return;
       }
+      healthy = await manager.start();
     }
-
-    await createWindow();
-    recoveryEnabled = true; // window is up — auto-respawn the backend if it crashes
-    initAutoUpdates();
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) void createWindow();
@@ -514,51 +377,40 @@ if (!app.requestSingleInstanceLock()) {
   });
 }
 
-const SHUTDOWN_TIMEOUT_MS = 5_000; // graceful window before force-killing the tree
-let cleanupRan = false;
-
 // All windows closed -> quit the app (drives the graceful shutdown below).
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-// before-quit fires first: stop crash-recovery so the imminent backend exit isn't
-// treated as a crash to recover from.
-app.on("before-quit", () => {
-  shuttingDown = true;
-  if (restartTimer) {
-    clearTimeout(restartTimer);
-    restartTimer = null;
-  }
-});
+// before-quit: stop crash-recovery so the imminent backend exit isn't "recovered".
+app.on("before-quit", () => manager?.markShuttingDown());
 
 // will-quit: defer the quit until the backend is gracefully stopped (then force-
 // killed if it overruns). The cleanupRan guard lets the re-quit proceed.
 app.on("will-quit", (event) => {
   if (cleanupRan) return;
   cleanupRan = true;
-  shuttingDown = true;
   event.preventDefault();
-  void gracefulStopBackend(SHUTDOWN_TIMEOUT_MS).finally(() => app.exit(0));
+  void (manager?.stop() ?? Promise.resolve()).finally(() => app.exit(0));
 });
 
 // Last-resort safety nets for paths that bypass the quit events — a main-process
 // crash, an explicit process.exit, etc. (A hard kill of Electron or a system
 // shutdown that skips even these is covered by the backend's parent watchdog.)
-process.on("exit", forceKillBackendSync);
+process.on("exit", () => manager?.forceKillSync());
 process.on("uncaughtException", (err) => {
   console.error("[main] uncaught exception:", err);
-  forceKillBackendSync();
+  manager?.forceKillSync();
   process.exit(1);
 });
 process.on("unhandledRejection", (reason) => {
   console.error("[main] unhandled rejection:", reason);
-  forceKillBackendSync();
+  manager?.forceKillSync();
   process.exit(1);
 });
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
   process.on(sig, () => {
-    forceKillBackendSync();
+    manager?.forceKillSync();
     process.exit(0);
   });
 }
