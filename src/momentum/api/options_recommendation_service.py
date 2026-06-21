@@ -71,6 +71,8 @@ def options_recommendation(
             atr_pct=atr_pct,
             expected_move_pct=expected_move,
             horizon_days=horizon,
+            iv=scan.implied_vol,
+            iv_rank=scan.iv_rank,
             dollar_volume=scan.dollar_volume,
             risk_budget=budget.risk_dollars if budget is not None else None,
             account_equity=_latest_equity(session, run_id),

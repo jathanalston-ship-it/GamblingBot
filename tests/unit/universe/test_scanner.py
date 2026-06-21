@@ -40,6 +40,17 @@ def test_scan_ranks_strongest_first(scanner, universe, sectors) -> None:
     assert cands[0].symbol == "AAA"  # strongest trend + volume surge
 
 
+def test_candidates_carry_implied_vol_and_iv_rank(scanner, universe, sectors) -> None:
+    res = scanner.scan(universe, sectors=sectors)
+    cands = res.candidates
+    assert cands
+    for c in cands:
+        assert c.implied_vol is not None and c.implied_vol > 0  # annualized vol
+        assert c.iv_rank is not None and 0.0 <= c.iv_rank <= 1.0
+    record = res.to_records(run_id="r")[0]
+    assert "implied_vol" in record and "iv_rank" in record
+
+
 def test_scores_bounded_0_100(scanner, universe, sectors) -> None:
     res = scanner.scan(universe, sectors=sectors)
     s = res.features["momentum_score"].dropna()

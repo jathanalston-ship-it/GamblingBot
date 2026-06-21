@@ -1,6 +1,10 @@
 import { Link } from "react-router-dom";
 
-import type { OptionsEligibility, TradePlan as Plan } from "../api/types";
+import type {
+  OptionsEligibility,
+  OptionsRecommendation,
+  TradePlan as Plan,
+} from "../api/types";
 import { Card } from "../components/Card";
 import { ErrorBox, Loading, PageTitle } from "../components/Page";
 import { Stat } from "../components/Stat";
@@ -83,6 +87,8 @@ function Body({ symbol, runId }: { symbol: string; runId: string | null }) {
       </div>
 
       <OptionsEligibilityCard symbol={data.symbol} runId={runId} />
+
+      <OptionsRecommendationCard symbol={data.symbol} runId={runId} />
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         {/* trade plan: targets + sizing */}
@@ -198,6 +204,100 @@ function OptionsEligibilityCard({ symbol, runId }: { symbol: string; runId: stri
             </div>
           ))}
         </div>
+      </div>
+    </Card>
+  );
+}
+
+const RISK_TONE: Record<string, string> = {
+  Low: "bg-bull/20 text-bull",
+  Medium: "bg-amber-400/20 text-amber-300",
+  High: "bg-bear/20 text-bear",
+};
+
+function OptionsRecommendationCard({ symbol, runId }: { symbol: string; runId: string | null }) {
+  const { data, error, loading } = useApi<OptionsRecommendation>(
+    `/options-recommendation/${symbol}${runId ? `?run_id=${runId}` : ""}`,
+  );
+  if (loading || error || !data) return null; // optional panel — stay quiet if unavailable
+
+  const c = data.contract;
+  const rec = data.recommended;
+  return (
+    <Card title="Options Recommendation">
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <span
+            className={`rounded px-2.5 py-1 text-sm font-semibold ${
+              rec ? "bg-bull/20 text-bull" : "bg-slate-600/30 text-slate-300"
+            }`}
+          >
+            {rec && c ? c.display : "No recommendation"}
+          </span>
+          {rec && c ? (
+            <span
+              className={`rounded px-2 py-0.5 text-xs font-medium ${
+                RISK_TONE[c.risk_level] ?? "bg-slate-600/30 text-slate-300"
+              }`}
+            >
+              {c.risk_level} risk
+            </span>
+          ) : null}
+          <span className="text-sm text-slate-500">{data.summary}</span>
+        </div>
+
+        {rec && c ? (
+          <div className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-4">
+            <Field label="Expiration" value={`~${c.expiration_days}d`} />
+            <Field
+              label="Strike"
+              value={c.short_strike != null ? `${money(c.strike)} / ${money(c.short_strike)}` : money(c.strike)}
+              hint={c.short_strike != null ? "long / short" : undefined}
+            />
+            <Field
+              label="Delta"
+              value={c.short_delta != null ? `${num(c.delta, 2)} / ${num(c.short_delta, 2)}` : num(c.delta, 2)}
+            />
+            <Field
+              label="Reward : Risk"
+              value={c.reward_to_risk != null ? `${num(c.reward_to_risk, 1)}R` : "—"}
+            />
+            <Field label="Max Loss" value={money(c.max_loss)} />
+            <Field label="Target Profit" value={money(c.target_profit)} />
+            <Field
+              label="Allocation"
+              value={c.contracts > 0 ? `${c.contracts}×` : "—"}
+              hint={
+                c.contracts > 0
+                  ? `${money(c.suggested_allocation)} · ${pct(c.allocation_pct, 1)} equity`
+                  : `≈ ${money(c.est_premium_per_contract)}/contract`
+              }
+            />
+            <Field label="Premium / contract" value={money(c.est_premium_per_contract)} />
+          </div>
+        ) : null}
+
+        {/* avoid gates */}
+        <div className="flex flex-wrap gap-x-5 gap-y-1.5 border-t border-surface-border pt-2.5">
+          {data.gates.map((g) => (
+            <div key={g.name} className="flex items-center gap-2 text-xs">
+              <span className={`h-2 w-2 shrink-0 rounded-full ${g.passed ? "bg-bull" : "bg-bear"}`} />
+              <span className="text-slate-500" title={g.detail}>
+                {g.name.replace(/_/g, " ")}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* risk disclosures */}
+        <ul className="space-y-1 text-xs text-slate-500">
+          {data.risk_disclosures.map((d, i) => (
+            <li key={i} className="flex gap-2">
+              <span className="shrink-0 text-slate-600">⚠</span>
+              <span>{d}</span>
+            </li>
+          ))}
+        </ul>
       </div>
     </Card>
   );

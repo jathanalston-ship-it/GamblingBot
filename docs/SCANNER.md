@@ -15,7 +15,8 @@ Screens the US equity universe and ranks the strongest momentum candidates.
 ```
 bars (symbol -> OHLCV)
       │  ① features        per symbol: price, $-vol, rel-vol, ATH distance,
-      ▼                    20/50/200 EMA, ATR, blended momentum, sector
+      ▼                    20/50/200 EMA, ATR, realized vol + IV rank,
+                           blended momentum, sector
    features table
       │  ② score           cross-sectional 0..100 composite (weighted)
       ▼

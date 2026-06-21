@@ -34,9 +34,11 @@ from momentum.signals.indicators import (
     atr,
     average_dollar_volume,
     ema,
+    realized_volatility,
     relative_volume,
     rolling_high,
     swing_pivot_levels,
+    volatility_rank,
 )
 from momentum.signals.momentum import (
     blended_momentum,
@@ -84,6 +86,8 @@ class ScanCandidate:
     atr: float | None
     support_level: float | None
     resistance_level: float | None
+    implied_vol: float | None  # annualized realized-vol estimate (IV proxy)
+    iv_rank: float | None  # percentile of current vol vs its trailing range (0..1)
     sector: str | None
     sector_rs: float | None
     components: dict[str, float]
@@ -141,6 +145,8 @@ class ScanResult:
             atr=_opt(row.get("atr")),
             support_level=_opt(row.get("support_level")),
             resistance_level=_opt(row.get("resistance_level")),
+            implied_vol=_opt(row.get("implied_vol")),
+            iv_rank=_opt(row.get("iv_rank")),
             sector=None if pd.isna(row.get("sector")) else str(row["sector"]),
             sector_rs=_opt(row.get("sector_rs")),
             components=components,  # type: ignore[arg-type]
@@ -169,6 +175,8 @@ class ScanResult:
                     "atr": c.atr,
                     "support_level": c.support_level,
                     "resistance_level": c.resistance_level,
+                    "implied_vol": c.implied_vol,
+                    "iv_rank": c.iv_rank,
                     "sector": c.sector,
                     "sector_rs": c.sector_rs,
                     "components": c.components,
@@ -256,6 +264,8 @@ class MomentumScanner:
         price = float(close.iloc[-1])
         support_level, resistance_level = swing_pivot_levels(high, low, price, cfg.pivot_window)
 
+        rvol_series = realized_volatility(close, cfg.vol_window)
+
         return {
             "price": price,
             "volume": float(volume.iloc[-1]) if len(volume) else float("nan"),
@@ -271,6 +281,8 @@ class MomentumScanner:
             "atr": _last(atr(high, low, close, cfg.atr_period)),
             "support_level": support_level,
             "resistance_level": resistance_level,
+            "implied_vol": _last(rvol_series),
+            "iv_rank": _last(volatility_rank(rvol_series, cfg.vol_rank_lookback)),
             "momentum_raw": blended_momentum(close, cfg.momentum_lookbacks, skip=cfg.momentum_skip),
             "_last_ts": close.index[-1],
         }

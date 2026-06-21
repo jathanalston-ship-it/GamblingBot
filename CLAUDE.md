@@ -203,8 +203,13 @@ trading platform for US equities. Python 3.12, strictly typed. See
   move ⇒ ATM). Hard-avoids low liquidity / wide spreads (gates) and lottery / short-dated
   contracts (by construction: min long delta + min DTE floor). Approximate no-chain
   pricing (Brenner–Subrahmanyam), budget+capital sizing, explicit **risk disclosures**,
-  **no live execution**. Pure engine; no persistence (inputs from scan + eligibility +
-  trade-plan hold + dynamic risk budget). `GET /options-recommendation/{symbol}`. See
+  **no live execution**. Structure choice is driven by a **volatility feed**: the scanner
+  now computes annualized realized vol + an IV rank (`signals.indicators.realized_volatility`
+  / `volatility_rank`) and persists them on `scan_results` (`implied_vol`, `iv_rank`,
+  migration `0013`) as the default implied-vol proxy (swap in a real options-IV provider by
+  writing the same two columns). Pure engine; no new persistence (inputs from scan +
+  eligibility + trade-plan hold + dynamic risk budget). `GET /options-recommendation/{symbol}`;
+  an **Options Recommendation** card on the desktop Trade Plan view. See
   `docs/OPTIONS_RECOMMENDATION.md`.
 
 - **Signal evaluation system** (`src/momentum/signaleval/`, `api/signal_eval_service.py`)

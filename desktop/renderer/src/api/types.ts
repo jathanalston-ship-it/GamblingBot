@@ -286,6 +286,50 @@ export interface OptionsEligibility {
   summary: string;
 }
 
+export interface OptionStructureCandidate {
+  structure: string;
+  display: string;
+  score: number;
+  components: Record<string, number>;
+}
+
+export interface OptionsAvoidGate {
+  name: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface OptionContract {
+  structure: string;
+  display: string;
+  expiration_days: number;
+  strike: number;
+  delta: number;
+  short_strike: number | null;
+  short_delta: number | null;
+  risk_level: string; // Low | Medium | High
+  contracts: number;
+  est_premium_per_contract: number;
+  max_loss: number;
+  target_profit: number;
+  suggested_allocation: number;
+  allocation_pct: number;
+  reward_to_risk: number | null;
+}
+
+export interface OptionsRecommendation {
+  symbol: string;
+  recommended: boolean;
+  structure: string | null;
+  contract: OptionContract | null;
+  expected_move_pct: number | null;
+  candidates: OptionStructureCandidate[];
+  gates: OptionsAvoidGate[];
+  risk_disclosures: string[];
+  summary: string;
+  config_hash: string;
+}
+
 export interface TradeTarget {
   label: string;
   price: number;

@@ -316,6 +316,10 @@ def build_candidates(rng: np.random.Generator) -> list[dict[str, Any]]:
                 "ema_slow": round(price * 0.93, 2),
                 "support_level": round(price * float(1 - rng.uniform(0.04, 0.10)), 2),
                 "resistance_level": round(price * float(1 + rng.uniform(0.02, 0.08)), 2),
+                # Annualized realized-vol estimate + IV rank (spread across the
+                # universe so the options-recommendation card shows varied structures).
+                "implied_vol": round(float(rng.uniform(0.25, 0.75)), 3),
+                "iv_rank": round(float(rng.uniform(0.05, 0.95)), 3),
                 "sector_rs": round(float(rng.uniform(0.55, 0.98)), 3),
             }
         )
@@ -346,6 +350,8 @@ def seed_scan_results(session: Session, as_of: dt.date, cands: list[dict[str, An
                 atr=c["atr"],
                 support_level=c["support_level"],
                 resistance_level=c["resistance_level"],
+                implied_vol=c["implied_vol"],
+                iv_rank=c["iv_rank"],
                 sector=c["sector"],
                 sector_rs=c["sector_rs"],
                 components={

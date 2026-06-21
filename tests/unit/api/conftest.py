@@ -233,6 +233,8 @@ def _seed(session) -> None:
             ema_slow=44.0,
             support_level=46.0,
             resistance_level=53.0,
+            implied_vol=0.45,
+            iv_rank=0.85,  # rich IV => options recommendation picks a vertical spread
             sector="Technology",
         )
     )

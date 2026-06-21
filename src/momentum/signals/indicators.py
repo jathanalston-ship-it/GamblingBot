@@ -12,6 +12,8 @@ remain for the breakout phase.)
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import pandas as pd
 
@@ -42,6 +44,36 @@ def atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> 
     """Average true range via Wilder's smoothing (an EMA with alpha=1/period)."""
     tr = true_range(high, low, close)
     return tr.ewm(alpha=1.0 / period, adjust=False, min_periods=period).mean()
+
+
+def realized_volatility(
+    close: pd.Series, window: int = 21, periods_per_year: int = 252
+) -> pd.Series:
+    """Annualized realized volatility — rolling std of daily log returns × √periods.
+
+    The standard close-to-close historical-vol estimate, returned as a fraction
+    (``0.40`` == 40% annualized). Used as the default implied-volatility proxy when
+    no live option chain is available.
+    """
+    log_ret = np.log(close / close.shift(1))
+    return log_ret.rolling(window, min_periods=window).std(ddof=0) * np.sqrt(periods_per_year)
+
+
+def volatility_rank(vol: pd.Series, lookback: int = 252, min_periods: int = 21) -> pd.Series:
+    """Percentile rank (0..1) of each value within its trailing ``lookback`` window.
+
+    The fraction of the trailing window that the current value sits at/above — an
+    "IV rank" analogue computed from a realized-vol series. NaN until ``min_periods``
+    observations are available.
+    """
+
+    def _rank(window: "np.ndarray[Any, Any]") -> float:
+        valid = window[~np.isnan(window)]
+        if valid.size < min_periods:
+            return float("nan")
+        return float((valid <= valid[-1]).mean())
+
+    return vol.rolling(lookback, min_periods=min_periods).apply(_rank, raw=True)
 
 
 def rolling_high(series: pd.Series, window: int) -> pd.Series:

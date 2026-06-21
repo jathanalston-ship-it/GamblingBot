@@ -201,6 +201,9 @@ def test_options_recommendation_endpoint(client):
     contract = body["contract"]
     assert contract["expiration_days"] >= 30  # never short-dated
     assert contract["delta"] >= 0.4  # never a lottery contract
+    # rich IV (iv_rank=0.85 on the AAPL scan) drives the vertical-spread choice
+    assert body["structure"] == "vertical_spread"
+    assert contract["short_strike"] is not None
     assert "Infinity" not in client.get("/options-recommendation/AAPL").text
     assert client.get("/options-recommendation/NOPE").status_code == 404
 

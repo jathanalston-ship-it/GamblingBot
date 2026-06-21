@@ -49,6 +49,10 @@ class ScanResult(IntPKMixin, TimestampMixin, Base):
     # Nearest confirmed swing pivots (structural stop / target levels).
     support_level: Mapped[float | None] = mapped_column(Float, nullable=True)
     resistance_level: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Annualized realized-vol estimate (the default implied-vol proxy) and its
+    # percentile rank vs the trailing range (0..1) — feed options recommendations.
+    implied_vol: Mapped[float | None] = mapped_column(Float, nullable=True)
+    iv_rank: Mapped[float | None] = mapped_column(Float, nullable=True)
     sector: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     sector_rs: Mapped[float | None] = mapped_column(Float, nullable=True)
     components: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)

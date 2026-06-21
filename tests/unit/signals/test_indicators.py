@@ -14,6 +14,7 @@ from momentum.signals.indicators import (
     ema,
     ema_stack,
     is_ema_bullish_stack,
+    realized_volatility,
     relative_volume,
     roc,
     rolling_high,
@@ -21,6 +22,7 @@ from momentum.signals.indicators import (
     swing_pivot_levels,
     swing_pivots,
     true_range,
+    volatility_rank,
 )
 
 
@@ -140,3 +142,30 @@ def test_swing_pivot_levels_none_when_no_pivot_on_side() -> None:
     rising = pd.Series(np.arange(1.0, 30.0), dtype="float64")
     support, resistance = swing_pivot_levels(rising, rising - 0.5, price=100.0, window=3)
     assert resistance is None  # nothing above price 100
+
+
+def test_realized_volatility_is_annualized_and_warms_up() -> None:
+    rng = np.random.default_rng(11)
+    idx = pd.date_range("2022-01-03", periods=300, freq="B", tz="UTC")
+    daily_sigma = 0.02
+    close = pd.Series(
+        100.0 * np.exp(np.cumsum(rng.normal(0, daily_sigma, 300))), index=idx, dtype="float64"
+    )
+    rv = realized_volatility(close, window=21)
+    assert rv.iloc[:21].isna().all()  # needs a full window
+    # annualized ≈ daily σ × √252 (within sampling tolerance)
+    assert abs(float(rv.iloc[-1]) - daily_sigma * np.sqrt(252)) < 0.12
+    assert (rv.dropna() > 0).all()
+
+
+def test_volatility_rank_is_a_trailing_percentile() -> None:
+    # strictly rising vol => the latest value is always the max => rank 1.0
+    rising = pd.Series(np.linspace(0.1, 0.5, 60), dtype="float64")
+    vr = volatility_rank(rising, lookback=30, min_periods=5)
+    assert abs(float(vr.iloc[-1]) - 1.0) < 1e-9
+    # a mid value sits near the middle of its trailing window
+    flat_then = pd.Series([0.2] * 10 + [0.1, 0.3], dtype="float64")
+    vr2 = volatility_rank(flat_then, lookback=30, min_periods=3)
+    assert 0.0 <= float(vr2.iloc[-1]) <= 1.0
+    # insufficient observations => NaN
+    assert pd.isna(volatility_rank(pd.Series([0.2, 0.3]), min_periods=21).iloc[-1])

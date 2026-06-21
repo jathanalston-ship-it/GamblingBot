@@ -77,6 +77,12 @@ class ScannerConfig(BaseModel):
     dollar_volume_lookback: int = Field(20, gt=0)
     relative_volume_lookback: int = Field(20, gt=0)
     atr_period: int = Field(14, gt=0)
+    # Realized-volatility estimate (the default implied-vol proxy) and its IV-rank
+    # window — feed the options-recommendation engine's structure choice.
+    vol_window: int = Field(21, gt=0, description="bars for the annualized realized-vol estimate")
+    vol_rank_lookback: int = Field(
+        252, gt=0, description="bars over which the current vol is percentile-ranked (IV rank)"
+    )
     pivot_window: int = Field(
         5, gt=0, description="bars each side for a fractal swing high/low (support/resistance)"
     )

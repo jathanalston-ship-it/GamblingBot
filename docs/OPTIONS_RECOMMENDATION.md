@@ -52,11 +52,28 @@ A failed hard gate (liquidity, spread, or an ineligible setup) sets
 `recommended = False` and the summary explains why; the would-be contract is still
 returned for transparency.
 
+## Volatility (IV) feed
+
+Structure selection and pricing need an implied-volatility level and an **IV rank**.
+The scanner computes these per symbol and persists them on `scan_results`
+(`implied_vol`, `iv_rank`, migration `0013`):
+
+- **`implied_vol`** — annualized **realized** volatility (rolling std of daily log
+  returns × √252), the default IV proxy when no live option chain is subscribed.
+- **`iv_rank`** — the percentile rank (0..1) of the current vol within its trailing
+  ~1-year range (`signals/indicators.volatility_rank`).
+
+Windows are tunable on `ScannerConfig` (`vol_window`, `vol_rank_lookback`). The
+service reads these straight off the latest scan, so the engine gets real,
+per-symbol vol (rich IV ⇒ spread, cheap IV + big move ⇒ ATM). Swapping in a true
+options-IV provider later only means writing the same two columns.
+
 ## Pricing (approximate, no chain)
 
 With no live option chain, premiums are approximated only to **size and compare**
 structures, anchored on the Brenner–Subrahmanyam ATM proxy
-`C_atm ≈ coeff · S · σ · √T` (σ from IV, else `ATR%·√252`, else a fallback).
+`C_atm ≈ coeff · S · σ · √T` (σ from the scan's `implied_vol`, else `ATR%·√252`,
+else a fallback).
 In-/out-of-the-money extrinsic is scaled from the ATM extrinsic by `4·d·(1−d)` and
 intrinsic added for ITM calls; target profit uses a conservative intrinsic-only
 value at the expected-move target. These approximations are surfaced as a risk
@@ -79,12 +96,18 @@ exceeds the budget, the count is `0` and a disclosure says so.
 - **Engine** — `options_recommendation/engine.py`, a pure
   `RecommendationInputs → OptionsRecommendation`.
 - **Service** — `api/options_recommendation_service.py` assembles the inputs from
-  the scan (price/ATR/liquidity), the eligibility verdict, the trade-plan holding
-  estimate, the dynamic risk budget and account equity. **No persistence** —
-  derived on demand.
+  the scan (price/ATR/liquidity/**IV/IV-rank**), the eligibility verdict, the
+  trade-plan holding estimate, the dynamic risk budget and account equity. **No new
+  persistence** — derived on demand (the IV inputs ride on `scan_results`).
 - **API** — `GET /options-recommendation/{symbol}` (404 without a scan).
-- **Tests** — `tests/unit/options_recommendation/` (config, pricing, engine) and an
-  endpoint test in `tests/unit/api/test_api.py`.
+- **Desktop** — an **Options Recommendation** card on the **Trade Plan** view
+  (below Options Eligibility): the chosen structure + risk badge, the contract grid
+  (expiration / strike / delta / R:R / max loss / target / allocation), the
+  AVOID-gate dots and the risk disclosures.
+- **Tests** — `tests/unit/options_recommendation/` (config, pricing, engine), the
+  IV indicators (`tests/unit/signals/test_indicators.py`), the scanner IV fields
+  (`tests/unit/universe/test_scanner.py`) and an endpoint test in
+  `tests/unit/api/test_api.py`.
 
 ## No live execution
 

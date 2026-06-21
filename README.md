@@ -91,7 +91,7 @@ metrics above.
 | **[docs/COMMAND_CENTER.md](docs/COMMAND_CENTER.md)** | Market Command Center (default landing): regime, top daily/weekly/monthly opportunities, standout setups, portfolio heat, performance, watchlist changes & triggered setups — one aggregate. |
 | **[docs/SIGNAL_EVALUATION.md](docs/SIGNAL_EVALUATION.md)** | Signal evaluation: per-signal outcome/MFE/MAE/return tracking + calibration, signal-quality (E-ratio) and conviction-accuracy (AUC/Brier/monotonic) dashboards. |
 | **[docs/OPTIONS_ELIGIBILITY.md](docs/OPTIONS_ELIGIBILITY.md)** | Options-eligibility gate: Shares-Preferred vs Leverage-Eligible (0-100 confidence) from liquidity, volatility, expected move, time horizon, spread quality & regime. |
-| **[docs/OPTIONS_RECOMMENDATION.md](docs/OPTIONS_RECOMMENDATION.md)** | Options-recommendation engine: for an eligible setup, a defined-risk contract (expiration/strike/delta/risk/max-loss/target/allocation) in the order Deep ITM → ATM → Vertical Spread, avoiding low liquidity, wide spreads, lottery & short-dated; risk disclosures, no execution. |
+| **[docs/OPTIONS_RECOMMENDATION.md](docs/OPTIONS_RECOMMENDATION.md)** | Options-recommendation engine: for an eligible setup, a defined-risk contract (expiration/strike/delta/risk/max-loss/target/allocation) in the order Deep ITM → ATM → Vertical Spread, avoiding low liquidity, wide spreads, lottery & short-dated; volatility (IV) feed from the scanner (`implied_vol`/`iv_rank`), risk disclosures, no execution. |
 | **[docs/ROADMAP.md](docs/ROADMAP.md)** | Phased implementation order. |
 
 ## Tech stack
