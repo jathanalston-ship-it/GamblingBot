@@ -22,6 +22,9 @@ data/raw/
 data/processed/
 data/cache/
 *.db
+*.db-wal
+*.db-shm
+*.db-journal
 *.sqlite
 *.sqlite3
 *.parquet
