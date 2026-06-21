@@ -411,6 +411,17 @@ trading platform for US equities. Python 3.12, strictly typed. See
   **non-suppressed diagnostics**: the resolved feed URL + a live HTTP probe with the
   status code and interpretation (`mrp:update:diagnostics`). See `docs/AUTO_UPDATE_AUDIT.md`.
 
+- **Secret management** (`src/momentum/core/secrets.py`, `core/logging.py`,
+  `api/__main__.py`, `.env.example`) — production-grade, env-only secrets. A single
+  **registry** (`SECRET_REGISTRY`) declares every credential (env var + which
+  provider/environment requires it); secrets are never hard-coded anywhere. Backend
+  startup **validates** the active config and logs a clear, **value-free** error for
+  missing secrets (hard-fail under `MRP_STRICT_SECRETS=1`). `setup_logging` wraps
+  every formatter in `RedactingFormatter` so secret **values never reach a log line**
+  (message/args/exc/extras). The renderer never sees secrets (preload exposes
+  presence only; guarded by `desktop/scripts/no-secret-exposure.test.cjs`). See
+  `docs/SECRETS.md`.
+
 ## Philosophy (what we optimise for)
 
 Optimise for **expectancy, profit factor, average winner, largest winner, trend

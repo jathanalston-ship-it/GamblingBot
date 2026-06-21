@@ -22,6 +22,8 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
 
+from momentum.core.secrets import RedactingFormatter
+
 ROOT_LOGGER = "momentum"
 _DEFAULT_MAX_BYTES = 10 * 1024 * 1024  # 10 MiB per file
 _DEFAULT_BACKUPS = 5
@@ -88,7 +90,10 @@ def setup_logging(
         handler.close()
         logger.removeHandler(handler)
 
-    formatter: logging.Formatter = JsonFormatter() if json_logs else _plain_formatter()
+    # Wrap the chosen formatter so no known secret value can ever reach a handler,
+    # even if something accidentally logs one (message / args / exc / extras).
+    base: logging.Formatter = JsonFormatter() if json_logs else _plain_formatter()
+    formatter: logging.Formatter = RedactingFormatter(base)
 
     if console:
         stream = logging.StreamHandler(sys.stderr)

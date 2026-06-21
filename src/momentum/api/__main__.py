@@ -18,7 +18,8 @@ import uvicorn
 from momentum.api.app import create_app
 from momentum.api.parent_watchdog import start_parent_watchdog
 from momentum.api.startup_report import build_startup_report, write_startup_report
-from momentum.api.user_settings import load_user_env
+from momentum.api.user_settings import load_user_env, read_provider
+from momentum.core import secrets
 from momentum.core.logging import setup_logging
 from momentum.persistence.database import (
     create_db_engine,
@@ -65,6 +66,21 @@ def main() -> None:
     # Load any persisted provider API keys (.env under MRP_USER_DIR) before the
     # provider is built, so a configured Alpaca/Polygon key authenticates.
     load_user_env()
+
+    # Validate that the secrets required by the ACTIVE configuration are present.
+    # The message is value-free (never logs a secret). This is non-fatal so the
+    # desktop app still boots to Settings where keys can be entered — unless
+    # MRP_STRICT_SECRETS=1 (operator/CI), which makes a missing secret a hard error.
+    provider = read_provider()
+    environment = os.environ.get("MRP_ENV", "research")
+    report = secrets.validate(provider=provider, environment=environment)
+    if report.ok:
+        log.info("secret validation: %s", report.message())
+    else:
+        log.error("secret validation: %s", report.message())
+        if os.environ.get("MRP_STRICT_SECRETS") == "1":
+            diagnostic("failed", None, error=report.message())
+            raise secrets.MissingSecretsError(report)
 
     db_url: str | None = None
     try:
