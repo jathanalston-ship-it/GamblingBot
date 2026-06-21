@@ -28,6 +28,7 @@ import {
 import electronUpdater from "electron-updater";
 
 import { BackendManager, type BackendStatus } from "./backend-manager";
+import { StartupTrace } from "./startup-trace";
 
 const API_HOST = "127.0.0.1";
 const isDev = process.env.NODE_ENV === "development";
@@ -41,6 +42,14 @@ let apiPort = 8000;
 let manager: BackendManager | null = null;
 let lastBackendStatus: BackendStatus = "starting";
 let cleanupRan = false;
+let windowShown = false;
+
+// Forensic startup trace: every main-process startup stage with timestamps, so a
+// launch that dies before the window appears (blue cursor → nothing) names the
+// exact stage it failed at instead of vanishing. Created at module load so even
+// the single-instance-lock stage is captured. Folded into the startup report.
+const trace = new StartupTrace({ log: (line) => console.error(line) });
+trace.enter("module-init");
 
 /** Find a free loopback TCP port (prod), so a busy 8000 never blocks launch. */
 function freePort(): Promise<number> {
@@ -123,7 +132,7 @@ function sendBackendStatus(status: BackendStatus): void {
  * loaded); we point at it here. Best-effort — never throws.
  */
 function writeStartupReport(): void {
-  if (isSmoke || !manager) return;
+  if (isSmoke) return;
   try {
     const { dbUrl, logDir } = userPaths();
     const report = {
@@ -137,19 +146,59 @@ function writeStartupReport(): void {
       databaseUrl: isDev ? process.env.DATABASE_URL ?? null : dbUrl,
       logDir,
       backendReport: join(logDir, "backend-startup.json"),
-      backend: manager.diagnostics,
+      // The main-process startup timeline (this is what was missing when the app
+      // died before the window: now every stage + any failure is on disk).
+      startup: trace.toReport(),
+      // null on an early failure (before the backend manager is even built).
+      backend: manager?.diagnostics ?? null,
     };
     writeFileSync(join(logDir, "startup-report.json"), JSON.stringify(report, null, 2), "utf-8");
-    console.error(
-      `[startup] status=${report.backend.status} ` +
-        `pid=${report.backend.pid ?? "-"} ` +
-        `adopted=${report.backend.adopted} ` +
-        `duration=${report.backend.startupDurationMs ?? "-"}ms ` +
-        `exe=${report.backend.executable}`,
-    );
+    console.error(`[startup] timeline: ${trace.summary()}`);
+    if (report.backend) {
+      console.error(
+        `[startup] status=${report.backend.status} ` +
+          `pid=${report.backend.pid ?? "-"} ` +
+          `adopted=${report.backend.adopted} ` +
+          `duration=${report.backend.startupDurationMs ?? "-"}ms ` +
+          `exe=${report.backend.executable}`,
+      );
+    }
   } catch (err) {
     console.error("[startup] failed to write startup report:", err);
   }
+}
+
+/**
+ * Handle a fatal startup error WITHOUT vanishing.
+ *
+ * Before this, any rejection in the (unguarded) `whenReady` chain hit the global
+ * unhandledRejection net and `process.exit(1)` — blue cursor, no window, no
+ * process, nothing on disk. Now the failing stage is recorded, the startup report
+ * (with the timeline) is flushed to disk, and — if the window never painted — a
+ * native error box surfaces the cause so the launch is never silent. Returns after
+ * quitting the app; safe to call from anywhere in startup.
+ */
+function fatalStartupError(err: unknown): void {
+  trace.fail(err);
+  const message = err instanceof Error ? err.message : String(err);
+  console.error(`[startup] fatal: ${message}`);
+  manager?.forceKillSync();
+  writeStartupReport();
+  // If the window has not painted, the user would otherwise see nothing — surface
+  // a synchronous native dialog (works without a BrowserWindow). showErrorBox is
+  // best-effort; never let the reporter itself throw.
+  if (!windowShown && !isSmoke) {
+    try {
+      const logHint = app.isPackaged ? `\n\nDetails: ${join(userPaths().logDir, "mrp.log")}` : "";
+      dialog.showErrorBox(
+        "Momentum Lab failed to start",
+        `Startup failed at "${trace.current ?? "?"}":\n${message}${logHint}`,
+      );
+    } catch {
+      /* best effort — a broken dialog must not re-loop the crash net */
+    }
+  }
+  app.quit();
 }
 
 /** Build the process manager and wire its lifecycle events to the UI. */
@@ -319,6 +368,7 @@ function initAutoUpdates(): void {
 }
 
 async function createWindow(): Promise<void> {
+  trace.enter("create-window");
   win = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -346,27 +396,62 @@ async function createWindow(): Promise<void> {
     win?.webContents.send("mrp:backend:status", lastBackendStatus);
   });
 
-  if (isDev) {
-    await win.loadURL("http://localhost:5173");
-    win.webContents.openDevTools({ mode: "detach" });
-  } else {
-    await win.loadFile(join(__dirname, "..", "renderer", "dist", "index.html"));
-  }
+  // Show the window exactly once, recording the stage, from whichever path gets
+  // there first (ready-to-show, the load-failure catch, or the timeout backstop).
+  const markShown = (detail?: string): void => {
+    if (windowShown || !win) return;
+    windowShown = true;
+    trace.enter("window-shown", detail);
+    win.show();
+  };
+
+  // Show the window even if the renderer load is slow/fails, so a bad bundle
+  // path can never present as an invisible, process-less launch. ready-to-show
+  // is the happy path; this timeout is the backstop.
+  const showFallback = setTimeout(() => {
+    if (!windowShown && !isSmoke) {
+      console.error("[startup] ready-to-show did not fire in 8s — showing window anyway");
+      markShown("forced after 8s (ready-to-show never fired)");
+    }
+  }, 8_000);
+
   win.once("ready-to-show", () => {
-    win?.show();
+    clearTimeout(showFallback);
+    markShown();
     if (isSmoke) {
       // The renderer mounted from the built bundle — report success and exit 0.
       console.log("MRP_SMOKE_OK");
       app.exit(0);
     }
   });
+
+  trace.enter("load-renderer", isDev ? "http://localhost:5173" : "renderer/dist/index.html");
+  try {
+    if (isDev) {
+      await win.loadURL("http://localhost:5173");
+      win.webContents.openDevTools({ mode: "detach" });
+    } else {
+      await win.loadFile(join(__dirname, "..", "renderer", "dist", "index.html"));
+    }
+  } catch (err) {
+    // A failed renderer load must not reject up into the fatal-exit net before the
+    // window is even shown. Log it, show the (blank) window so the user sees the
+    // app exists, and let the backend lifecycle continue.
+    clearTimeout(showFallback);
+    console.error("[startup] renderer load failed:", err);
+    if (!isSmoke) markShown("renderer load failed — shown blank");
+  }
 }
 
 // Single-instance: a second launch focuses the existing window instead of
 // starting a second backend.
 if (!app.requestSingleInstanceLock()) {
+  // Another instance holds the lock — focusing it is handled by the primary via
+  // "second-instance"; this one exits without starting a second backend.
+  trace.enter("single-instance-lock", "another instance owns the lock — exiting");
   app.quit();
 } else {
+  trace.enter("single-instance-lock", "acquired");
   app.on("second-instance", () => {
     if (win) {
       if (win.isMinimized()) win.restore();
@@ -374,7 +459,12 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
 
-  app.whenReady().then(async () => {
+  // The whole startup is guarded: any rejection used to hit the global
+  // unhandledRejection net and `process.exit(1)` — an invisible, process-less
+  // launch with nothing on disk. Now a failure is traced, reported, surfaced and
+  // quit cleanly via fatalStartupError().
+  const startup = async (): Promise<void> => {
+    trace.enter("app-ready");
     // Startup validation (CI): create the window from the built renderer with no
     // backend, then let the ready-to-show handler print the sentinel and exit.
     if (isSmoke) {
@@ -386,14 +476,18 @@ if (!app.requestSingleInstanceLock()) {
       return;
     }
 
+    trace.enter("free-port");
     apiPort = isDev ? Number(process.env.MRP_API_PORT ?? 8000) : await freePort();
     // The preload reads these to build the API base URL and to know whether the
     // packaged auto-updater (electron-updater) is available — keep them in sync.
+    trace.enter("configure-env", `port=${apiPort}`);
     process.env.MRP_API_PORT = String(apiPort);
     process.env.MRP_APP_VERSION = app.getVersion();
     process.env.MRP_PACKAGED = app.isPackaged ? "1" : "0";
 
+    trace.enter("create-manager");
     manager = createManager();
+    trace.enter("register-ipc");
     // Lets the renderer seed its initial status on mount (avoids a missed event).
     ipcMain.handle("mrp:backend:get-status", () => lastBackendStatus);
     // Factory reset → restart: relaunch the whole app so the backend is respawned
@@ -409,9 +503,12 @@ if (!app.requestSingleInstanceLock()) {
     // immediately, then bring the backend up.
     await createWindow();
     sendBackendStatus(manager.status);
+    trace.enter("init-auto-updates");
     initAutoUpdates();
 
+    trace.enter("backend-start");
     let healthy = await manager.start();
+    trace.enter(healthy ? "backend-healthy" : "backend-failed");
     writeStartupReport();
     while (!healthy) {
       if (!promptBackendFailure("The backend service failed to start.")) {
@@ -419,13 +516,26 @@ if (!app.requestSingleInstanceLock()) {
         return;
       }
       healthy = await manager.start();
+      trace.enter(healthy ? "backend-healthy" : "backend-failed");
       writeStartupReport();
     }
+    trace.done();
+    writeStartupReport();
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) void createWindow();
     });
-  });
+  };
+
+  // Run the guarded startup. The internal try/catch names the failing stage; the
+  // trailing .catch is the backstop so a rejection can never reach the global
+  // unhandledRejection net (which would `process.exit(1)` with no window/report).
+  app
+    .whenReady()
+    .then(() =>
+      startup().catch((err: unknown) => fatalStartupError(err)),
+    )
+    .catch((err: unknown) => fatalStartupError(err));
 }
 
 // All windows closed -> quit the app (drives the graceful shutdown below).
@@ -445,18 +555,46 @@ app.on("will-quit", (event) => {
   void (manager?.stop() ?? Promise.resolve()).finally(() => app.exit(0));
 });
 
+/**
+ * A fatal crash that bypassed the startup guard (uncaughtException /
+ * unhandledRejection). Best-effort and never re-throws: kill the sidecar, record
+ * the failing stage, flush the startup report, and — if no window ever painted —
+ * surface a native error box so the crash is visible rather than a silent exit.
+ */
+function reportFatalCrash(label: string, err: unknown): void {
+  console.error(`[main] ${label}:`, err);
+  try {
+    manager?.forceKillSync();
+  } catch {
+    /* best effort */
+  }
+  if (!isSmoke) {
+    try {
+      trace.fail(err);
+      writeStartupReport();
+      if (!windowShown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        dialog.showErrorBox(
+          "Momentum Lab crashed during startup",
+          `${label} at "${trace.current ?? "?"}":\n${msg}`,
+        );
+      }
+    } catch {
+      /* a broken reporter must not mask the original crash */
+    }
+  }
+}
+
 // Last-resort safety nets for paths that bypass the quit events — a main-process
 // crash, an explicit process.exit, etc. (A hard kill of Electron or a system
 // shutdown that skips even these is covered by the backend's parent watchdog.)
 process.on("exit", () => manager?.forceKillSync());
 process.on("uncaughtException", (err) => {
-  console.error("[main] uncaught exception:", err);
-  manager?.forceKillSync();
+  reportFatalCrash("uncaught exception", err);
   process.exit(1);
 });
 process.on("unhandledRejection", (reason) => {
-  console.error("[main] unhandled rejection:", reason);
-  manager?.forceKillSync();
+  reportFatalCrash("unhandled rejection", reason);
   process.exit(1);
 });
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {

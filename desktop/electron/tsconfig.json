@@ -12,5 +12,5 @@
     "resolveJsonModule": true,
     "types": ["node", "electron"]
   },
-  "include": ["main.ts", "preload.ts", "backend-manager.ts"]
+  "include": ["main.ts", "preload.ts", "backend-manager.ts", "startup-trace.ts"]
 }

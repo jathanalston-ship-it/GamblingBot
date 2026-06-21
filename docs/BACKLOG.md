@@ -62,6 +62,12 @@ they belong in a dedicated market-data slice with its own tests:
 
 ## Desktop packaging
 
+- **Slow shutdown can strand the single-instance lock** (startup forensics, low) —
+  `will-quit` defers the quit and waits up to 5 s + 2 s for the backend tree to die;
+  if a relaunch starts while the previous instance is still tearing down, the new
+  launch sees the lock held and silently quits. Now *logged* (`single-instance-lock:
+  another instance owns the lock`), but consider a bounded shutdown wait or a
+  startup grace-retry on the lock. See `docs/STARTUP_FORENSICS.md` §3.
 - **Build the backend as PyInstaller `onedir` (not `onefile`)** — onefile spawns a
   bootloader child + extracts to a temp dir on every launch (slower first paint, AV
   temp-extraction locks, and the double-process that motivated the `taskkill /T`
