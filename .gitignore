@@ -7,7 +7,15 @@ build/
 dist/
 .venv/
 venv/
+
+# Secrets & local config — NEVER commit real credentials. Secrets live in .env
+# (under MRP_USER_DIR at runtime); the only tracked env file is .env.example.
 .env
+.env.*
+!.env.example
+# Runtime provider selection (non-secret, but local state — keep it out of git).
+settings.yaml
+config/settings.yaml
 
 # Data & databases (never commit market data or the research DB)
 data/raw/
