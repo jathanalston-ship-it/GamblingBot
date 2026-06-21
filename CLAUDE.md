@@ -401,6 +401,16 @@ trading platform for US equities. Python 3.12, strictly typed. See
   published. Pure `evaluateValidation` + injectable `runValidation`, unit-tested
   (healthy launch, never-launches, launch-throws). See `docs/RELEASE_VALIDATION.md`.
 
+- **Auto-update audit** (`docs/AUTO_UPDATE_AUDIT.md`, `desktop/electron/main.ts`,
+  `desktop/.../views/Updates.tsx`) — the in-app updater (electron-updater) fetches
+  `https://github.com/<owner>/<repo>/releases.atom` **unauthenticated**; a private
+  repo 404s it (a public repo returns 200). Root cause of the `releases.atom` 404 is
+  **the repo being private** — config (owner/repo) and publishing (`latest.yml` +
+  installer + blockmap) are correct. Fix: make the repo public (or set
+  `MRP_UPDATE_TOKEN`/`GH_TOKEN` for private/internal). The Updates screen now shows
+  **non-suppressed diagnostics**: the resolved feed URL + a live HTTP probe with the
+  status code and interpretation (`mrp:update:diagnostics`). See `docs/AUTO_UPDATE_AUDIT.md`.
+
 ## Philosophy (what we optimise for)
 
 Optimise for **expectancy, profit factor, average winner, largest winner, trend

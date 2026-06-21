@@ -475,6 +475,95 @@ function sendUpdateEvent(kind: string, payload: unknown): void {
 
 let updaterReady = false;
 
+/** The GitHub release feed electron-updater is configured to use. */
+interface UpdateFeed {
+  provider: string | null;
+  owner: string | null;
+  repo: string | null;
+  /** The exact unauthenticated URL electron-updater's GitHub provider fetches. */
+  feedUrl: string | null;
+}
+
+/**
+ * Read the release-feed coordinates electron-updater actually uses, from the
+ * `app-update.yml` electron-builder bakes into the package (the single source of
+ * truth). Falls back to null fields if it can't be read (e.g. dev/unpackaged).
+ */
+function readUpdateFeed(): UpdateFeed {
+  const out: UpdateFeed = { provider: null, owner: null, repo: null, feedUrl: null };
+  try {
+    const ymlPath = join(process.resourcesPath, "app-update.yml");
+    const text = readFileSync(ymlPath, "utf-8");
+    const pick = (key: string): string | null => {
+      const m = text.match(new RegExp(`^${key}:\\s*(.+?)\\s*$`, "m"));
+      return m ? m[1].replace(/^['"]|['"]$/g, "") : null;
+    };
+    out.provider = pick("provider");
+    out.owner = pick("owner");
+    out.repo = pick("repo");
+  } catch {
+    /* not packaged / no feed file */
+  }
+  if (out.provider === "github" && out.owner && out.repo) {
+    // electron-updater's GitHubProvider fetches exactly this (unauthenticated).
+    out.feedUrl = `https://github.com/${out.owner}/${out.repo}/releases.atom`;
+  }
+  return out;
+}
+
+/** An optional token for PRIVATE-repo update checks (never embedded; env only). */
+function updateToken(): string | null {
+  return process.env.MRP_UPDATE_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN || null;
+}
+
+/**
+ * Live diagnostics for the Updates screen: the resolved feed config + a real HTTP
+ * probe of the release feed, so a failure (e.g. 404 because the repo is private)
+ * is shown explicitly instead of a generic "update failed". Never throws.
+ */
+async function updateDiagnostics(): Promise<Record<string, unknown>> {
+  const feed = readUpdateFeed();
+  const token = updateToken();
+  let probe: Record<string, unknown> | null = null;
+  if (feed.feedUrl) {
+    try {
+      const headers: Record<string, string> = { accept: "application/atom+xml" };
+      if (token) headers.authorization = `token ${token}`;
+      const res = await fetch(feed.feedUrl, { headers, redirect: "follow" });
+      probe = {
+        url: feed.feedUrl,
+        status: res.status,
+        ok: res.ok,
+        // The common, actionable case: a private repo 404s the public atom feed.
+        interpretation:
+          res.status === 404
+            ? "404 — the repository is private or has no releases. The public GitHub updater feed is only readable for a PUBLIC repo (or with an access token). Make the repository public, or set MRP_UPDATE_TOKEN."
+            : res.ok
+              ? "Feed reachable."
+              : `Feed returned HTTP ${res.status}.`,
+      };
+    } catch (err) {
+      probe = {
+        url: feed.feedUrl,
+        status: 0,
+        ok: false,
+        interpretation: `Could not reach the feed: ${String((err as Error)?.message ?? err)}`,
+      };
+    }
+  }
+  return {
+    packaged: app.isPackaged,
+    currentVersion: app.getVersion(),
+    provider: feed.provider,
+    owner: feed.owner,
+    repo: feed.repo,
+    feedUrl: feed.feedUrl,
+    autoUpdateDisabled: process.env.MRP_DISABLE_AUTOUPDATE === "1",
+    tokenConfigured: !!token,
+    probe,
+  };
+}
+
 /**
  * In-app auto-update (electron-updater), surfaced in the Updates screen.
  *
@@ -507,10 +596,21 @@ function initAutoUpdates(): void {
     setImmediate(() => autoUpdater.quitAndInstall());
     return true;
   });
+  // Detailed diagnostics for the Updates screen (feed config + live feed probe).
+  ipcMain.handle("mrp:update:diagnostics", () => updateDiagnostics());
 
   try {
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = true;
+
+    // PRIVATE-repo support (testing / internal distribution): if a token is set in
+    // the environment, authenticate the feed + asset requests. Never embedded in
+    // the build — only read from the environment.
+    const token = updateToken();
+    if (token) {
+      autoUpdater.requestHeaders = { authorization: `token ${token}` };
+      console.error("[auto-update] using an access token for the release feed (private repo)");
+    }
 
     autoUpdater.on("checking-for-update", () => sendUpdateEvent("checking", null));
     autoUpdater.on("update-available", (info) =>
@@ -529,9 +629,13 @@ function initAutoUpdates(): void {
     autoUpdater.on("update-downloaded", (info) =>
       sendUpdateEvent("downloaded", { version: info.version }),
     );
-    autoUpdater.on("error", (err) =>
-      sendUpdateEvent("error", { message: String(err?.message ?? err) }),
-    );
+    autoUpdater.on("error", (err) => {
+      const e = err as { message?: string; statusCode?: number } | undefined;
+      sendUpdateEvent("error", {
+        message: String(e?.message ?? err),
+        statusCode: e?.statusCode ?? null,
+      });
+    });
 
     if (process.env.MRP_DISABLE_AUTOUPDATE !== "1") {
       void autoUpdater.checkForUpdates().catch((err) => {

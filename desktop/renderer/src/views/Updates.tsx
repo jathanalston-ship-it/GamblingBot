@@ -5,6 +5,7 @@ import type { RollbackResult, UpdateResult, UpdateStatus } from "../api/types";
 import { Card } from "../components/Card";
 import { ErrorBox, Loading, PageTitle } from "../components/Page";
 import { useApi } from "../hooks/useApi";
+import type { UpdateDiagnostics } from "../vite-env";
 
 /**
  * Updates screen. In the **packaged** desktop build it drives the in-app
@@ -33,18 +34,26 @@ function PackagedUpdates() {
   const [version, setVersion] = useState<string | null>(null);
   const [percent, setPercent] = useState(0);
   const [err, setErr] = useState<string | null>(null);
+  const [diag, setDiag] = useState<UpdateDiagnostics | null>(null);
   const busy = useRef(false);
+
+  // Pull the live feed diagnostics (config + a real probe of the release feed) so a
+  // failure is explained, never suppressed.
+  const loadDiagnostics = useCallback((): void => {
+    void window.mrp?.updater?.diagnostics().then(setDiag).catch(() => setDiag(null));
+  }, []);
 
   const check = useCallback((): void => {
     const updater = window.mrp?.updater;
     if (!updater) return;
     setErr(null);
     setState("checking");
+    loadDiagnostics();
     void updater.check().catch((e: unknown) => {
       setErr(e instanceof Error ? e.message : String(e));
       setState("error");
     });
-  }, []);
+  }, [loadDiagnostics]);
 
   // Subscribe to updater events, then kick off an initial check.
   useEffect(() => {
@@ -72,14 +81,19 @@ function PackagedUpdates() {
           setState("downloaded");
           break;
         case "error":
-          setErr(e.payload?.message ?? "Update failed.");
+          setErr(
+            e.payload?.statusCode
+              ? `${e.payload?.message ?? "Update failed."} (HTTP ${e.payload.statusCode})`
+              : (e.payload?.message ?? "Update failed."),
+          );
           setState("error");
+          loadDiagnostics(); // re-probe so the screen explains the failure
           break;
       }
     });
     check();
     return off;
-  }, [check]);
+  }, [check, loadDiagnostics]);
 
   const download = (): void => {
     const updater = window.mrp?.updater;
@@ -160,7 +174,7 @@ function PackagedUpdates() {
         {err ? (
           <div className="rounded-lg border border-bear/40 bg-bear/10 p-4 text-sm text-bear">
             <div className="font-medium">Update check failed</div>
-            <div className="mt-1 break-words text-bear/90">{err}</div>
+            <div className="mt-1 break-words font-mono text-xs text-bear/90">{err}</div>
             <div className="mt-2 text-xs text-slate-400">
               You can always update manually: download the latest{" "}
               <span className="text-slate-200">MomentumLab-Setup-*.exe</span> from the project's
@@ -168,8 +182,66 @@ function PackagedUpdates() {
             </div>
           </div>
         ) : null}
+
+        <UpdateDiagnosticsCard diag={diag} onRefresh={loadDiagnostics} />
       </div>
     </div>
+  );
+}
+
+/** Detailed, non-suppressed diagnostics: the resolved feed config + a live probe. */
+function UpdateDiagnosticsCard({
+  diag,
+  onRefresh,
+}: {
+  diag: UpdateDiagnostics | null;
+  onRefresh: () => void;
+}) {
+  const probe = diag?.probe ?? null;
+  const probeTone =
+    probe == null ? "text-slate-400" : probe.ok ? "text-bull" : "text-bear";
+  return (
+    <Card
+      title="Diagnostics"
+      action={
+        <button
+          onClick={onRefresh}
+          className="rounded border border-surface-border px-2 py-1 text-xs text-slate-300 hover:bg-surface/60"
+        >
+          Re-probe feed
+        </button>
+      }
+    >
+      <dl className="grid grid-cols-[9rem_1fr] gap-y-1.5 text-xs">
+        <dt className="text-slate-500">Provider</dt>
+        <dd className="text-slate-200">{diag?.provider ?? "—"}</dd>
+        <dt className="text-slate-500">Repository</dt>
+        <dd className="text-slate-200">
+          {diag?.owner && diag?.repo ? `${diag.owner}/${diag.repo}` : "—"}
+        </dd>
+        <dt className="text-slate-500">Release feed</dt>
+        <dd className="break-all font-mono text-slate-300">{diag?.feedUrl ?? "—"}</dd>
+        <dt className="text-slate-500">Feed probe</dt>
+        <dd className={probeTone}>
+          {probe ? `HTTP ${probe.status}${probe.ok ? " — reachable" : ""}` : "—"}
+        </dd>
+        <dt className="text-slate-500">Current version</dt>
+        <dd className="text-slate-200">{diag?.currentVersion ?? "—"}</dd>
+        <dt className="text-slate-500">Access token</dt>
+        <dd className="text-slate-200">{diag?.tokenConfigured ? "configured" : "none"}</dd>
+        {diag?.autoUpdateDisabled ? (
+          <>
+            <dt className="text-slate-500">Auto-update</dt>
+            <dd className="text-amber-300">disabled (MRP_DISABLE_AUTOUPDATE=1)</dd>
+          </>
+        ) : null}
+      </dl>
+      {probe && !probe.ok ? (
+        <p className="mt-3 rounded border border-bear/30 bg-bear/5 p-2 text-xs text-bear/90">
+          {probe.interpretation}
+        </p>
+      ) : null}
+    </Card>
   );
 }
 

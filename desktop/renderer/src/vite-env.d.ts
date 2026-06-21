@@ -9,7 +9,21 @@ export interface UpdaterEvent {
     transferred?: number;
     total?: number;
     message?: string;
+    statusCode?: number | null;
   } | null;
+}
+
+/** Live diagnostics for the Updates screen: the release feed config + a probe. */
+export interface UpdateDiagnostics {
+  packaged: boolean;
+  currentVersion: string;
+  provider: string | null;
+  owner: string | null;
+  repo: string | null;
+  feedUrl: string | null;
+  autoUpdateDisabled: boolean;
+  tokenConfigured: boolean;
+  probe: { url: string; status: number; ok: boolean; interpretation: string } | null;
 }
 
 /** The live diagnostics shown in the Developer Panel (Development Mode only). */
@@ -68,6 +82,7 @@ export interface MrpBridge {
     check: () => Promise<{ version: string | null }>;
     download: () => Promise<boolean>;
     install: () => Promise<boolean>;
+    diagnostics: () => Promise<UpdateDiagnostics>;
     onEvent: (cb: (e: UpdaterEvent) => void) => () => void;
   };
 }
