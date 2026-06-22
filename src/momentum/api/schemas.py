@@ -904,3 +904,27 @@ class ApiHealthReportOut(BaseModel):
     healthy: bool
     routes: list[RouteHealthOut]
     generated_at: str
+
+
+class ErrorRecordOut(BaseModel):
+    """One captured unhandled backend exception (secret-redacted)."""
+
+    ts: str
+    method: str
+    path: str
+    route: str | None = None
+    route_path: str | None = None
+    status: int
+    exc_type: str
+    exc_message: str
+    query_params: dict[str, str] = {}
+    path_params: dict[str, str] = {}
+    traceback: str
+
+
+class RecentErrorsOut(BaseModel):
+    """The most recent backend exceptions for the Diagnostics screen."""
+
+    count: int
+    capacity: int
+    errors: list[ErrorRecordOut]

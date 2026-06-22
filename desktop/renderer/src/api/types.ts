@@ -695,3 +695,23 @@ export interface SignalAudit {
   config_hash: string;
   generated_at: string;
 }
+
+export interface ErrorRecord {
+  ts: string;
+  method: string;
+  path: string;
+  route: string | null;
+  route_path: string | null;
+  status: number;
+  exc_type: string;
+  exc_message: string;
+  query_params: Record<string, string>;
+  path_params: Record<string, string>;
+  traceback: string;
+}
+
+export interface RecentErrors {
+  count: number;
+  capacity: number;
+  errors: ErrorRecord[];
+}

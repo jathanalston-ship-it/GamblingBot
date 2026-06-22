@@ -46,3 +46,10 @@ export function apiPost<T>(path: string, body?: unknown): Promise<T> {
 export function apiPut<T>(path: string, body?: unknown): Promise<T> {
   return apiWrite<T>("PUT", path, body);
 }
+
+export async function apiDelete(path: string): Promise<void> {
+  const res = await fetch(`${apiBaseUrl()}${path}`, { method: "DELETE" });
+  if (!res.ok) {
+    throw new Error(`${res.status} ${res.statusText} — DELETE ${path}`);
+  }
+}

@@ -30,6 +30,7 @@ from momentum.api.routes import (
     command_center,
     conviction,
     dashboard,
+    diagnostics,
     health,
     opportunity,
     options_eligibility,
@@ -51,6 +52,7 @@ from momentum.api.routes import (
     watchlist_performance,
     watchlists,
 )
+from momentum.api.diagnostics import ErrorRecorder, build_record
 from momentum.api.jobs import JobManager
 from momentum.persistence.database import create_db_engine, create_session_factory
 
@@ -86,6 +88,7 @@ _ROUTERS = (
     options_recommendation,
     watchlist_performance,
     signal_audit,
+    diagnostics,
 )
 
 
@@ -123,6 +126,8 @@ def create_app(session_factory: sessionmaker[Session] | None = None) -> FastAPI:
     app.state.session_factory = session_factory
     # Background-job manager for operator-console actions (scan/backtest/paper/…).
     app.state.job_manager = JobManager()
+    # In-memory ring buffer of recent unhandled exceptions (Diagnostics screen).
+    app.state.error_recorder = ErrorRecorder()
 
     for module in _ROUTERS:
         app.include_router(module.router)
@@ -135,7 +140,22 @@ def create_app(session_factory: sessionmaker[Session] | None = None) -> FastAPI:
     async def _unhandled(request: Request, exc: Exception) -> JSONResponse:
         if isinstance(exc, StarletteHTTPException):  # 404/explicit HTTPException
             return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
-        _log.exception("unhandled error on %s %s", request.method, request.url.path)
+        # Capture into the diagnostics buffer (route, stack trace, params, timestamp)
+        # so the failure is queryable via /diagnostics/recent-errors. Secret-redacted.
+        record = build_record(request, exc)
+        recorder: ErrorRecorder | None = getattr(app.state, "error_recorder", None)
+        if recorder is not None:
+            recorder.record(record)
+        # Log the full context too (the RedactingFormatter scrubs any secret value).
+        _log.exception(
+            "unhandled %s on %s %s [route=%s] query=%s path_params=%s",
+            record.exc_type,
+            record.method,
+            record.path,
+            record.route,
+            record.query_params,
+            record.path_params,
+        )
         return JSONResponse(
             status_code=500,
             content={"detail": f"{type(exc).__name__}: {exc}", "path": request.url.path},
