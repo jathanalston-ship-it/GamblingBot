@@ -17,6 +17,8 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from momentum.core.config_paths import load_config
+
 
 class StructureWeights(BaseModel):
     """Per-structure weights for the decision factors (need not sum to 1)."""
@@ -218,6 +220,4 @@ class OptionsRecommendationConfig(BaseModel):
 
 
 def default_config() -> OptionsRecommendationConfig:
-    return OptionsRecommendationConfig.from_yaml(
-        Path(__file__).resolve().parents[3] / "config" / "options_recommendation.example.yaml"
-    )
+    return OptionsRecommendationConfig.from_dict(load_config("options_recommendation.example.yaml"))

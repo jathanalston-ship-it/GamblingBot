@@ -10,6 +10,8 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from momentum.core.config_paths import load_config
+
 
 class SignalAuditConfig(BaseModel):
     """Thresholds for the audit: sample size, significance level and tiers."""
@@ -54,6 +56,4 @@ class SignalAuditConfig(BaseModel):
 
 
 def default_config() -> SignalAuditConfig:
-    return SignalAuditConfig.from_yaml(
-        Path(__file__).resolve().parents[3] / "config" / "signal_audit.example.yaml"
-    )
+    return SignalAuditConfig.from_dict(load_config("signal_audit.example.yaml"))

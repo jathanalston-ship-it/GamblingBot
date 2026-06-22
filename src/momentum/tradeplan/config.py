@@ -14,6 +14,8 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from momentum.core.config_paths import load_config
+
 
 class TradePlanConfig(BaseModel):
     """Tunables for deriving entry / stop / targets / sizing / failure rules."""
@@ -76,6 +78,4 @@ class TradePlanConfig(BaseModel):
 
 
 def default_config() -> TradePlanConfig:
-    return TradePlanConfig.from_yaml(
-        Path(__file__).resolve().parents[3] / "config" / "tradeplan.example.yaml"
-    )
+    return TradePlanConfig.from_dict(load_config("tradeplan.example.yaml"))

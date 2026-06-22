@@ -10,6 +10,8 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from momentum.core.config_paths import load_config
+
 
 class OptionsEligibilityConfig(BaseModel):
     """Thresholds + weights deciding whether a setup is options-eligible."""
@@ -97,6 +99,4 @@ class OptionsEligibilityConfig(BaseModel):
 
 
 def default_config() -> OptionsEligibilityConfig:
-    return OptionsEligibilityConfig.from_yaml(
-        Path(__file__).resolve().parents[3] / "config" / "options_eligibility.example.yaml"
-    )
+    return OptionsEligibilityConfig.from_dict(load_config("options_eligibility.example.yaml"))

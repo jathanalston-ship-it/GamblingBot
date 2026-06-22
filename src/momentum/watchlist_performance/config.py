@@ -17,6 +17,8 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from momentum.core.config_paths import load_config
+
 
 class WatchlistPerformanceConfig(BaseModel):
     """Windows + thresholds for tracking and scoring watchlist performance."""
@@ -62,6 +64,4 @@ class WatchlistPerformanceConfig(BaseModel):
 
 
 def default_config() -> WatchlistPerformanceConfig:
-    return WatchlistPerformanceConfig.from_yaml(
-        Path(__file__).resolve().parents[3] / "config" / "watchlist_performance.example.yaml"
-    )
+    return WatchlistPerformanceConfig.from_dict(load_config("watchlist_performance.example.yaml"))

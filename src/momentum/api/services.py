@@ -8,7 +8,6 @@ nothing here mutates state.
 from __future__ import annotations
 
 import math
-import os
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -18,6 +17,7 @@ import yaml
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from momentum.core.config_paths import bundled_config_dir
 from momentum.analytics import attribution as attr
 from momentum.analytics.performance import analyze_performance
 from momentum.analytics.trade_analysis import TradeStats, compute_trade_stats
@@ -266,12 +266,12 @@ def read_config_file(name: str) -> ConfigFileOut | None:
 
 
 def _config_dir() -> Path:
-    """Resolve the repository ``config/`` directory (overridable via env)."""
-    override = os.environ.get("MRP_CONFIG_DIR")
-    if override:
-        return Path(override).resolve()
-    # src/momentum/api/services.py -> repo root is three parents up from the package
-    return (Path(__file__).resolve().parents[3] / "config").resolve()
+    """Resolve the shipped ``config/`` directory — bundle (frozen) or repo (source).
+
+    Frozen-aware (PyInstaller) so packaged builds read the bundled config, never a
+    source-tree path. Honours ``MRP_CONFIG_DIR``. See ``core.config_paths``.
+    """
+    return bundled_config_dir()
 
 
 # --------------------------------------------------------------------------- #

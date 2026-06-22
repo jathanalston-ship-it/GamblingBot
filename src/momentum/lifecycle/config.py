@@ -10,6 +10,8 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
+from momentum.core.config_paths import load_config
+
 
 class LifecycleConfig(BaseModel):
     """Thresholds that decide which lifecycle state a candidate is in."""
@@ -45,6 +47,4 @@ class LifecycleConfig(BaseModel):
 
 
 def default_config() -> LifecycleConfig:
-    return LifecycleConfig.from_yaml(
-        Path(__file__).resolve().parents[3] / "config" / "lifecycle.example.yaml"
-    )
+    return LifecycleConfig.from_dict(load_config("lifecycle.example.yaml"))

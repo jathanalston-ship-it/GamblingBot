@@ -15,7 +15,11 @@ venv/
 !.env.example
 # Runtime provider selection (non-secret, but local state — keep it out of git).
 settings.yaml
-config/settings.yaml
+# Bootstrapped user config overrides (config/<name>.yaml); only the *.example.yaml
+# templates are tracked. In a source checkout these are written next to the
+# examples when an engine first loads its defaults.
+config/*.yaml
+!config/*.example.yaml
 
 # Data & databases (never commit market data or the research DB)
 data/raw/
