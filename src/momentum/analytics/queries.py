@@ -25,9 +25,13 @@ _PROFIT_FACTOR = (
     "NULLIF(-SUM(CASE WHEN net_pnl < 0 THEN net_pnl ELSE 0 END), 0)"
 )
 _WIN_RATE = "AVG(CASE WHEN net_pnl > 0 THEN 1.0 ELSE 0.0 END)"
+# Both sums gate on mfe > 0 (not just net_pnl > 0) to match the Python
+# _trend_capture, which restricts to winners with positive MFE. Without the
+# extra gate a winner with mfe = 0/NULL adds to the numerator but not the
+# denominator, inflating the ratio relative to the reported Python metric.
 _TREND_CAPTURE = (
-    "SUM(CASE WHEN net_pnl > 0 THEN r_multiple ELSE 0 END) / "
-    "NULLIF(SUM(CASE WHEN net_pnl > 0 THEN mfe ELSE 0 END), 0)"
+    "SUM(CASE WHEN net_pnl > 0 AND mfe > 0 THEN r_multiple ELSE 0 END) / "
+    "NULLIF(SUM(CASE WHEN net_pnl > 0 AND mfe > 0 THEN mfe ELSE 0 END), 0)"
 )
 
 _HOLD_BUCKET = (

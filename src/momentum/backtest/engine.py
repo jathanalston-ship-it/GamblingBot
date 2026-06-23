@@ -394,8 +394,13 @@ class BacktestEngine:
         price_move = (fill.price - pos.entry_price) * sign
         pnl = price_move * pos.shares - pos.entry_commission - fill.commission
         r_multiple = price_move / pos.risk_per_share
-        mfe_r = (pos.highest - pos.entry_price) * sign / pos.risk_per_share
-        mae_r = (pos.lowest - pos.entry_price) * sign / pos.risk_per_share
+        # Favorable excursion is the best price in the trade's direction (the bar
+        # high for a long, the bar low for a short); adverse is the opposite extreme.
+        # Using the wrong extreme made both 0 for every short (after the clamps below).
+        favorable = pos.highest if pos.side is Side.LONG else pos.lowest
+        adverse = pos.lowest if pos.side is Side.LONG else pos.highest
+        mfe_r = (favorable - pos.entry_price) * sign / pos.risk_per_share
+        mae_r = (adverse - pos.entry_price) * sign / pos.risk_per_share
         holding_days = max(0, (ts - pos.entry_time).days)
         self._closed.append(
             Trade(

@@ -7,6 +7,7 @@ from collections.abc import Sequence
 import pytest
 
 from momentum.backtest import BacktestConfig, BacktestEngine, OrderIntent
+from momentum.core.enums import Side
 from momentum.execution.slippage import BpsSlippage, NoCommission, NoSlippage, PerShareCommission
 
 
@@ -123,3 +124,38 @@ def test_no_trades_flat_equity(ohlcv) -> None:
 
     res = BacktestEngine(_frictionless()).run(bars, DoNothing())
     assert (res.equity_curve == 100_000).all()
+
+
+class ShortAndHold:
+    """Enter short once on the first bar with a wide stop above entry; never exit."""
+
+    def __init__(self, symbol: str = "AAA", shares: int = 100) -> None:
+        self.symbol = symbol
+        self.shares = shares
+        self._done = False
+
+    def on_bar(self, ctx) -> Sequence[OrderIntent]:
+        if self._done or ctx.position(self.symbol) is not None:
+            return []
+        price = ctx.price(self.symbol)
+        if price is None:
+            return []
+        self._done = True
+        return [OrderIntent(self.symbol, self.shares, side=Side.SHORT, stop_price=price * 1.5)]
+
+
+def test_short_mfe_mae_use_correct_extreme(ohlcv) -> None:
+    """Regression: a short's favorable excursion is the low, adverse is the high.
+
+    Entered at 100, price falls to ~79 (favorable) then rises to 95 (still a win).
+    Before the fix both MFE_R and MAE_R were forced to 0 for every short.
+    """
+    bars = {"AAA": ohlcv([100, 90, 80, 95])}
+    res = BacktestEngine(_frictionless()).run(bars, ShortAndHold())
+    assert len(res.trades) == 1
+    trade = res.trades[0]
+    assert trade.side is Side.SHORT
+    assert trade.mfe_r > 0  # captured the downside move
+    assert trade.mae_r < 0  # the adverse uptick is recorded
+    # The favorable excursion (100->~79) dwarfs the adverse one (100->~101).
+    assert trade.mfe_r > -trade.mae_r

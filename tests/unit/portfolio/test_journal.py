@@ -77,6 +77,24 @@ def test_open_trade_is_idempotent(session: Session) -> None:
     assert TradeRepository(session).count() == 1
 
 
+def test_open_trade_idempotent_with_lowercase_symbol(session: Session) -> None:
+    """A non-uppercase fill symbol must still match on re-run (no duplicate open).
+
+    The lookup uppercases its query key; storing the symbol un-normalized would
+    make the second open miss the first row and journal a duplicate.
+    """
+    journal = TradeJournal(TradeRepository(session))
+    fill = Fill("aapl-1", "aapl", Side.LONG, 100, 50.0, 1.0, ENTRY_TS)
+    first = journal.open_trade(entry_fill=fill, assessment=assessment(), run_id="paper-1")
+    session.commit()
+    second = journal.open_trade(entry_fill=fill, assessment=assessment(), run_id="paper-1")
+    session.commit()
+
+    assert first.symbol == "AAPL"  # normalized on write
+    assert first.id == second.id
+    assert TradeRepository(session).count() == 1
+
+
 def test_close_trade_computes_pnl_and_r(session: Session) -> None:
     repo = TradeRepository(session)
     journal = TradeJournal(repo)

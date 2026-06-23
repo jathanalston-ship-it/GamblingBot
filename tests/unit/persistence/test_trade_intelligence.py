@@ -157,6 +157,25 @@ def test_sql_overall_matches_python(session_factory) -> None:
         assert row["trend_capture"] == pytest.approx((6 + 3 + 9) / (7.0 + 3.6 + 10.0))
 
 
+def test_sql_trend_capture_ignores_zero_mfe_winner(session_factory) -> None:
+    """A winner with MFE = 0 must not inflate trend_capture (Python/SQL parity).
+
+    The Python _trend_capture restricts to winners with MFE > 0; the SQL must do
+    the same, gating both numerator and denominator on mfe > 0.
+    """
+    with session_factory() as s:
+        trades = _sample()
+        # An extra winner whose recorded MFE is 0 — excluded by both definitions.
+        trades.append(
+            _trade("GGG", "Tech", "bullish", "breakout_50d", "target", 4.0, 10, 0.0, -0.2)
+        )
+        TradeRepository(s).save_many(trades)
+        s.commit()
+        row = run_query(s, "overall_summary", run_id="r1")[0]
+        # Unchanged from the no-GGG case: GGG contributes to neither sum.
+        assert row["trend_capture"] == pytest.approx((6 + 3 + 9) / (7.0 + 3.6 + 10.0))
+
+
 def test_sql_by_sector(session_factory) -> None:
     _seed(session_factory)
     with session_factory() as s:

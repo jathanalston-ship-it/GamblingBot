@@ -46,7 +46,10 @@ class TradeJournal:
         initial_risk = assessment.stop_distance * quantity
         trade = Trade(
             run_id=run_id,
-            symbol=entry_fill.symbol,
+            # Normalize on write: the idempotency lookup (open_for_symbol) uppercases
+            # its query key, so a non-uppercase fill symbol would never match the
+            # persisted row and a re-run would journal a duplicate open trade.
+            symbol=entry_fill.symbol.upper(),
             direction=entry_fill.side.value,
             entry_signal_id=assessment.signal_id,
             entry_ts=entry_fill.ts,
