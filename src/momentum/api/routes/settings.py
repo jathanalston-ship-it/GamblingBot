@@ -8,12 +8,21 @@ and any API-key secrets to ``.env`` (secrets are never read back in plain text).
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from typing import Any
 
-from momentum.api import services, user_settings
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from momentum.api import data_mode, services, user_settings
+from momentum.api.dependencies import get_session
 from momentum.api.schemas import ConfigFileOut, DataProviderIn, DataProviderOut
 
 router = APIRouter(prefix="/settings", tags=["settings"])
+
+
+class DataModeIn(BaseModel):
+    mode: str
 
 
 @router.get("/config", response_model=list[str])
@@ -43,6 +52,26 @@ def _to_out(settings: user_settings.ProviderSettings) -> DataProviderOut:
 def get_data_provider() -> DataProviderOut:
     """Current market-data provider + which API keys are set (booleans only)."""
     return _to_out(user_settings.read_provider_settings())
+
+
+@router.get("/data-mode")
+def get_data_mode(session: Session = Depends(get_session)) -> dict[str, Any]:
+    """The current data mode (demo/production) + how many demo rows remain."""
+    return {
+        "mode": data_mode.current_mode(),
+        "valid_modes": list(user_settings.VALID_DATA_MODES),
+        "demo_rows": data_mode.count_demo_rows(session),
+    }
+
+
+@router.put("/data-mode")
+def put_data_mode(body: DataModeIn, session: Session = Depends(get_session)) -> dict[str, Any]:
+    """Set the data mode. Switching to production purges all demo-tagged rows."""
+    try:
+        result = data_mode.set_mode(session, body.mode)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {**result, "demo_rows": data_mode.count_demo_rows(session)}
 
 
 @router.put("/data-provider", response_model=DataProviderOut)

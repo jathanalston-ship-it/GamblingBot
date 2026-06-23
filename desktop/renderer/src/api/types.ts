@@ -436,6 +436,12 @@ export interface UniverseList {
   sectors: string[];
 }
 
+export interface DataModeSettings {
+  mode: string;
+  valid_modes: string[];
+  demo_rows: number;
+}
+
 export interface Run {
   run_id: string;
   label: string | null;

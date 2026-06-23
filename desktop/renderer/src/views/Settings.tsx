@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
 
 import { apiDelete, apiPost, apiPut } from "../api/client";
-import type { ConfigFile, DataProviderSettings, UniverseList } from "../api/types";
+import type {
+  ConfigFile,
+  DataModeSettings,
+  DataProviderSettings,
+  UniverseList,
+} from "../api/types";
 import { ActionButton } from "../components/ActionButton";
 import { Card } from "../components/Card";
 import { DiagnosticsPanel } from "../components/DiagnosticsPanel";
@@ -141,6 +146,82 @@ function DataProviderPanel() {
           {saved ? <span className="text-sm text-bull">Saved.</span> : null}
           {saveError ? <span className="text-sm text-bear">{saveError}</span> : null}
         </div>
+      </div>
+    </Card>
+  );
+}
+
+function DataModePanel() {
+  const { data, error, loading, reload } = useApi<DataModeSettings>("/settings/data-mode");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  if (loading) return <Loading />;
+  if (error) return <ErrorBox message={error} />;
+  if (!data) return null;
+
+  const setMode = async (mode: string) => {
+    if (mode === data.mode) return;
+    if (
+      mode === "production" &&
+      data.demo_rows > 0 &&
+      !window.confirm(
+        `Switch to Production mode? This permanently deletes ${data.demo_rows} demo rows and ` +
+          `hides any seeded data from every screen. Only live Yahoo + database data will be used.`,
+      )
+    )
+      return;
+    setBusy(true);
+    setErr(null);
+    setMsg(null);
+    try {
+      const res = await apiPut<{ purged_total?: number }>("/settings/data-mode", { mode });
+      setMsg(
+        mode === "production"
+          ? `Production mode on — purged ${res.purged_total ?? 0} demo rows.`
+          : "Demo mode on — sample data is allowed.",
+      );
+      reload();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const prod = data.mode === "production";
+  return (
+    <Card title="Data Mode">
+      <div className="space-y-4">
+        <p className="text-sm text-slate-400">
+          <strong>Demo</strong> allows seeded sample data on every screen. <strong>Production</strong>{" "}
+          uses only live Yahoo data, the database, and live scan results — demo rows are purged and
+          can never be displayed. Guarantees a scan cannot accidentally show seeded data.
+        </p>
+        <div className="flex gap-3">
+          {(data.valid_modes ?? ["demo", "production"]).map((m) => (
+            <button
+              key={m}
+              disabled={busy}
+              onClick={() => setMode(m)}
+              className={`rounded px-4 py-2 text-sm capitalize disabled:opacity-50 ${
+                data.mode === m
+                  ? "bg-accent text-white"
+                  : "border border-surface-border text-slate-300 hover:bg-surface/60"
+              }`}
+            >
+              {m}
+            </button>
+          ))}
+        </div>
+        <div className="text-xs text-slate-500">
+          Current: <span className={prod ? "text-bull" : "text-slate-300"}>{data.mode}</span>
+          {" · "}
+          demo rows in database: <span className="tabular-nums text-slate-300">{data.demo_rows}</span>
+        </div>
+        {msg ? <div className="text-sm text-bull">{msg}</div> : null}
+        {err ? <div className="text-sm text-bear">{err}</div> : null}
       </div>
     </Card>
   );
@@ -475,6 +556,7 @@ export default function Settings() {
     <div className="space-y-5">
       <PageTitle title="Settings" subtitle="Data provider, API keys, maintenance and configuration" />
       <DataProviderPanel />
+      <DataModePanel />
       <UniversePanel />
       <Maintenance />
       <DiagnosticsPanel />

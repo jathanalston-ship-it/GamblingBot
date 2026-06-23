@@ -271,6 +271,12 @@ def reset(request: Request, body: ResetRequest | None = None) -> ResetOut:
     )
     demo: dict[str, object] | None = None
     if p.load_demo:
+        from momentum.api import data_mode
+
+        if data_mode.is_production():  # seeded data must never enter a live database
+            raise HTTPException(
+                status_code=409, detail="demo data is disabled in production data mode"
+            )
 
         def _silent(_pct: float, _msg: str) -> None:
             return None

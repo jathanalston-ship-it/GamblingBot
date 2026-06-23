@@ -395,7 +395,16 @@ def seed_demo_data(
     Backs the first-run "Load Sample Data" button: clears any prior demo rows and
     regenerates a full positive-skew sample so every desktop screen has data. Safe
     to run repeatedly — the demo rows are replaced, never duplicated.
+
+    Refuses in **production data mode**: seeded data must never enter a live
+    database.
     """
+    from momentum.api import data_mode
+
+    if data_mode.is_production():
+        raise RuntimeError(
+            "demo data is disabled in production data mode; switch to demo mode to seed"
+        )
     with session_factory() as session:
         counts = seed_all(session, progress=progress)
         session.commit()

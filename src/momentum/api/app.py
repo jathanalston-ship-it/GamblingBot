@@ -126,6 +126,11 @@ def create_app(session_factory: sessionmaker[Session] | None = None) -> FastAPI:
     if session_factory is None:
         session_factory = create_session_factory(create_db_engine())
     app.state.session_factory = session_factory
+    # Activate the persisted data mode (demo vs production). Importing the module
+    # registers the global demo-exclusion query filter; loading sets the flag.
+    from momentum.api import data_mode
+
+    data_mode.load_from_settings()
     # Background-job manager for operator-console actions (scan/backtest/paper/…).
     app.state.job_manager = JobManager()
     # In-memory ring buffer of recent unhandled exceptions (Diagnostics screen).

@@ -199,6 +199,18 @@ trading platform for US equities. Python 3.12, strictly typed. See
   batch** (newest `as_of`; at a tie a live run beats `demo`) — so **demo never
   overrides newer live data**. No new tables. See `docs/LIVE_PIPELINE.md`.
 
+- **Production Data Mode** (`src/momentum/api/data_mode.py`, `routes/settings.py`,
+  `user_settings.read/write_data_mode`) — a persisted `demo`/`production` mode that
+  guarantees a scan can never display seeded data. In production: demo seeding is
+  refused, existing demo rows are **purged**, and **one** global SQLAlchemy
+  `do_orm_execute` listener appends `with_loader_criteria` to **every** ORM SELECT
+  to exclude demo rows (models with `run_id`: `run_id IS DISTINCT FROM "demo"` —
+  keeps live + NULL; `market_regimes`: `model_version IS DISTINCT FROM "demo"`).
+  Opt-out per statement via `execution_options(include_demo=True)` (used only by the
+  purge's own count). Mode persists to `settings.yaml` (`data.mode`), loaded at app/
+  CLI startup. Default `demo` (suite unchanged). `GET/PUT /settings/data-mode`;
+  Settings → Data Mode panel. See `docs/PRODUCTION_DATA_MODE.md`.
+
 - **Universe management** (`src/momentum/universe/universes.py`,
   `config/universes.example.yaml`, `api/universe_service.py`, `routes/universes.py`,
   `user_universes` table + migration `0015`) — the scanner targets a **selectable**

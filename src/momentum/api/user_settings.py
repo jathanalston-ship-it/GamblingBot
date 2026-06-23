@@ -144,6 +144,37 @@ def write_selected_universe(key: str) -> str:
     return key
 
 
+# Data mode: "demo" (sample data allowed) vs "production" (live data only).
+VALID_DATA_MODES: tuple[str, ...] = ("demo", "production")
+DEFAULT_DATA_MODE = "demo"
+
+
+def read_data_mode() -> str:
+    """The configured data mode (``"demo"`` if unset/invalid)."""
+    section = _read_settings_yaml().get("data")
+    if isinstance(section, dict):
+        mode = section.get("mode")
+        if isinstance(mode, str) and mode in VALID_DATA_MODES:
+            return mode
+    return DEFAULT_DATA_MODE
+
+
+def write_data_mode(mode: str) -> str:
+    """Persist the data mode to ``settings.yaml`` (under ``data.mode``)."""
+    if mode not in VALID_DATA_MODES:
+        raise ValueError(f"unknown data mode: {mode}")
+    data = _read_settings_yaml()
+    section = data.get("data")
+    if not isinstance(section, dict):
+        section = {}
+    section["mode"] = mode
+    data["data"] = section
+    path = _settings_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+    return mode
+
+
 # --------------------------------------------------------------------------- #
 # Public API.
 # --------------------------------------------------------------------------- #

@@ -70,6 +70,10 @@ def _session_factory(ensure_schema: bool) -> sessionmaker[Session]:
     engine = create_db_engine()
     if ensure_schema:
         create_all(engine)
+    # Activate the persisted data mode (registers the demo-exclusion filter).
+    from momentum.api import data_mode
+
+    data_mode.load_from_settings()
     return create_session_factory(engine)
 
 
