@@ -233,7 +233,13 @@ trading platform for US equities. Python 3.12, strictly typed. See
   `settings.yaml` (`universe.selected`); `routes/actions._selected_universe` feeds it
   into `run_scan`, which reports **universe size / symbols scanned / symbols passed /
   duration**. Desktop **Settings → Scanner Universe** (selector + create/import/sector
-  + delete) and a **Scanner** stats strip. Verified to 500/1000/3000+ symbols. See
+  + delete) and a **Scanner** stats strip. Verified to 500/1000/3000+ symbols.
+  **Scale**: a cheap liquidity prefilter (`universe/prefilter.py`) caps the fully-
+  scanned set to the most-liquid `max_symbols` (param → `MRP_MAX_SCAN_SYMBOLS` →
+  2000) so 5000+ universes stay responsive (`symbols_pulled` vs `symbols_scanned`).
+  **Hybrid refresh** (`POST /universes/{key}/refresh`): shipped seeds are the source
+  of truth, refreshable live when the provider can list constituents (`list_symbols`;
+  yfinance can't → keeps seed), writing a user override. See
   `docs/UNIVERSE_MANAGEMENT.md`.
 
 - **Watchlist performance tracking** (`src/momentum/watchlist_performance/`,

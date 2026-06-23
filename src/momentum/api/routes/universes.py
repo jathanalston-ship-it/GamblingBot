@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -17,6 +17,16 @@ from momentum.api import universe_service
 from momentum.api.dependencies import get_session
 
 router = APIRouter(prefix="/universes", tags=["universes"])
+
+
+def _provider(request: Request) -> object:
+    """The active market-data provider (injected stub in tests, else from settings)."""
+    factory = getattr(request.app.state, "provider_factory", None)
+    if factory is not None:
+        return factory()
+    from momentum.api import user_settings
+
+    return user_settings.build_provider()
 
 
 class UniverseSummary(BaseModel):
@@ -100,6 +110,19 @@ def import_universe(body: ImportIn, session: Session = Depends(get_session)) -> 
 def create_sector(body: SectorIn, session: Session = Depends(get_session)) -> dict[str, Any]:
     try:
         return universe_service.create_sector(session, sector=body.sector, base_key=body.base)
+    except universe_service.UniverseError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{key}/refresh")
+def refresh_universe(key: str, request: Request) -> dict[str, Any]:
+    """Refresh a built-in universe's membership from the data provider (hybrid).
+
+    Returns 400 if the key isn't a refreshable built-in or the provider can't list
+    constituents (in which case the shipped seed remains in use).
+    """
+    try:
+        return universe_service.refresh_builtin(_provider(request), key)
     except universe_service.UniverseError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

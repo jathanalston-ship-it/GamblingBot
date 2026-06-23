@@ -47,6 +47,7 @@ from momentum.persistence.repositories.trades import TradeRepository
 from momentum.risk.risk_manager import RiskManager
 from momentum.signals.regime import RegimeEngine
 from momentum.universe.membership import select_universe
+from momentum.universe.prefilter import liquidity_prefilter
 from momentum.universe.screener import MomentumScanner
 
 # The market-data benchmark whose trend anchors the regime classification.
@@ -105,6 +106,22 @@ def refresh_data(
 # conviction. The default tolerates weekends/holidays for daily bars; override
 # with MRP_STALE_AFTER_MINUTES (the desktop/intraday use a smaller value).
 DEFAULT_STALE_AFTER_MINUTES = 4 * 24 * 60  # 4 days
+
+# Cap the symbols fully scanned (keeps 5000+ universes responsive). 0/None = no cap.
+DEFAULT_MAX_SCAN_SYMBOLS = 2000
+
+
+def _max_scan_symbols(override: int | None) -> int | None:
+    if override is not None:
+        return override or None
+    raw = os.environ.get("MRP_MAX_SCAN_SYMBOLS")
+    if raw:
+        try:
+            value = int(raw)
+            return value or None
+        except ValueError:
+            pass
+    return DEFAULT_MAX_SCAN_SYMBOLS
 
 
 def _stale_threshold(override: float | None) -> float:
@@ -173,6 +190,7 @@ def run_scan(
     universe_label: str | None = None,
     provider_name: str = "unknown",
     stale_after_minutes: float | None = None,
+    max_symbols: int | None = None,
 ) -> dict[str, Any]:
     """The full live research pipeline behind "Run Scan".
 
@@ -209,6 +227,20 @@ def run_scan(
         provider, [BENCHMARK_SYMBOL], end=_today(), lookback_days=lookback_days
     )
     spy = benchmark_bars.get(BENCHMARK_SYMBOL)
+
+    # 1a. Liquidity prefilter + cap — keep huge universes responsive. Reuses the
+    #     scanner's price/dollar-volume floors; keeps the most liquid `max_symbols`.
+    pulled_count = len(bars)
+    cap = _max_scan_symbols(max_symbols)
+    filters = scanner.config.filters
+    kept = liquidity_prefilter(
+        bars,
+        min_price=filters.min_price,
+        min_dollar_volume=filters.min_dollar_volume,
+        max_symbols=cap,
+    )
+    if kept and len(kept) < pulled_count:
+        bars = {symbol: bars[symbol] for symbol in kept}
 
     # 1b. Verify freshness: newest bar timestamp vs the pull time.
     pull_timestamp = dt.datetime.now(tz=dt.UTC)
@@ -311,6 +343,7 @@ def run_scan(
         "universe_label": universe_label,
         "universe": universe_size,
         "universe_size": universe_size,
+        "symbols_pulled": pulled_count,
         "symbols_scanned": len(bars),
         "symbols_passed": len(candidates),
         "candidates": len(candidates),

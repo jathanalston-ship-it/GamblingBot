@@ -313,6 +313,21 @@ function UniversePanel() {
                             Select
                           </button>
                         ) : null}
+                        {!u.editable && u.key !== "default" ? (
+                          <button
+                            disabled={busy}
+                            title="Update this universe's members from the data provider (if supported)"
+                            onClick={() =>
+                              run(
+                                () => apiPost(`/universes/${u.key}/refresh`, {}),
+                                "Universe refreshed from provider.",
+                              )
+                            }
+                            className="rounded border border-surface-border px-2 py-1 text-xs text-slate-300 hover:bg-surface/60 disabled:opacity-50"
+                          >
+                            Refresh
+                          </button>
+                        ) : null}
                         {u.editable ? (
                           <button
                             disabled={busy}

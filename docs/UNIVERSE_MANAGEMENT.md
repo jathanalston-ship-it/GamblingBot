@@ -70,6 +70,25 @@ Run Scan ─▶ POST /actions/scan ─▶ _selected_universe(request)
   create/import/sector + delete) and a **Scanner** stats strip (universe / size /
   scanned / passed / duration), plus a compact summary on the Run-scan button.
 
+## Scale & freshness (large universes)
+
+- **Liquidity prefilter + cap** (`universe/prefilter.py`) — before the full scan,
+  `run_scan` applies a cheap pre-pass (last-price floor + recent dollar volume,
+  reusing the scanner's own floors) and keeps the most-liquid **`max_symbols`**.
+  So "All Tradable Stocks" (5000+) stays responsive: it pulls everything but fully
+  scans only the top-N by liquidity. Cap via `max_symbols` (param) →
+  `MRP_MAX_SCAN_SYMBOLS` (env) → `2000` default; `0` disables it. The scan result
+  reports both `symbols_pulled` and `symbols_scanned`.
+
+- **Hybrid refresh** (`POST /universes/{key}/refresh`) — the shipped seed lists are
+  the source of truth, but a built-in universe can be **refreshed live** when the
+  active data provider can enumerate constituents (a `list_symbols` capability —
+  Alpaca/Polygon-style). yfinance can't, so its universes keep the seed (the
+  endpoint returns 400 "does not support…"). A successful refresh writes a user
+  override to `<MRP_USER_DIR>/config/universes.yaml`, so it takes effect
+  immediately and survives restarts. The Settings panel shows a **Refresh** button
+  on each built-in (non-`default`) universe.
+
 ## API
 
 | Method | Path | Body | Purpose |
@@ -80,6 +99,7 @@ Run Scan ─▶ POST /actions/scan ─▶ _selected_universe(request)
 | POST | `/universes` | `{label, symbols[]}` | Create a custom universe (201). |
 | POST | `/universes/import` | `{label, text}` | Parse + create an imported universe (201). |
 | POST | `/universes/sector` | `{sector, base?}` | Create a sector universe (201). |
+| POST | `/universes/{key}/refresh` | — | Refresh a built-in from the provider (400 if unsupported / not refreshable). |
 | DELETE | `/universes/{key}` | — | Delete a user universe (400 for built-ins, 404 if absent). |
 
 ## Verification

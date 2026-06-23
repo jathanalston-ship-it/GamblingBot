@@ -25,9 +25,11 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
-from momentum.core.config_paths import load_config
+import yaml
+
+from momentum.core.config_paths import load_config, user_config_dir
 from momentum.universe.membership import _EMBEDDED_MEMBERS, select_universe
 
 UNIVERSES_FILE = "universes.example.yaml"
@@ -377,6 +379,53 @@ def sectors_for(symbols: Iterable[str]) -> dict[str, str]:
 def known_sectors() -> list[str]:
     """The distinct GICS sectors available for sector universes."""
     return sorted(set(_SECTOR_OF.values()))
+
+
+@runtime_checkable
+class SupportsSymbolListing(Protocol):
+    """A data provider that can enumerate a universe's constituents.
+
+    Optional: yfinance can't list constituents (returns ``None``), so its built-in
+    universes keep the shipped seed; Alpaca/Polygon-style providers that implement
+    ``list_symbols`` enable the hybrid "refresh" — shipped seeds, refreshable live.
+    """
+
+    def list_symbols(self, universe_key: str) -> list[str] | None: ...
+
+
+def provider_symbols(provider: object, key: str) -> list[str] | None:
+    """Constituents for ``key`` from the provider, or ``None`` if unsupported."""
+    lister = getattr(provider, "list_symbols", None)
+    if not callable(lister):
+        return None
+    raw = lister(key)
+    if not raw:
+        return None
+    return _dedupe(str(s) for s in raw)
+
+
+def write_builtin_override(key: str, symbols: Iterable[str]) -> int:
+    """Persist a refreshed member list for a built-in universe (user override).
+
+    Writes ``<MRP_USER_DIR>/config/universes.yaml`` (the same file ``load_config``
+    reads first), so the refreshed list takes effect immediately and survives
+    restarts. Returns the stored count.
+    """
+    cleaned = _dedupe(symbols)
+    path = user_config_dir() / "universes.yaml"
+    data: dict[str, Any] = {}
+    if path.is_file():
+        loaded = yaml.safe_load(path.read_text())
+        if isinstance(loaded, dict):
+            data = loaded
+    universes = data.get("universes")
+    if not isinstance(universes, dict):
+        universes = dict(_EMBEDDED_UNIVERSES["universes"])
+    universes[key] = cleaned
+    data["universes"] = universes
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+    return len(cleaned)
 
 
 def resolve_builtin(key: str) -> ResolvedUniverse:

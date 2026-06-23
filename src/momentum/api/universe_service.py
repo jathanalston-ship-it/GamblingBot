@@ -24,8 +24,10 @@ from momentum.universe.universes import (
     is_builtin,
     known_sectors,
     parse_symbols,
+    provider_symbols,
     resolve_builtin,
     sectors_for,
+    write_builtin_override,
 )
 
 
@@ -182,6 +184,25 @@ def create_sector(
         description=f"{sector} members of {base.label}.",
         source={"base": base_key, "sector": sector},
     )
+
+
+def refresh_builtin(provider: object, key: str) -> dict[str, Any]:
+    """Refresh a built-in universe's membership from the data provider (hybrid).
+
+    Shipped seeds remain the default; this updates the persisted override when the
+    active provider can enumerate constituents. Raises ``UniverseError`` for a
+    non-refreshable key or a provider without listing support.
+    """
+    if not is_builtin(key) or key == DEFAULT_UNIVERSE_KEY:
+        raise UniverseError(f"not a refreshable built-in universe: {key}")
+    symbols = provider_symbols(provider, key)
+    if symbols is None:
+        raise UniverseError(
+            "the active data provider does not support live universe refresh; "
+            "the shipped seed list is in use"
+        )
+    size = write_builtin_override(key, symbols)
+    return {"key": key, "size": size, "refreshed": True}
 
 
 def delete_universe(session: Session, key: str) -> bool:
