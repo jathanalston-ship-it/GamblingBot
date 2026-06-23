@@ -1,0 +1,14 @@
+# Local secret-scanning guard — catch a secret BEFORE it is committed.
+#
+# One-time setup:
+#   pip install pre-commit
+#   pre-commit install
+#
+# After that, `gitleaks protect --staged` runs automatically on every `git commit`
+# and blocks the commit if a secret is detected (using .gitleaks.toml). CI
+# (.github/workflows/secret-scan.yml) is the backstop for anyone who skips this.
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks

@@ -1,0 +1,22 @@
+# gitleaks configuration — automated secret detection.
+# Runs in CI (.github/workflows/secret-scan.yml + the release quality gate) on
+# every push/PR over the FULL git history, and locally via the pre-commit hook
+# (.pre-commit-config.yaml). Default ruleset + a tiny allowlist for known,
+# obviously-fake test fixtures and the empty .env template.
+title = "Momentum Lab secret scan"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known non-secrets: empty templates and obviously-fake test fixtures."
+paths = [
+    '''\.env\.example$''',   # template — secret keys are present but EMPTY
+    '''\.gitleaks\.toml$''', # this file
+]
+regexes = [
+    # Fabricated values used only in tests (never real credentials).
+    '''AKFAKEKEY1234567890SECRETVALUE''',
+    '''SUPERSECRETKEY1234567890''',
+    '''SUPERSECRETKEY12345''',
+]
