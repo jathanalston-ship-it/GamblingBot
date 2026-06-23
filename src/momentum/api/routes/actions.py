@@ -132,6 +132,9 @@ def start_scan(request: Request, params: ActionParams | None = None) -> JobOut:
     sf = _session_factory(request)
     provider = _provider(request)
     symbols, sectors, universe_key, universe_label = _selected_universe(request, p)
+    from momentum.api import user_settings
+
+    provider_name = user_settings.read_provider()
 
     def fn(progress: Progress) -> dict[str, object]:
         return actions.run_scan(
@@ -144,6 +147,7 @@ def start_scan(request: Request, params: ActionParams | None = None) -> JobOut:
             sectors=sectors,
             universe_key=universe_key,
             universe_label=universe_label,
+            provider_name=provider_name,
         )
 
     return JobOut(**_jobs(request).submit("scan", fn).to_dict())

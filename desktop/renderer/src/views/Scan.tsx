@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import type { Job, ScanResult } from "../api/types";
+import type { Job, ScanMetadata, ScanResult } from "../api/types";
 import { ActionButton } from "../components/ActionButton";
 import { Badge } from "../components/Badge";
 import { Inspector } from "../components/Inspector";
@@ -36,6 +36,7 @@ export default function Scan({ shortlist = false }: { shortlist?: boolean }) {
   }`;
   const { data, error, loading, reload } = useApi<ScanResult[]>(path);
   const all = useMemo(() => data ?? [], [data]);
+  const { data: meta, reload: reloadMeta } = useApi<ScanMetadata | null>("/universe/scan-metadata");
 
   const sectors = useMemo(
     () => Array.from(new Set(all.map((r) => r.sector).filter((s): s is string => !!s))).sort(),
@@ -99,6 +100,7 @@ export default function Scan({ shortlist = false }: { shortlist?: boolean }) {
               if (job.status === "succeeded" && job.result)
                 setScanStats(job.result as Record<string, unknown>);
               reload();
+              reloadMeta();
             }}
           />
           <span className="text-slate-500">
@@ -132,6 +134,29 @@ export default function Scan({ shortlist = false }: { shortlist?: boolean }) {
             <span className="ml-auto text-xs text-slate-500">tradeable set (gate passed)</span>
           )}
         </div>
+
+        {meta ? (
+          <div
+            className={`flex flex-wrap items-center gap-4 border-b px-3 py-1.5 text-xs ${
+              meta.stale
+                ? "border-bear/40 bg-bear/10 text-bear"
+                : "border-surface-border bg-surface-raised/40 text-slate-400"
+            }`}
+          >
+            {meta.stale ? (
+              <span className="rounded bg-bear px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">
+                Stale Data
+              </span>
+            ) : null}
+            <Stat label="provider" value={meta.provider} />
+            <Stat label="symbols" value={num(meta.symbol_count, 0)} />
+            <Stat label="data age" value={fmtAge(meta.data_age_minutes)} />
+            <Stat label="last pull" value={fmtTime(meta.pull_timestamp)} />
+            {meta.stale ? (
+              <span className="text-bear">conviction not generated — data too old</span>
+            ) : null}
+          </div>
+        ) : null}
 
         {scanStats ? (
           <div className="flex flex-wrap items-center gap-4 border-b border-surface-border bg-surface-raised/40 px-3 py-1.5 text-xs text-slate-400">
@@ -211,6 +236,19 @@ export default function Scan({ shortlist = false }: { shortlist?: boolean }) {
       <Inspector symbol={symbol} />
     </div>
   );
+}
+
+function fmtAge(minutes: number | null): string {
+  if (minutes == null) return "unknown";
+  if (minutes < 60) return `${Math.round(minutes)}m`;
+  if (minutes < 60 * 24) return `${(minutes / 60).toFixed(1)}h`;
+  return `${(minutes / (60 * 24)).toFixed(1)}d`;
+}
+
+function fmtTime(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleTimeString();
 }
 
 function Stat({ label, value }: { label: string; value: string }) {

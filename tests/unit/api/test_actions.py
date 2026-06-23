@@ -24,7 +24,7 @@ from momentum.universe.screener import MomentumScanner
 def _bars(start: float = 50.0, n: int = 260, drift: float = 0.004, seed: int = 0) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     close = start * np.cumprod(1 + rng.normal(drift, 0.015, n))
-    idx = pd.date_range("2023-01-02", periods=n, freq="B", tz="UTC")
+    idx = pd.date_range(end=pd.Timestamp.now(tz="UTC").normalize(), periods=n, freq="B")
     opens = np.concatenate([[close[0]], close[:-1]])
     frame = pd.DataFrame(
         {

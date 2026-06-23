@@ -24,6 +24,7 @@ from momentum.persistence.models.position_size import PositionSize
 from momentum.persistence.models.research_report import ResearchReport
 from momentum.persistence.models.risk_metric import RiskMetric
 from momentum.persistence.models.run import Run
+from momentum.persistence.models.scan_metadata import ScanMetadata
 from momentum.persistence.models.scan_result import ScanResult
 from momentum.persistence.models.signal import Signal
 from momentum.persistence.models.setup_lifecycle import SetupLifecycle
@@ -54,4 +55,5 @@ __all__ = [
     "WatchlistPerformance",
     "SetupLifecycle",
     "UserUniverse",
+    "ScanMetadata",
 ]

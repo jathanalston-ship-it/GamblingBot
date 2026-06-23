@@ -442,6 +442,17 @@ export interface DataModeSettings {
   demo_rows: number;
 }
 
+export interface ScanMetadata {
+  scan_id: string;
+  provider: string;
+  universe: string;
+  bar_timestamp: string | null;
+  pull_timestamp: string | null;
+  symbol_count: number;
+  data_age_minutes: number | null;
+  stale: boolean;
+}
+
 export interface Run {
   run_id: string;
   label: string | null;

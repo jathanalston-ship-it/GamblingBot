@@ -37,9 +37,11 @@ from momentum.orchestration.session import pull_bars, run_paper_session
 from momentum.persistence.models.conviction_score import ConvictionScore
 from momentum.persistence.models.market_regime import MarketRegime
 from momentum.persistence.models.optimization_result import OptimizationResult
+from momentum.persistence.models.scan_metadata import ScanMetadata
 from momentum.persistence.repositories.audit_log import AuditLogRepository
 from momentum.persistence.repositories.optimization_results import OptimizationResultRepository
 from momentum.persistence.repositories.runs import RunRepository
+from momentum.persistence.repositories.scan_metadata import ScanMetadataRepository
 from momentum.persistence.repositories.scans import ScanResultRepository
 from momentum.persistence.repositories.trades import TradeRepository
 from momentum.risk.risk_manager import RiskManager
@@ -99,6 +101,41 @@ def refresh_data(
 # --------------------------------------------------------------------------- #
 # Run Scan — the complete live research pipeline
 # --------------------------------------------------------------------------- #
+# A scan whose newest bar is older than this is "stale" and won't generate
+# conviction. The default tolerates weekends/holidays for daily bars; override
+# with MRP_STALE_AFTER_MINUTES (the desktop/intraday use a smaller value).
+DEFAULT_STALE_AFTER_MINUTES = 4 * 24 * 60  # 4 days
+
+
+def _stale_threshold(override: float | None) -> float:
+    if override is not None:
+        return override
+    raw = os.environ.get("MRP_STALE_AFTER_MINUTES")
+    if raw:
+        try:
+            return float(raw)
+        except ValueError:
+            pass
+    return float(DEFAULT_STALE_AFTER_MINUTES)
+
+
+def _newest_bar_timestamp(bars: Mapping[str, pd.DataFrame]) -> dt.datetime | None:
+    """The most recent bar timestamp across all pulled frames (UTC), or None."""
+    newest: pd.Timestamp | None = None
+    for frame in bars.values():
+        if frame is None or frame.empty:
+            continue
+        ts = pd.Timestamp(frame.index[-1])
+        if newest is None or ts > newest:
+            newest = ts
+    if newest is None:
+        return None
+    if newest.tzinfo is None:
+        newest = newest.tz_localize("UTC")
+    result: dt.datetime = newest.to_pydatetime()
+    return result
+
+
 def _breadth_above_200dma(bars: Mapping[str, pd.DataFrame]) -> float | None:
     """Fraction of the universe trading above its 200-day moving average (0..1).
 
@@ -134,18 +171,24 @@ def run_scan(
     sectors: Mapping[str, str] | None = None,
     universe_key: str | None = None,
     universe_label: str | None = None,
+    provider_name: str = "unknown",
+    stale_after_minutes: float | None = None,
 ) -> dict[str, Any]:
     """The full live research pipeline behind "Run Scan".
 
-    Pulls live market data for the configured universe, classifies the market
-    regime, ranks the momentum candidates, scores conviction for each, and
-    persists **all four derived surfaces** in one transaction — scan results,
-    conviction scores, the market regime and the run metadata — so the
-    downstream watchlists/command-center/lifecycle read live data, not the demo
-    seed. Idempotent per trading day (stable ``run_id``).
+    Pulls live market data for the configured universe, **verifies the data is
+    fresh** (newest bar timestamp vs now), classifies the market regime, ranks
+    the momentum candidates, scores conviction for each, and persists scan
+    results + conviction + regime + run metadata + **scan provenance
+    (``scan_metadata``)** so the read screens use live data, not the demo seed.
+    Idempotent per trading day (stable ``run_id``).
 
-    Reports universe size / symbols scanned / symbols passed / scan duration for
-    the Scanner screen.
+    If the pulled data is **stale** (data age exceeds the threshold) the scan is
+    flagged and **conviction is not generated** — a stale scan cannot feed the
+    watchlists / conviction screens.
+
+    Reports universe size / symbols scanned / symbols passed / scan duration and
+    the provider / bar timestamp / data age for the Scanner header.
     """
     if not symbols:
         symbols, sectors = select_universe()
@@ -154,18 +197,31 @@ def run_scan(
     started_at = dt.datetime.now(tz=dt.UTC)
     started_perf = time.perf_counter()
 
-    # 1. Pull live market data for the universe (+ the regime benchmark).
+    # 1. Connect to the provider and pull fresh bars (+ the regime benchmark).
     progress(0.1, "pulling market data")
     bars = pull_bars(provider, symbols, end=_today(), lookback_days=lookback_days)
     if not bars:
-        raise RuntimeError("no market data available for the universe")
+        raise RuntimeError(
+            f"no market data returned by provider {provider_name!r} for the universe "
+            "(connection/auth failure or empty response)"
+        )
     benchmark_bars = pull_bars(
         provider, [BENCHMARK_SYMBOL], end=_today(), lookback_days=lookback_days
     )
     spy = benchmark_bars.get(BENCHMARK_SYMBOL)
 
-    # 2. Scan + rank the universe. The data date drives every persisted surface,
-    #    so a re-run on the same bars is idempotent (stable ``run_id``).
+    # 1b. Verify freshness: newest bar timestamp vs the pull time.
+    pull_timestamp = dt.datetime.now(tz=dt.UTC)
+    bar_timestamp = _newest_bar_timestamp(bars)
+    threshold = _stale_threshold(stale_after_minutes)
+    if bar_timestamp is None:
+        data_age_minutes: float | None = None
+        stale = True  # cannot prove freshness
+    else:
+        data_age_minutes = round((pull_timestamp - bar_timestamp).total_seconds() / 60.0, 1)
+        stale = data_age_minutes > threshold
+
+    # 2. Scan + rank the universe (stable ``run_id`` keyed on the data date).
     progress(0.5, "scanning the universe")
     scan = scanner.scan(bars, sectors=sectors)
     candidates = scan.candidates
@@ -179,27 +235,31 @@ def run_scan(
     regime_label = _REGIME_TO_CONVICTION.get(regime.state)
     regime_record = regime.to_record()
 
-    # 4. Score conviction for every ranked candidate.
-    progress(0.8, "scoring conviction")
+    # 4. Score conviction for every ranked candidate — UNLESS the data is stale.
     conviction_engine = ConvictionEngine()
     ts = dt.datetime.now(tz=dt.UTC)
     conviction_rows: list[ConvictionScore] = []
-    for c in candidates:
-        inputs = ConvictionInputs(
-            market_regime=regime_label,
-            sector_strength=c.sector_rs,
-            relative_volume=c.relative_volume,
-            distance_to_ath=abs(c.distance_from_ath),
-            breadth=regime.breadth,
-            momentum_score=c.momentum_score / 100.0,
-        )
-        result = conviction_engine.score(inputs)
-        conviction_rows.append(
-            ConvictionScore.from_result(result, symbol=c.symbol, run_id=run_id, as_of=as_of, ts=ts)
-        )
+    if not stale:
+        progress(0.8, "scoring conviction")
+        for c in candidates:
+            inputs = ConvictionInputs(
+                market_regime=regime_label,
+                sector_strength=c.sector_rs,
+                relative_volume=c.relative_volume,
+                distance_to_ath=abs(c.distance_from_ath),
+                breadth=regime.breadth,
+                momentum_score=c.momentum_score / 100.0,
+            )
+            result = conviction_engine.score(inputs)
+            conviction_rows.append(
+                ConvictionScore.from_result(
+                    result, symbol=c.symbol, run_id=run_id, as_of=as_of, ts=ts
+                )
+            )
 
-    # 5-8. Persist scan results + conviction + regime + run metadata atomically.
+    # 5-9. Persist scan results + conviction + regime + run + scan metadata.
     progress(0.9, "saving results")
+    duration_ms = round((time.perf_counter() - started_perf) * 1000.0, 1)
     with session_factory() as session:
         runs = RunRepository(session)
         run = runs.start(
@@ -212,6 +272,7 @@ def run_scan(
 
         scan_rows = ScanResultRepository(session).save_records(scan.to_records(run_id=run_id))
 
+        # A stale re-run must also clear any prior conviction for this run.
         session.execute(delete(ConvictionScore).where(ConvictionScore.run_id == run_id))
         session.add_all(conviction_rows)
 
@@ -224,13 +285,25 @@ def run_scan(
         )
         session.add(MarketRegime(**regime_record))
 
+        ScanMetadataRepository(session).upsert(
+            ScanMetadata(
+                scan_id=run_id,
+                provider=provider_name,
+                universe=universe_label or universe_key or "universe",
+                bar_timestamp=bar_timestamp,
+                pull_timestamp=pull_timestamp,
+                symbol_count=len(bars),
+                data_age_minutes=data_age_minutes,
+                stale=stale,
+            )
+        )
+
         runs.complete(run, finished_at=dt.datetime.now(tz=dt.UTC))
         session.commit()
         scan_persisted = len(scan_rows)
         conviction_persisted = len(conviction_rows)
 
-    progress(1.0, "done")
-    duration_ms = round((time.perf_counter() - started_perf) * 1000.0, 1)
+    progress(1.0, "stale data — conviction skipped" if stale else "done")
     return {
         "run_id": run_id,
         "as_of": scan.as_of.date().isoformat(),
@@ -242,6 +315,11 @@ def run_scan(
         "symbols_passed": len(candidates),
         "candidates": len(candidates),
         "duration_ms": duration_ms,
+        "provider": provider_name,
+        "bar_timestamp": bar_timestamp.isoformat() if bar_timestamp else None,
+        "pull_timestamp": pull_timestamp.isoformat(),
+        "data_age_minutes": data_age_minutes,
+        "stale": stale,
         "regime": regime.state.value,
         "breadth": round(breadth, 4) if breadth is not None else None,
         "scan_results_persisted": scan_persisted,

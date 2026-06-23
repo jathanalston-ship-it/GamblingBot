@@ -199,6 +199,17 @@ trading platform for US equities. Python 3.12, strictly typed. See
   batch** (newest `as_of`; at a tie a live run beats `demo`) — so **demo never
   overrides newer live data**. No new tables. See `docs/LIVE_PIPELINE.md`.
 
+- **Scan pipeline verification** (`src/momentum/api/actions.run_scan`,
+  `persistence/models/scan_metadata.py` + migration `0016`, `routes/universe.py`)
+  — every scan builds the provider from Settings, pulls fresh bars (fails loudly,
+  provider-named, if empty), verifies the **newest bar timestamp** and computes
+  **data age**, and persists `scan_metadata` (scan_id, provider, universe, bar &
+  pull timestamps, symbol_count, data_age_minutes, stale; idempotent per scan_id).
+  If data age exceeds the threshold (`stale_after_minutes` → `MRP_STALE_AFTER_MINUTES`
+  → 4-day default) the scan is flagged **stale** and **conviction is not generated**.
+  `GET /universe/scan-metadata` feeds the Scanner header (provider / symbols / data
+  age / last pull + STALE DATA banner). See `docs/SCAN_VERIFICATION.md`.
+
 - **Production Data Mode** (`src/momentum/api/data_mode.py`, `routes/settings.py`,
   `user_settings.read/write_data_mode`) — a persisted `demo`/`production` mode that
   guarantees a scan can never display seeded data. In production: demo seeding is
