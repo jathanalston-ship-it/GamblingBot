@@ -4,8 +4,12 @@ import { useAction } from "../hooks/useAction";
 function summarize(job: Job): string {
   const r = (job.result ?? {}) as Record<string, unknown>;
   switch (job.kind) {
-    case "scan":
-      return `${String(r.candidates ?? 0)} candidates`;
+    case "scan": {
+      const passed = String(r.symbols_passed ?? r.candidates ?? 0);
+      const scanned = String(r.symbols_scanned ?? 0);
+      const ms = r.duration_ms != null ? ` · ${Math.round(Number(r.duration_ms))}ms` : "";
+      return `${passed}/${scanned} passed${ms}`;
+    }
     case "backtest":
       return `${String(r.num_trades ?? 0)} trades · equity ${String(r.final_equity ?? "?")}`;
     case "paper-session":

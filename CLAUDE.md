@@ -199,6 +199,20 @@ trading platform for US equities. Python 3.12, strictly typed. See
   batch** (newest `as_of`; at a tie a live run beats `demo`) — so **demo never
   overrides newer live data**. No new tables. See `docs/LIVE_PIPELINE.md`.
 
+- **Universe management** (`src/momentum/universe/universes.py`,
+  `config/universes.example.yaml`, `api/universe_service.py`, `routes/universes.py`,
+  `user_universes` table + migration `0015`) — the scanner targets a **selectable**
+  universe instead of one hardcoded set. Built-ins: `default`/`sp500`/`nasdaq100`/
+  `russell1000`/`russell3000`/`all` (member lists in config with an embedded default;
+  the broad sets ship as extendable seeds — the engine handles any size). User
+  universes: custom / imported (free-form parse) / sector (base filtered by GICS
+  sector), persisted as `UserUniverse` (symbols JSON). The selection persists to
+  `settings.yaml` (`universe.selected`); `routes/actions._selected_universe` feeds it
+  into `run_scan`, which reports **universe size / symbols scanned / symbols passed /
+  duration**. Desktop **Settings → Scanner Universe** (selector + create/import/sector
+  + delete) and a **Scanner** stats strip. Verified to 500/1000/3000+ symbols. See
+  `docs/UNIVERSE_MANAGEMENT.md`.
+
 - **Watchlist performance tracking** (`src/momentum/watchlist_performance/`,
   `watchlist_performance` table + migration `0014`) — does the advice work? Every
   stored watchlist entry (date/ticker/conviction/rank/expected move/horizon) is tracked

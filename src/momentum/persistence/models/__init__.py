@@ -28,6 +28,7 @@ from momentum.persistence.models.scan_result import ScanResult
 from momentum.persistence.models.signal import Signal
 from momentum.persistence.models.setup_lifecycle import SetupLifecycle
 from momentum.persistence.models.trade import Trade
+from momentum.persistence.models.user_universe import UserUniverse
 from momentum.persistence.models.watchlist_entry import WatchlistEntryRow
 from momentum.persistence.models.watchlist_performance import WatchlistPerformance
 
@@ -52,4 +53,5 @@ __all__ = [
     "WatchlistEntryRow",
     "WatchlistPerformance",
     "SetupLifecycle",
+    "UserUniverse",
 ]

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+import time
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -131,6 +132,8 @@ def run_scan(
     lookback_days: int,
     progress: Progress,
     sectors: Mapping[str, str] | None = None,
+    universe_key: str | None = None,
+    universe_label: str | None = None,
 ) -> dict[str, Any]:
     """The full live research pipeline behind "Run Scan".
 
@@ -140,10 +143,16 @@ def run_scan(
     conviction scores, the market regime and the run metadata — so the
     downstream watchlists/command-center/lifecycle read live data, not the demo
     seed. Idempotent per trading day (stable ``run_id``).
+
+    Reports universe size / symbols scanned / symbols passed / scan duration for
+    the Scanner screen.
     """
     if not symbols:
         symbols, sectors = select_universe()
+    symbols = list(symbols)
+    universe_size = len(symbols)
     started_at = dt.datetime.now(tz=dt.UTC)
+    started_perf = time.perf_counter()
 
     # 1. Pull live market data for the universe (+ the regime benchmark).
     progress(0.1, "pulling market data")
@@ -221,12 +230,18 @@ def run_scan(
         conviction_persisted = len(conviction_rows)
 
     progress(1.0, "done")
+    duration_ms = round((time.perf_counter() - started_perf) * 1000.0, 1)
     return {
         "run_id": run_id,
         "as_of": scan.as_of.date().isoformat(),
-        "universe": len(symbols),
+        "universe_key": universe_key,
+        "universe_label": universe_label,
+        "universe": universe_size,
+        "universe_size": universe_size,
         "symbols_scanned": len(bars),
+        "symbols_passed": len(candidates),
         "candidates": len(candidates),
+        "duration_ms": duration_ms,
         "regime": regime.state.value,
         "breadth": round(breadth, 4) if breadth is not None else None,
         "scan_results_persisted": scan_persisted,

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import type { ScanResult } from "../api/types";
+import type { Job, ScanResult } from "../api/types";
 import { ActionButton } from "../components/ActionButton";
 import { Badge } from "../components/Badge";
 import { Inspector } from "../components/Inspector";
@@ -26,6 +26,7 @@ export default function Scan({ shortlist = false }: { shortlist?: boolean }) {
   const { runId, symbol, setSymbol } = useWorkspace();
   const [passedOnly, setPassedOnly] = useState(shortlist);
   const [sector, setSector] = useState<string>("all");
+  const [scanStats, setScanStats] = useState<Record<string, unknown> | null>(null);
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "rank", dir: 1 });
   const navigate = useNavigate();
 
@@ -91,7 +92,15 @@ export default function Scan({ shortlist = false }: { shortlist?: boolean }) {
     <div className="grid h-full grid-cols-[1fr_22rem]">
       <div className="flex min-w-0 flex-col border-r border-surface-border">
         <div className="flex items-center gap-3 border-b border-surface-border px-3 py-2 text-sm">
-          <ActionButton label="Run scan" path="/actions/scan" onDone={() => reload()} />
+          <ActionButton
+            label="Run scan"
+            path="/actions/scan"
+            onDone={(job: Job) => {
+              if (job.status === "succeeded" && job.result)
+                setScanStats(job.result as Record<string, unknown>);
+              reload();
+            }}
+          />
           <span className="text-slate-500">
             {rows.length} {shortlist ? "candidates · passed" : "candidates"}
           </span>
@@ -123,6 +132,21 @@ export default function Scan({ shortlist = false }: { shortlist?: boolean }) {
             <span className="ml-auto text-xs text-slate-500">tradeable set (gate passed)</span>
           )}
         </div>
+
+        {scanStats ? (
+          <div className="flex flex-wrap items-center gap-4 border-b border-surface-border bg-surface-raised/40 px-3 py-1.5 text-xs text-slate-400">
+            {scanStats.universe_label ? (
+              <Stat label="universe" value={String(scanStats.universe_label)} />
+            ) : null}
+            <Stat label="size" value={num(Number(scanStats.universe_size ?? 0), 0)} />
+            <Stat label="scanned" value={num(Number(scanStats.symbols_scanned ?? 0), 0)} />
+            <Stat label="passed" value={num(Number(scanStats.symbols_passed ?? 0), 0)} />
+            <Stat
+              label="duration"
+              value={`${Math.round(Number(scanStats.duration_ms ?? 0))} ms`}
+            />
+          </div>
+        ) : null}
 
         <div className="min-h-0 flex-1 overflow-auto">
           {loading ? (
@@ -186,6 +210,15 @@ export default function Scan({ shortlist = false }: { shortlist?: boolean }) {
 
       <Inspector symbol={symbol} />
     </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="flex items-baseline gap-1">
+      <span className="uppercase tracking-wide text-slate-500">{label}</span>
+      <span className="tabular-nums text-slate-200">{value}</span>
+    </span>
   );
 }
 

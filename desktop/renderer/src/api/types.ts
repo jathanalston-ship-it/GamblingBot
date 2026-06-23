@@ -421,6 +421,21 @@ export interface DataProviderSettings {
   valid_providers: string[];
 }
 
+export interface UniverseSummary {
+  key: string;
+  label: string;
+  kind: string;
+  description: string | null;
+  size: number;
+  editable: boolean;
+}
+
+export interface UniverseList {
+  selected: string;
+  universes: UniverseSummary[];
+  sectors: string[];
+}
+
 export interface Run {
   run_id: string;
   label: string | null;

@@ -118,6 +118,32 @@ def read_provider() -> str:
     return DEFAULT_PROVIDER
 
 
+def read_selected_universe() -> str:
+    """The selected scanner-universe key (``"default"`` if unset)."""
+    from momentum.universe.universes import DEFAULT_UNIVERSE_KEY
+
+    section = _read_settings_yaml().get("universe")
+    if isinstance(section, dict):
+        selected = section.get("selected")
+        if isinstance(selected, str) and selected:
+            return selected
+    return DEFAULT_UNIVERSE_KEY
+
+
+def write_selected_universe(key: str) -> str:
+    """Persist the selected scanner-universe key to ``settings.yaml``."""
+    data = _read_settings_yaml()
+    section = data.get("universe")
+    if not isinstance(section, dict):
+        section = {}
+    section["selected"] = key
+    data["universe"] = section
+    path = _settings_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+    return key
+
+
 # --------------------------------------------------------------------------- #
 # Public API.
 # --------------------------------------------------------------------------- #

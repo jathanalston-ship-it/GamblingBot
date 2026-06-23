@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
-import { apiPut } from "../api/client";
-import type { ConfigFile, DataProviderSettings } from "../api/types";
+import { apiDelete, apiPost, apiPut } from "../api/client";
+import type { ConfigFile, DataProviderSettings, UniverseList } from "../api/types";
 import { ActionButton } from "../components/ActionButton";
 import { Card } from "../components/Card";
 import { DiagnosticsPanel } from "../components/DiagnosticsPanel";
@@ -146,6 +146,218 @@ function DataProviderPanel() {
   );
 }
 
+function UniversePanel() {
+  const { data, error, loading, reload } = useApi<UniverseList>("/universes");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  // Create/import/sector inputs.
+  const [customLabel, setCustomLabel] = useState("");
+  const [customText, setCustomText] = useState("");
+  const [importLabel, setImportLabel] = useState("");
+  const [importText, setImportText] = useState("");
+  const [sector, setSector] = useState("");
+
+  if (loading) return <Loading />;
+  if (error) return <ErrorBox message={error} />;
+  if (!data) return null;
+
+  const run = async (fn: () => Promise<unknown>, ok: string) => {
+    setBusy(true);
+    setErr(null);
+    setMsg(null);
+    try {
+      await fn();
+      setMsg(ok);
+      reload();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const select = (key: string) =>
+    run(() => apiPut("/universes/selected", { key }), "Universe selected.");
+
+  return (
+    <Card title="Scanner Universe">
+      <div className="space-y-5">
+        <p className="text-sm text-slate-400">
+          Choose which set of symbols the scanner fetches and ranks. Built-in index universes plus
+          your own custom / imported / sector universes. The selection is saved and used by every
+          scan.
+        </p>
+
+        {/* Selector + list */}
+        <div className="overflow-hidden rounded border border-surface-border">
+          <table className="w-full text-sm">
+            <thead className="bg-surface-raised text-xs uppercase tracking-wide text-slate-400">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium">Universe</th>
+                <th className="px-3 py-2 text-left font-medium">Kind</th>
+                <th className="px-3 py-2 text-right font-medium">Symbols</th>
+                <th className="px-3 py-2 text-right font-medium" />
+              </tr>
+            </thead>
+            <tbody>
+              {data.universes.map((u) => {
+                const selected = u.key === data.selected;
+                return (
+                  <tr
+                    key={u.key}
+                    className={`border-b border-surface-border/40 ${
+                      selected ? "bg-accent/15" : "hover:bg-surface/40"
+                    }`}
+                  >
+                    <td className="px-3 py-2">
+                      <div className="font-medium text-slate-100">
+                        {u.label} {selected ? <span className="text-accent">● selected</span> : null}
+                      </div>
+                      {u.description ? (
+                        <div className="text-xs text-slate-500">{u.description}</div>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-2 text-slate-400">{u.kind}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-slate-300">{u.size}</td>
+                    <td className="px-3 py-2 text-right">
+                      <div className="flex justify-end gap-2">
+                        {!selected ? (
+                          <button
+                            disabled={busy}
+                            onClick={() => select(u.key)}
+                            className="rounded border border-surface-border px-2 py-1 text-xs text-slate-300 hover:bg-surface/60 disabled:opacity-50"
+                          >
+                            Select
+                          </button>
+                        ) : null}
+                        {u.editable ? (
+                          <button
+                            disabled={busy}
+                            onClick={() =>
+                              run(() => apiDelete(`/universes/${u.key}`), "Universe deleted.")
+                            }
+                            className="rounded border border-surface-border px-2 py-1 text-xs text-bear hover:bg-surface/60 disabled:opacity-50"
+                          >
+                            Delete
+                          </button>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Create / import / sector */}
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="space-y-2">
+            <div className="text-xs uppercase tracking-wide text-slate-400">Custom watchlist</div>
+            <input
+              value={customLabel}
+              onChange={(e) => setCustomLabel(e.target.value)}
+              placeholder="Name"
+              className={inputClass}
+            />
+            <textarea
+              value={customText}
+              onChange={(e) => setCustomText(e.target.value)}
+              placeholder="AAPL MSFT NVDA…"
+              rows={3}
+              className={inputClass}
+            />
+            <button
+              disabled={busy || !customText.trim()}
+              onClick={() =>
+                run(
+                  () =>
+                    apiPost("/universes", {
+                      label: customLabel || "Custom",
+                      symbols: customText.split(/[\s,;]+/).filter(Boolean),
+                    }),
+                  "Custom universe created.",
+                )
+              }
+              className="w-full rounded bg-accent px-3 py-1.5 text-sm text-white disabled:opacity-50"
+            >
+              Create
+            </button>
+          </div>
+
+          <div className="space-y-2">
+            <div className="text-xs uppercase tracking-wide text-slate-400">Import symbol list</div>
+            <input
+              value={importLabel}
+              onChange={(e) => setImportLabel(e.target.value)}
+              placeholder="Name"
+              className={inputClass}
+            />
+            <textarea
+              value={importText}
+              onChange={(e) => setImportText(e.target.value)}
+              placeholder="Paste a comma / newline separated list…"
+              rows={3}
+              className={inputClass}
+            />
+            <button
+              disabled={busy || !importText.trim()}
+              onClick={() =>
+                run(
+                  () =>
+                    apiPost("/universes/import", {
+                      label: importLabel || "Imported",
+                      text: importText,
+                    }),
+                  "Symbol list imported.",
+                )
+              }
+              className="w-full rounded bg-accent px-3 py-1.5 text-sm text-white disabled:opacity-50"
+            >
+              Import
+            </button>
+          </div>
+
+          <div className="space-y-2">
+            <div className="text-xs uppercase tracking-wide text-slate-400">Sector universe</div>
+            <select
+              value={sector}
+              onChange={(e) => setSector(e.target.value)}
+              className={inputClass}
+            >
+              <option value="">Select a sector…</option>
+              {data.sectors.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+            <button
+              disabled={busy || !sector}
+              onClick={() =>
+                run(
+                  () => apiPost("/universes/sector", { sector, base: "default" }),
+                  "Sector universe created.",
+                )
+              }
+              className="w-full rounded bg-accent px-3 py-1.5 text-sm text-white disabled:opacity-50"
+            >
+              Create from sector
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 text-sm">
+          {msg ? <span className="text-bull">{msg}</span> : null}
+          {err ? <span className="text-bear">{err}</span> : null}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 function flatten(obj: Record<string, unknown>, prefix = ""): [string, string][] {
   const out: [string, string][] = [];
   for (const [k, v] of Object.entries(obj)) {
@@ -263,6 +475,7 @@ export default function Settings() {
     <div className="space-y-5">
       <PageTitle title="Settings" subtitle="Data provider, API keys, maintenance and configuration" />
       <DataProviderPanel />
+      <UniversePanel />
       <Maintenance />
       <DiagnosticsPanel />
       <ResetPanel />

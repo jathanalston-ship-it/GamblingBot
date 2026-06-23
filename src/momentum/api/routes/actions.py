@@ -18,7 +18,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, sessionmaker
 
-from momentum.api import actions, reset as reset_ops
+from momentum.api import actions, reset as reset_ops, universe_service
 from momentum.api.jobs import JobManager, Progress
 from momentum.api.schemas import JobOut, ReplayOut
 from momentum.universe.membership import select_universe
@@ -97,6 +97,20 @@ def _symbols(params: ActionParams) -> list[str]:
     return _universe(params)[0]
 
 
+def _selected_universe(
+    request: Request, params: ActionParams
+) -> tuple[list[str], dict[str, str], str, str]:
+    """Resolve the universe to scan: an explicit request body, else the *selected*
+    universe (built-in or user) persisted in settings. Returns
+    ``(symbols, sectors, key, label)``.
+    """
+    if params.symbols:
+        return list(params.symbols), {}, "custom", "Custom"
+    with _session_factory(request)() as session:
+        u = universe_service.resolve_selected(session)
+    return list(u.symbols), dict(u.sectors), u.key, u.label
+
+
 # -- actions ----------------------------------------------------------------- #
 @router.post("/refresh-data", response_model=JobOut, status_code=202)
 def start_refresh(request: Request, params: ActionParams | None = None) -> JobOut:
@@ -117,7 +131,7 @@ def start_scan(request: Request, params: ActionParams | None = None) -> JobOut:
     p = params or ActionParams()
     sf = _session_factory(request)
     provider = _provider(request)
-    symbols, sectors = _universe(p)
+    symbols, sectors, universe_key, universe_label = _selected_universe(request, p)
 
     def fn(progress: Progress) -> dict[str, object]:
         return actions.run_scan(
@@ -128,6 +142,8 @@ def start_scan(request: Request, params: ActionParams | None = None) -> JobOut:
             lookback_days=p.lookback_days,
             progress=progress,
             sectors=sectors,
+            universe_key=universe_key,
+            universe_label=universe_label,
         )
 
     return JobOut(**_jobs(request).submit("scan", fn).to_dict())

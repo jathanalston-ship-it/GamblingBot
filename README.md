@@ -110,6 +110,7 @@ metrics above.
 | **[docs/OPTIONS_ELIGIBILITY.md](docs/OPTIONS_ELIGIBILITY.md)** | Options-eligibility gate: Shares-Preferred vs Leverage-Eligible (0-100 confidence) from liquidity, volatility, expected move, time horizon, spread quality & regime. |
 | **[docs/OPTIONS_RECOMMENDATION.md](docs/OPTIONS_RECOMMENDATION.md)** | Options-recommendation engine: for an eligible setup, a defined-risk contract (expiration/strike/delta/risk/max-loss/target/allocation) in the order Deep ITM → ATM → Vertical Spread, avoiding low liquidity, wide spreads, lottery & short-dated; volatility (IV) feed from the scanner (`implied_vol`/`iv_rank`), risk disclosures, no execution. |
 | **[docs/LIVE_PIPELINE.md](docs/LIVE_PIPELINE.md)** | Live research pipeline (Run Scan → Watchlists): a config-driven universe (no hardcoded symbols) → live bars → scan → regime → conviction, persisting scan_results + conviction_scores + market_regime + run metadata so watchlists rank the **newest live scan** and demo data never overrides newer live data. Fresh/demo/live/mixed verified. |
+| **[docs/UNIVERSE_MANAGEMENT.md](docs/UNIVERSE_MANAGEMENT.md)** | Multiple selectable scanner universes: built-in index sets (S&P 500 / NASDAQ 100 / Russell 1000/3000 / All Tradable) + user custom / imported / sector universes, a persisted Settings selector, and Run-Scan stats (universe size / scanned / passed / duration). Verified to 500/1000/3000+ symbols. |
 | **[docs/ROADMAP.md](docs/ROADMAP.md)** | Phased implementation order. |
 
 ## Tech stack
