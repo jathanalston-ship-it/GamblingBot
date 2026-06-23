@@ -11,16 +11,19 @@ from __future__ import annotations
 
 import datetime as dt
 import os
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import pandas as pd
+from sqlalchemy import delete
 from sqlalchemy.orm import Session, sessionmaker
 
 from momentum.api.jobs import Progress
 from momentum.backtest import BacktestConfig, BacktestEngine, OrderIntent
 from momentum.backtest.engine import StrategyContext
 from momentum.conviction.engine import ConvictionEngine
+from momentum.conviction.inputs import ConvictionInputs
+from momentum.core.enums import RegimeState
 from momentum.data.cache import BarCache
 from momentum.data.providers.base import MarketDataProvider
 from momentum.data.schema import Timeframe, to_utc_timestamp
@@ -30,6 +33,8 @@ from momentum.execution.paper_broker import PaperBroker
 from momentum.execution.slippage import BpsSlippage, PerShareCommission
 from momentum.orchestration.engine import DailyOrchestrationEngine
 from momentum.orchestration.session import pull_bars, run_paper_session
+from momentum.persistence.models.conviction_score import ConvictionScore
+from momentum.persistence.models.market_regime import MarketRegime
 from momentum.persistence.models.optimization_result import OptimizationResult
 from momentum.persistence.repositories.audit_log import AuditLogRepository
 from momentum.persistence.repositories.optimization_results import OptimizationResultRepository
@@ -37,9 +42,19 @@ from momentum.persistence.repositories.runs import RunRepository
 from momentum.persistence.repositories.scans import ScanResultRepository
 from momentum.persistence.repositories.trades import TradeRepository
 from momentum.risk.risk_manager import RiskManager
+from momentum.signals.regime import RegimeEngine
+from momentum.universe.membership import select_universe
 from momentum.universe.screener import MomentumScanner
 
-DEFAULT_SYMBOLS = ["AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "AVGO", "TSLA"]
+# The market-data benchmark whose trend anchors the regime classification.
+BENCHMARK_SYMBOL = "SPY"
+
+# Maps the regime engine's label to the conviction engine's expected token.
+_REGIME_TO_CONVICTION: dict[RegimeState, str] = {
+    RegimeState.BULLISH: "bull",
+    RegimeState.NEUTRAL: "neutral",
+    RegimeState.BEARISH: "bear",
+}
 
 
 def _today() -> dt.date:
@@ -81,8 +96,32 @@ def refresh_data(
 
 
 # --------------------------------------------------------------------------- #
-# Run Scan
+# Run Scan — the complete live research pipeline
 # --------------------------------------------------------------------------- #
+def _breadth_above_200dma(bars: Mapping[str, pd.DataFrame]) -> float | None:
+    """Fraction of the universe trading above its 200-day moving average (0..1).
+
+    The breadth feed for the regime engine and the conviction breadth input,
+    computed live from the same bars the scanner ranks. ``None`` when no symbol
+    has the 200 bars of history required.
+    """
+    above = 0
+    total = 0
+    for frame in bars.values():
+        if frame is None or "close" not in frame.columns:
+            continue
+        close = frame["close"].dropna()
+        if len(close) < 200:
+            continue
+        ma = close.rolling(200).mean().iloc[-1]
+        if pd.isna(ma):
+            continue
+        total += 1
+        if float(close.iloc[-1]) > float(ma):
+            above += 1
+    return above / total if total else None
+
+
 def run_scan(
     *,
     session_factory: sessionmaker[Session],
@@ -91,26 +130,108 @@ def run_scan(
     symbols: Sequence[str],
     lookback_days: int,
     progress: Progress,
+    sectors: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Pull data, run the momentum scanner, and persist the ranked candidates."""
+    """The full live research pipeline behind "Run Scan".
+
+    Pulls live market data for the configured universe, classifies the market
+    regime, ranks the momentum candidates, scores conviction for each, and
+    persists **all four derived surfaces** in one transaction — scan results,
+    conviction scores, the market regime and the run metadata — so the
+    downstream watchlists/command-center/lifecycle read live data, not the demo
+    seed. Idempotent per trading day (stable ``run_id``).
+    """
+    if not symbols:
+        symbols, sectors = select_universe()
+    started_at = dt.datetime.now(tz=dt.UTC)
+
+    # 1. Pull live market data for the universe (+ the regime benchmark).
     progress(0.1, "pulling market data")
     bars = pull_bars(provider, symbols, end=_today(), lookback_days=lookback_days)
     if not bars:
         raise RuntimeError("no market data available for the universe")
-    progress(0.6, "scanning")
-    scan = scanner.scan(bars)
-    progress(0.85, "saving results")
-    run_id = _run_stamp("scan")
+    benchmark_bars = pull_bars(
+        provider, [BENCHMARK_SYMBOL], end=_today(), lookback_days=lookback_days
+    )
+    spy = benchmark_bars.get(BENCHMARK_SYMBOL)
+
+    # 2. Scan + rank the universe. The data date drives every persisted surface,
+    #    so a re-run on the same bars is idempotent (stable ``run_id``).
+    progress(0.5, "scanning the universe")
+    scan = scanner.scan(bars, sectors=sectors)
+    candidates = scan.candidates
+    as_of = scan.as_of.date()
+    run_id = f"scan-{as_of:%Y%m%d}"
+
+    # 3. Classify the market regime from the benchmark trend + live breadth.
+    progress(0.65, "classifying market regime")
+    breadth = _breadth_above_200dma(bars)
+    regime = RegimeEngine().evaluate(spy, breadth=breadth, as_of=to_utc_timestamp(as_of))
+    regime_label = _REGIME_TO_CONVICTION.get(regime.state)
+    regime_record = regime.to_record()
+
+    # 4. Score conviction for every ranked candidate.
+    progress(0.8, "scoring conviction")
+    conviction_engine = ConvictionEngine()
+    ts = dt.datetime.now(tz=dt.UTC)
+    conviction_rows: list[ConvictionScore] = []
+    for c in candidates:
+        inputs = ConvictionInputs(
+            market_regime=regime_label,
+            sector_strength=c.sector_rs,
+            relative_volume=c.relative_volume,
+            distance_to_ath=abs(c.distance_from_ath),
+            breadth=regime.breadth,
+            momentum_score=c.momentum_score / 100.0,
+        )
+        result = conviction_engine.score(inputs)
+        conviction_rows.append(
+            ConvictionScore.from_result(result, symbol=c.symbol, run_id=run_id, as_of=as_of, ts=ts)
+        )
+
+    # 5-8. Persist scan results + conviction + regime + run metadata atomically.
+    progress(0.9, "saving results")
     with session_factory() as session:
-        rows = ScanResultRepository(session).save_records(scan.to_records(run_id=run_id))
+        runs = RunRepository(session)
+        run = runs.start(
+            run_id=run_id,
+            mode="scan",
+            as_of=as_of,
+            started_at=started_at,
+            config_hash=conviction_engine.config.config_hash(),
+        )
+
+        scan_rows = ScanResultRepository(session).save_records(scan.to_records(run_id=run_id))
+
+        session.execute(delete(ConvictionScore).where(ConvictionScore.run_id == run_id))
+        session.add_all(conviction_rows)
+
+        session.execute(
+            delete(MarketRegime).where(
+                MarketRegime.as_of == regime_record["as_of"],
+                MarketRegime.benchmark_symbol == regime_record["benchmark_symbol"],
+                MarketRegime.model_version == regime_record["model_version"],
+            )
+        )
+        session.add(MarketRegime(**regime_record))
+
+        runs.complete(run, finished_at=dt.datetime.now(tz=dt.UTC))
         session.commit()
+        scan_persisted = len(scan_rows)
+        conviction_persisted = len(conviction_rows)
+
     progress(1.0, "done")
     return {
         "run_id": run_id,
         "as_of": scan.as_of.date().isoformat(),
+        "universe": len(symbols),
         "symbols_scanned": len(bars),
-        "candidates": len(scan.candidates),
-        "persisted": len(rows),
+        "candidates": len(candidates),
+        "regime": regime.state.value,
+        "breadth": round(breadth, 4) if breadth is not None else None,
+        "scan_results_persisted": scan_persisted,
+        "conviction_scores_persisted": conviction_persisted,
+        "regime_persisted": True,
     }
 
 

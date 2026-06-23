@@ -109,6 +109,7 @@ metrics above.
 | **[docs/SIGNAL_AUDIT.md](docs/SIGNAL_AUDIT.md)** | Signal validation audit: grades conviction / watchlist rank / trade-plan targets / stops / options rec / eligibility over the last N candidates-with-outcomes — win rate & EV by conviction bucket, calibration, max drawdown, reward:risk, ranked predictive factors — recommending changes only when statistically significant. |
 | **[docs/OPTIONS_ELIGIBILITY.md](docs/OPTIONS_ELIGIBILITY.md)** | Options-eligibility gate: Shares-Preferred vs Leverage-Eligible (0-100 confidence) from liquidity, volatility, expected move, time horizon, spread quality & regime. |
 | **[docs/OPTIONS_RECOMMENDATION.md](docs/OPTIONS_RECOMMENDATION.md)** | Options-recommendation engine: for an eligible setup, a defined-risk contract (expiration/strike/delta/risk/max-loss/target/allocation) in the order Deep ITM → ATM → Vertical Spread, avoiding low liquidity, wide spreads, lottery & short-dated; volatility (IV) feed from the scanner (`implied_vol`/`iv_rank`), risk disclosures, no execution. |
+| **[docs/LIVE_PIPELINE.md](docs/LIVE_PIPELINE.md)** | Live research pipeline (Run Scan → Watchlists): a config-driven universe (no hardcoded symbols) → live bars → scan → regime → conviction, persisting scan_results + conviction_scores + market_regime + run metadata so watchlists rank the **newest live scan** and demo data never overrides newer live data. Fresh/demo/live/mixed verified. |
 | **[docs/ROADMAP.md](docs/ROADMAP.md)** | Phased implementation order. |
 
 ## Tech stack

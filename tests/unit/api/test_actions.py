@@ -88,6 +88,8 @@ def test_refresh_data_writes_cache(tmp_path: Path) -> None:
 
 
 def test_run_scan_persists_results(factory: sessionmaker[Session]) -> None:
+    from momentum.persistence.models import ConvictionScore, MarketRegime, Run
+
     result = actions.run_scan(
         session_factory=factory,
         provider=StubProvider(),
@@ -97,9 +99,41 @@ def test_run_scan_persists_results(factory: sessionmaker[Session]) -> None:
         progress=_noop,
     )
     assert result["candidates"] >= 1
-    assert result["persisted"] == result["candidates"]
+    # The full pipeline persists scan results + conviction + regime + run metadata.
+    assert result["scan_results_persisted"] == result["candidates"]
+    assert result["conviction_scores_persisted"] == result["candidates"]
+    assert result["regime_persisted"] is True
+    assert result["regime"] in {"bullish", "neutral", "bearish"}
     with factory() as session:
         assert ScanResultRepository(session).for_run(result["run_id"])
+        conv = list(session.query(ConvictionScore).filter_by(run_id=result["run_id"]))
+        assert len(conv) == result["candidates"]
+        assert all(c.score >= 0 for c in conv)
+        regimes = list(session.query(MarketRegime))
+        assert len(regimes) == 1
+        run = session.query(Run).filter_by(run_id=result["run_id"]).one()
+        assert run.status == "completed" and run.mode == "scan"
+
+
+def test_run_scan_is_idempotent_per_day(factory: sessionmaker[Session]) -> None:
+    """Re-running a scan on the same data replaces rather than duplicates."""
+    from momentum.persistence.models import ConvictionScore, MarketRegime, ScanResult
+
+    kwargs: dict[str, Any] = dict(
+        session_factory=factory,
+        provider=StubProvider(),
+        scanner=_relaxed(),
+        symbols=["AAA", "BBB", "CCC"],
+        lookback_days=400,
+        progress=_noop,
+    )
+    first = actions.run_scan(**kwargs)
+    second = actions.run_scan(**kwargs)
+    assert first["run_id"] == second["run_id"]
+    with factory() as session:
+        assert session.query(ScanResult).count() == second["candidates"]
+        assert session.query(ConvictionScore).count() == second["candidates"]
+        assert session.query(MarketRegime).count() == 1
 
 
 def test_run_scan_fails_with_no_data(factory: sessionmaker[Session]) -> None:

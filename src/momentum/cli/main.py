@@ -29,8 +29,6 @@ if TYPE_CHECKING:
 
 app = typer.Typer(add_completion=False, help="Momentum Research Platform CLI.")
 
-_DEFAULT_SYMBOLS = "AAPL,MSFT,NVDA,AMZN,META,GOOGL,AVGO,TSLA"
-
 
 # --------------------------------------------------------------------------- #
 # Shared helpers
@@ -40,7 +38,13 @@ def _init(json_logs: bool, level: str) -> None:
 
 
 def _parse_symbols(raw: str) -> list[str]:
-    return [s.strip().upper() for s in raw.split(",") if s.strip()]
+    """Parse ``--symbols``; an empty value falls back to the configured universe."""
+    symbols = [s.strip().upper() for s in raw.split(",") if s.strip()]
+    if symbols:
+        return symbols
+    from momentum.universe.membership import select_universe
+
+    return select_universe()[0]
 
 
 def _parse_date(value: str | None) -> dt.date:
@@ -101,7 +105,9 @@ def serve(
 
 @app.command(name="paper-run")
 def paper_run(
-    symbols: str = typer.Option(_DEFAULT_SYMBOLS, help="Comma-separated universe."),
+    symbols: str = typer.Option(
+        "", help="Comma-separated universe (default: configured universe)."
+    ),
     as_of: str = typer.Option(None, "--as-of", help="Session date YYYY-MM-DD (default today)."),
     equity: float = typer.Option(100_000.0, help="Starting account equity."),
     lookback_days: int = typer.Option(400, help="Calendar days of history to pull."),
@@ -145,7 +151,9 @@ def paper_run(
 
 @app.command()
 def scan(
-    symbols: str = typer.Option(_DEFAULT_SYMBOLS, help="Comma-separated universe."),
+    symbols: str = typer.Option(
+        "", help="Comma-separated universe (default: configured universe)."
+    ),
     lookback_days: int = typer.Option(400, help="Calendar days of history to pull."),
     top: int = typer.Option(10, help="How many ranked candidates to show."),
     provider: str = typer.Option("yahoo", help="Market-data provider."),

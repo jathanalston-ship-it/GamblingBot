@@ -68,26 +68,47 @@ def _conviction_factors(row: ConvictionScore) -> dict[str, float]:
     return {k: v for k, v in mapping.items() if v is not None}
 
 
+DEMO_RUN_ID = "demo"
+
+
+def _winning_batch(conv_rows: list[ConvictionScore]) -> tuple[dt.date, str | None]:
+    """Pick the (as_of, run_id) of the newest conviction batch to watchlist.
+
+    The newest ``as_of`` wins; at a tie, a **live** scan (any ``run_id`` other
+    than ``demo``) beats the demo seed — so live data is never overridden by demo
+    and a freshly-run scan immediately drives the watchlists.
+    """
+    as_of = max(r.as_of for r in conv_rows)
+    at_date = [r for r in conv_rows if r.as_of == as_of]
+    live = [r for r in at_date if r.run_id != DEMO_RUN_ID]
+    pool = live or at_date
+    # The most recently written run at that date (highest id) is authoritative.
+    run_id = max(pool, key=lambda r: r.id).run_id
+    return as_of, run_id
+
+
 def _load_candidates(
     session: Session, run_id: str | None
 ) -> tuple[list[WatchlistCandidate], dt.date | None]:
-    """Build candidates from the latest conviction scores + their scan context."""
+    """Build candidates from the newest conviction batch + its scan context."""
     cstmt = select(ConvictionScore)
     if run_id is not None:
         cstmt = cstmt.where(ConvictionScore.run_id == run_id)
-    conv_rows = list(session.scalars(cstmt.order_by(ConvictionScore.as_of.desc())))
+    conv_rows = list(session.scalars(cstmt.order_by(ConvictionScore.id.desc())))
     if not conv_rows:
         return [], None
-    as_of = conv_rows[0].as_of
+
+    if run_id is None:
+        as_of, batch_run_id = _winning_batch(conv_rows)
+    else:
+        as_of, batch_run_id = max(r.as_of for r in conv_rows), run_id
 
     conviction: dict[str, ConvictionScore] = {}
     for r in conv_rows:
-        if r.as_of == as_of and r.symbol not in conviction:
+        if r.as_of == as_of and r.run_id == batch_run_id and r.symbol not in conviction:
             conviction[r.symbol] = r
 
-    sstmt = select(ScanResult)
-    if run_id is not None:
-        sstmt = sstmt.where(ScanResult.run_id == run_id)
+    sstmt = select(ScanResult).where(ScanResult.run_id == batch_run_id)
     scans: dict[str, ScanResult] = {}
     for s in session.scalars(sstmt.order_by(ScanResult.as_of.desc())):
         scans.setdefault(s.symbol, s)

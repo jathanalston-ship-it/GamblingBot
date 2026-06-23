@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from momentum.api import actions, reset as reset_ops
 from momentum.api.jobs import JobManager, Progress
 from momentum.api.schemas import JobOut, ReplayOut
+from momentum.universe.membership import select_universe
 from momentum.universe.screener import MomentumScanner
 
 if TYPE_CHECKING:
@@ -80,8 +81,20 @@ def _provider(request: Request) -> MarketDataProvider:
     return user_settings.build_provider()
 
 
+def _universe(params: ActionParams) -> tuple[list[str], dict[str, str]]:
+    """Resolve the symbols + sector map to act on.
+
+    An explicit request body wins; otherwise the configured tradeable universe
+    (``config/universe_symbols.yaml`` → shipped example → embedded default) — never
+    a hardcoded handful.
+    """
+    if params.symbols:
+        return list(params.symbols), {}
+    return select_universe()
+
+
 def _symbols(params: ActionParams) -> list[str]:
-    return params.symbols or actions.DEFAULT_SYMBOLS
+    return _universe(params)[0]
 
 
 # -- actions ----------------------------------------------------------------- #
@@ -104,7 +117,7 @@ def start_scan(request: Request, params: ActionParams | None = None) -> JobOut:
     p = params or ActionParams()
     sf = _session_factory(request)
     provider = _provider(request)
-    symbols = _symbols(p)
+    symbols, sectors = _universe(p)
 
     def fn(progress: Progress) -> dict[str, object]:
         return actions.run_scan(
@@ -114,6 +127,7 @@ def start_scan(request: Request, params: ActionParams | None = None) -> JobOut:
             symbols=symbols,
             lookback_days=p.lookback_days,
             progress=progress,
+            sectors=sectors,
         )
 
     return JobOut(**_jobs(request).submit("scan", fn).to_dict())

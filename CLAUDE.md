@@ -184,6 +184,21 @@ trading platform for US equities. Python 3.12, strictly typed. See
   history date selector, generate, over-time comparison). Demo seeds two dated
   watchlists. See `docs/WATCHLISTS.md`.
 
+- **Live research pipeline** (`src/momentum/universe/membership.py`,
+  `config/universe_symbols.example.yaml`, `api/actions.run_scan`,
+  `api/watchlist_service.py`) — "Run Scan" is now the complete path
+  **config universe → live bars → scan → regime → conviction → persistence**, so
+  watchlists rank the newest *live* scan instead of the demo handful.
+  `select_universe()` resolves the tradeable set from config (user override →
+  shipped example → 96-symbol embedded default), never hardcoded — `DEFAULT_SYMBOLS`
+  is gone and the CLI `--symbols` falls back to it. `run_scan` persists **four**
+  surfaces in one idempotent transaction (stable `run_id = scan-<YYYYMMDD>`):
+  `scan_results`, `conviction_scores` (the gap that left watchlists on demo data),
+  `market_regimes` (from `RegimeEngine` over SPY + live % > 200DMA breadth), and the
+  `runs` row. `watchlist_service._load_candidates` selects the **newest conviction
+  batch** (newest `as_of`; at a tie a live run beats `demo`) — so **demo never
+  overrides newer live data**. No new tables. See `docs/LIVE_PIPELINE.md`.
+
 - **Watchlist performance tracking** (`src/momentum/watchlist_performance/`,
   `watchlist_performance` table + migration `0014`) — does the advice work? Every
   stored watchlist entry (date/ticker/conviction/rank/expected move/horizon) is tracked

@@ -1,0 +1,197 @@
+# The tradeable universe the scanner fetches and ranks (Universe Selection).
+# Edit `members` to change coverage. Price/liquidity FILTERS are applied on top
+# by the scanner (config/universe.example.yaml). Copy to universe_symbols.yaml
+# under MRP_USER_DIR (e.g. %APPDATA%/Momentum Lab/config) to override.
+members:
+- symbol: AAPL
+  sector: Information Technology
+- symbol: MSFT
+  sector: Information Technology
+- symbol: NVDA
+  sector: Information Technology
+- symbol: AVGO
+  sector: Information Technology
+- symbol: ORCL
+  sector: Information Technology
+- symbol: CRM
+  sector: Information Technology
+- symbol: ADBE
+  sector: Information Technology
+- symbol: AMD
+  sector: Information Technology
+- symbol: ACN
+  sector: Information Technology
+- symbol: CSCO
+  sector: Information Technology
+- symbol: IBM
+  sector: Information Technology
+- symbol: INTC
+  sector: Information Technology
+- symbol: QCOM
+  sector: Information Technology
+- symbol: TXN
+  sector: Information Technology
+- symbol: NOW
+  sector: Information Technology
+- symbol: INTU
+  sector: Information Technology
+- symbol: AMAT
+  sector: Information Technology
+- symbol: MU
+  sector: Information Technology
+- symbol: AMZN
+  sector: Consumer Discretionary
+- symbol: TSLA
+  sector: Consumer Discretionary
+- symbol: HD
+  sector: Consumer Discretionary
+- symbol: MCD
+  sector: Consumer Discretionary
+- symbol: NKE
+  sector: Consumer Discretionary
+- symbol: LOW
+  sector: Consumer Discretionary
+- symbol: SBUX
+  sector: Consumer Discretionary
+- symbol: BKNG
+  sector: Consumer Discretionary
+- symbol: TJX
+  sector: Consumer Discretionary
+- symbol: GM
+  sector: Consumer Discretionary
+- symbol: F
+  sector: Consumer Discretionary
+- symbol: GOOGL
+  sector: Communication Services
+- symbol: META
+  sector: Communication Services
+- symbol: NFLX
+  sector: Communication Services
+- symbol: DIS
+  sector: Communication Services
+- symbol: CMCSA
+  sector: Communication Services
+- symbol: T
+  sector: Communication Services
+- symbol: VZ
+  sector: Communication Services
+- symbol: TMUS
+  sector: Communication Services
+- symbol: JPM
+  sector: Financials
+- symbol: BAC
+  sector: Financials
+- symbol: WFC
+  sector: Financials
+- symbol: GS
+  sector: Financials
+- symbol: MS
+  sector: Financials
+- symbol: C
+  sector: Financials
+- symbol: AXP
+  sector: Financials
+- symbol: BLK
+  sector: Financials
+- symbol: SCHW
+  sector: Financials
+- symbol: SPGI
+  sector: Financials
+- symbol: BRK-B
+  sector: Financials
+- symbol: V
+  sector: Financials
+- symbol: MA
+  sector: Financials
+- symbol: LLY
+  sector: Health Care
+- symbol: UNH
+  sector: Health Care
+- symbol: JNJ
+  sector: Health Care
+- symbol: ABBV
+  sector: Health Care
+- symbol: MRK
+  sector: Health Care
+- symbol: PFE
+  sector: Health Care
+- symbol: TMO
+  sector: Health Care
+- symbol: ABT
+  sector: Health Care
+- symbol: DHR
+  sector: Health Care
+- symbol: BMY
+  sector: Health Care
+- symbol: AMGN
+  sector: Health Care
+- symbol: MDT
+  sector: Health Care
+- symbol: GILD
+  sector: Health Care
+- symbol: CVS
+  sector: Health Care
+- symbol: XOM
+  sector: Energy
+- symbol: CVX
+  sector: Energy
+- symbol: COP
+  sector: Energy
+- symbol: SLB
+  sector: Energy
+- symbol: EOG
+  sector: Energy
+- symbol: PG
+  sector: Consumer Staples
+- symbol: KO
+  sector: Consumer Staples
+- symbol: PEP
+  sector: Consumer Staples
+- symbol: COST
+  sector: Consumer Staples
+- symbol: WMT
+  sector: Consumer Staples
+- symbol: PM
+  sector: Consumer Staples
+- symbol: MDLZ
+  sector: Consumer Staples
+- symbol: CL
+  sector: Consumer Staples
+- symbol: TGT
+  sector: Consumer Staples
+- symbol: HON
+  sector: Industrials
+- symbol: CAT
+  sector: Industrials
+- symbol: BA
+  sector: Industrials
+- symbol: GE
+  sector: Industrials
+- symbol: UPS
+  sector: Industrials
+- symbol: RTX
+  sector: Industrials
+- symbol: UNP
+  sector: Industrials
+- symbol: DE
+  sector: Industrials
+- symbol: LMT
+  sector: Industrials
+- symbol: MMM
+  sector: Industrials
+- symbol: LIN
+  sector: Materials
+- symbol: APD
+  sector: Materials
+- symbol: SHW
+  sector: Materials
+- symbol: NEE
+  sector: Utilities
+- symbol: DUK
+  sector: Utilities
+- symbol: SO
+  sector: Utilities
+- symbol: AMT
+  sector: Real Estate
+- symbol: PLD
+  sector: Real Estate
