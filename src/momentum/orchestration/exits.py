@@ -89,7 +89,10 @@ def evaluate_exit(
 
     risk = position.initial_risk
     if config.target_r is not None and risk:
-        r_at_price = sign * (price - position.avg_price) * position.quantity / risk
+        # R is measured against the ORIGINAL position: initial_risk uses
+        # initial_quantity, so the numerator must too (they agree while the
+        # position is full-size, but diverge once partial scale-outs exist).
+        r_at_price = sign * (price - position.avg_price) * position.initial_quantity / risk
         if r_at_price >= config.target_r:
             return ExitSignal(position.symbol, TARGET, price, position.quantity)
 

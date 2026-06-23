@@ -27,9 +27,14 @@ class WatchlistPerformanceRepository(Repository[WatchlistPerformance]):
         recs = list(records)
         if not recs:
             return 0
+        # The dedup map must see ALL rows that could collide on the unique key,
+        # including demo rows the production-mode query filter would otherwise hide
+        # (a hidden row would be re-inserted and violate the constraint on flush).
         existing = {
             (r.run_id, r.as_of, r.horizon, r.symbol): r
-            for r in self.session.scalars(select(WatchlistPerformance))
+            for r in self.session.scalars(
+                select(WatchlistPerformance).execution_options(include_demo=True)
+            )
         }
         for rec in recs:
             data = rec.to_record()
