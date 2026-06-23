@@ -9,6 +9,7 @@ import CommandCenter from "./views/CommandCenter";
 import Analytics from "./views/Analytics";
 import Backtesting from "./views/Backtesting";
 import Conviction from "./views/Conviction";
+import DataHealth from "./views/DataHealth";
 import Developer from "./views/Developer";
 import Lifecycle from "./views/Lifecycle";
 import Paper from "./views/Paper";
@@ -62,6 +63,7 @@ export default function App() {
         <Route path="analytics" element={<Analytics />} />
         <Route path="signal-eval" element={<SignalEvaluation />} />
         <Route path="signal-audit" element={<SignalAudit />} />
+        <Route path="data-health" element={<DataHealth />} />
         <Route path="settings" element={<Settings />} />
         <Route path="updates" element={<Updates />} />
         <Route path="developer" element={<Developer />} />

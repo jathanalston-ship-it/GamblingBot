@@ -44,7 +44,7 @@ from momentum.api.schemas import (
     SignalOut,
     TradeOut,
 )
-from momentum.conviction.config import ConvictionConfig
+from momentum.conviction import narrative as conviction_narrative
 from momentum.conviction.engine import ConvictionBand
 from momentum.conviction.similar_setups import summarize
 from momentum.opportunity.engine import OpportunityTier
@@ -306,32 +306,9 @@ def list_audit(
 
 
 # Neutral normalization baseline (a 50/50 setup) — the reference an explainable
-# impact is measured against. Tracks the config default, not a magic literal.
-_NEUTRAL_NORM: float = ConvictionConfig().normalization.neutral
-
-# Nicer labels for the eight conviction factors (used by contributors + narrative).
-_FACTOR_LABELS: dict[str, str] = {
-    "market_regime": "market regime",
-    "sector_strength": "sector strength",
-    "relative_volume": "relative volume",
-    "distance_to_ath": "ATH proximity",
-    "trend_strength": "trend quality",
-    "breadth": "market breadth",
-    "momentum_score": "momentum",
-    "historical_similar_setups": "historical analogs",
-}
-
-
-def _factor_label(name: str) -> str:
-    return _FACTOR_LABELS.get(name, name.replace("_", " ").strip())
-
-
-def _join_phrases(items: list[str]) -> str:
-    if len(items) == 1:
-        return items[0]
-    if len(items) == 2:
-        return f"{items[0]} and {items[1]}"
-    return f"{', '.join(items[:-1])} and {items[-1]}"
+# impact is measured against. Shared with the write-time narrative generator.
+_NEUTRAL_NORM: float = conviction_narrative.NEUTRAL_NORM
+_factor_label = conviction_narrative.factor_label
 
 
 def _contributors(out: ConvictionScoreOut) -> list[ContributorOut]:
@@ -372,39 +349,19 @@ def _contributors(out: ConvictionScoreOut) -> list[ContributorOut]:
 
 
 def _narrative(out: ConvictionScoreOut, contributors: list[ContributorOut]) -> str | None:
-    """One-line plain-language explanation built from the signed contributors."""
-    if not contributors:
-        return None
-    positives = [c.label for c in contributors if c.impact > 0][:3]
-    negatives = [c for c in contributors if c.impact < 0]
-    if not positives:
-        if not negatives:
-            return None
-        weak = [c.label for c in sorted(negatives, key=lambda c: c.impact)[:2]]
-        return (
-            f"{out.symbol} scores {out.score:.0f}/100 ({out.band}), "
-            f"weighed down by weak {_join_phrases(weak)}."
-        )
-    rank = (
-        "ranks highly"
-        if out.score >= 70
-        else "ranks moderately"
-        if out.score >= 45
-        else "ranks low"
-    )
-    text = f"{out.symbol} {rank} ({out.score:.0f}/100) due to strong {_join_phrases(positives)}"
-    if negatives:
-        worst = min(negatives, key=lambda c: c.impact)
-        text += f", partly offset by weak {worst.label}"
-    return text + "."
+    """One-line explanation (fallback when a row predates explanation persistence)."""
+    return conviction_narrative.explain(out.symbol, out.score, out.band, out.breakdown)
 
 
 def _explain(out: ConvictionScoreOut) -> ConvictionScoreOut:
-    """Attach the explainability fields (contributors + narrative) to a score."""
+    """Attach the explainability fields (contributors + narrative) to a score.
+
+    Prefers the explanation **persisted at scan time**; only recomputes when an
+    older row predates explanation persistence (so stored and computed agree).
+    """
     contributors = _contributors(out)
-    return out.model_copy(
-        update={"contributors": contributors, "narrative": _narrative(out, contributors)}
-    )
+    narrative = out.explanation or _narrative(out, contributors)
+    return out.model_copy(update={"contributors": contributors, "narrative": narrative})
 
 
 def list_conviction(

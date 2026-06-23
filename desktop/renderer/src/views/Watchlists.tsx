@@ -111,8 +111,10 @@ export default function Watchlists() {
         <WatchlistTable entries={active.entries} />
       ) : (
         <div className="rounded-lg border border-surface-border bg-surface-raised p-8 text-center text-sm text-slate-500">
-          No watchlist for this horizon yet. Click <b className="text-slate-300">Generate</b> (needs
-          conviction scores — run a scan/paper session or load sample data first).
+          <div className="mb-1 font-medium text-slate-400">No live conviction data available</div>
+          Watchlists rank the latest live conviction scores. Click{" "}
+          <b className="text-slate-300">Generate</b> after running a scan (Settings → Scanner) so
+          live conviction exists — watchlists never fall back to demo data.
         </div>
       )}
     </div>

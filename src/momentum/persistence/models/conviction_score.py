@@ -11,9 +11,10 @@ from __future__ import annotations
 import datetime as dt
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Date, DateTime, Float, ForeignKey, Index, JSON, String
+from sqlalchemy import Date, DateTime, Float, ForeignKey, Index, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
+from momentum.conviction import narrative
 from momentum.persistence.models.base import Base, IntPKMixin, TimestampMixin
 
 if TYPE_CHECKING:  # avoid a persistence <-> conviction import cycle
@@ -54,6 +55,9 @@ class ConvictionScore(IntPKMixin, TimestampMixin, Base):
     # --- full explainable breakdown -----------------------------------------
     breakdown: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
+    # --- persisted plain-language explanation (generated at scan time) -------
+    explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     __table_args__ = (
         Index("ix_conviction_scores_symbol_as_of", "symbol", "as_of"),
         Index("ix_conviction_scores_run_band", "run_id", "band"),
@@ -92,4 +96,7 @@ class ConvictionScore(IntPKMixin, TimestampMixin, Base):
             momentum_score=nm["momentum_score"],
             historical_edge=nm["historical_similar_setups"],
             breakdown=result.to_dict(),
+            explanation=narrative.explain(
+                symbol.upper(), result.score, result.band.value, result.to_dict()
+            ),
         )

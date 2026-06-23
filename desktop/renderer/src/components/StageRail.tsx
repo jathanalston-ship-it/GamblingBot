@@ -22,6 +22,7 @@ const UTILITIES: { to: string; label: string }[] = [
   { to: "/analytics", label: "Analytics" },
   { to: "/signal-eval", label: "Signal Eval" },
   { to: "/signal-audit", label: "Signal Audit" },
+  { to: "/data-health", label: "Data Health" },
   { to: "/settings", label: "Settings" },
   { to: "/updates", label: "Updates" },
 ];

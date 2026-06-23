@@ -242,6 +242,22 @@ trading platform for US equities. Python 3.12, strictly typed. See
   yfinance can't → keeps seed), writing a user override. See
   `docs/UNIVERSE_MANAGEMENT.md`.
 
+- **Live conviction explanation persistence** (`src/momentum/conviction/narrative.py`,
+  `conviction_scores.explanation` + migration `0017`) — every scan now **persists** a
+  plain-language explanation per conviction score (alongside scan_id/score/band/breakdown/
+  generated_at), generated at scan time from the same pure `narrative` module the read API
+  uses (stored and recomputed always agree; read prefers the stored value). Watchlists rank
+  the latest **live** conviction batch and show **"No live conviction data available"** rather
+  than fall back to demo.
+
+- **Data Health Dashboard** (`src/momentum/api/data_health_service.py`,
+  `routes/data_health.py`, `desktop/.../views/DataHealth.tsx`) — one read-only aggregate of
+  pipeline freshness with green/yellow/red status per metric (provider, connection, last
+  pull, data age, universe size, symbols cached, latest scan/conviction/watchlist) and an
+  overall worst-of status. `GET /data-health` + `GET /data-health/diagnostics` (raw provider/
+  cache path/database path/timestamps); desktop **Data Health** view with a **View Raw
+  Diagnostics** expander. Pure status logic unit-tested. See `docs/SESSION_VERIFICATION.md`.
+
 - **Watchlist performance tracking** (`src/momentum/watchlist_performance/`,
   `watchlist_performance` table + migration `0014`) — does the advice work? Every
   stored watchlist entry (date/ticker/conviction/rank/expected move/horizon) is tracked

@@ -630,9 +630,11 @@ class ConvictionScoreOut(_ORMModel):
     momentum_score: float | None
     historical_edge: float | None
     breakdown: dict[str, Any] | None
+    # The plain-language explanation persisted at scan time (Live Conviction).
+    explanation: str | None = None
     # Explainability, computed at read time from the stored breakdown.
     contributors: list[ContributorOut] = []
-    # A plain-language summary of why the score was assigned.
+    # A plain-language summary of why the score was assigned (stored, else computed).
     narrative: str | None = None
 
 

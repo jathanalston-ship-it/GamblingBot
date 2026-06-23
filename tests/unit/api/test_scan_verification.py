@@ -113,7 +113,14 @@ def test_fresh_scan_records_metadata_and_generates_conviction(
         assert meta.symbol_count == 2
         assert meta.stale is False
         assert meta.bar_timestamp is not None
-        assert s.query(ConvictionScore).count() == result["candidates"]
+        rows = s.query(ConvictionScore).all()
+        assert len(rows) == result["candidates"]
+        # Live Conviction Persistence: each row is associated with the scan_id and
+        # carries a persisted plain-language explanation generated at scan time.
+        for row in rows:
+            assert row.run_id == result["run_id"]
+            assert row.explanation  # non-empty
+            assert row.symbol in row.explanation
 
 
 def test_stale_scan_is_flagged_and_blocks_conviction(factory: sessionmaker[Session]) -> None:

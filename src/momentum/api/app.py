@@ -30,6 +30,7 @@ from momentum.api.routes import (
     command_center,
     conviction,
     dashboard,
+    data_health,
     diagnostics,
     health,
     opportunity,
@@ -90,6 +91,7 @@ _ROUTERS = (
     options_recommendation,
     watchlist_performance,
     signal_audit,
+    data_health,
     diagnostics,
 )
 
