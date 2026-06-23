@@ -100,9 +100,46 @@ def test_closed_trades_contribute_realized_pnl(session: Session) -> None:
     assert pf.positions == {}
     # net P&L = (60-50)*100 - 2 = 998 -> equity = 100_998.
     assert pf.equity == pytest.approx(100_998.0)
+    # Reported realized P&L must reflect the closed trade (not just -entry_fees),
+    # even though closed_positions is empty after recovery.
+    assert pf.realized_pnl == pytest.approx(998.0)
 
 
 def test_empty_ledger_returns_starting_equity(session: Session) -> None:
     pf = reconstruct_portfolio(TradeRepository(session), starting_equity=50_000.0, marks={})
     assert pf.equity == pytest.approx(50_000.0)
     assert pf.positions == {}
+
+
+def test_recovery_restores_historical_peak(session: Session) -> None:
+    """The high-water mark survives recovery so the drawdown throttle still fires."""
+    journal = TradeJournal(TradeRepository(session))
+    # A losing closed trade: equity is now below a prior peak of 120_000.
+    _open(journal, "AAPL", 100, 50.0, 48.0)
+    session.commit()
+    trade = TradeRepository(session).open_for_symbol("AAPL", "paper-1")
+    assert trade is not None
+    journal.close_trade(
+        trade, Fill("AAPL-2", "AAPL", Side.SHORT, 100, 45.0, 1.0, TS), exit_reason="stop"
+    )
+    session.commit()
+
+    pf = reconstruct_portfolio(
+        TradeRepository(session),
+        starting_equity=100_000.0,
+        marks={},
+        prior_peak_equity=120_000.0,
+    )
+    # equity = 100_000 + ((45-50)*100 - 2) = 99_498, peak retained at 120_000.
+    assert pf.equity == pytest.approx(99_498.0)
+    assert pf.peak_equity == pytest.approx(120_000.0)
+    # Account state reports a real drawdown (would be ~0 if peak reset to equity).
+    state = pf.to_account_state()
+    assert state.drawdown > 0.15
+
+
+def test_recovery_peak_never_below_current_equity(session: Session) -> None:
+    pf = reconstruct_portfolio(
+        TradeRepository(session), starting_equity=100_000.0, marks={}, prior_peak_equity=None
+    )
+    assert pf.peak_equity == pytest.approx(100_000.0)

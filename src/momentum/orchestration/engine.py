@@ -186,7 +186,16 @@ class DailyOrchestrationEngine:
         audit = AuditLogger(AuditLogRepository(session)) if self.enable_audit else None
 
         # 1-2. Recover the account from the ledger; record a durable running marker.
-        portfolio = reconstruct_portfolio(trades, starting_equity=self.starting_equity, marks=marks)
+        # Restore the historical high-water mark so the drawdown throttle survives
+        # the ephemeral process (it would otherwise reset to today's equity).
+        last_snapshot = PortfolioSnapshotRepository(session).latest()
+        prior_peak = last_snapshot.high_water_mark if last_snapshot else None
+        portfolio = reconstruct_portfolio(
+            trades,
+            starting_equity=self.starting_equity,
+            marks=marks,
+            prior_peak_equity=prior_peak,
+        )
         equity_start = portfolio.equity
         run = runs.start(
             run_id=run_id,

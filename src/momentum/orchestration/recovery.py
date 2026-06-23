@@ -26,12 +26,17 @@ def reconstruct_portfolio(
     starting_equity: float,
     marks: dict[str, float] | None = None,
     run_id: str | None = None,
+    prior_peak_equity: float | None = None,
 ) -> Portfolio:
     """Rebuild a :class:`Portfolio` from persisted trades.
 
     ``run_id=None`` reconstructs the whole account (all runs); pass a ``run_id``
     to scope recovery to a single run. ``marks`` supplies current prices for open
     positions; a symbol without a mark is held at its entry price.
+
+    ``prior_peak_equity`` restores the historical high-water mark (from the latest
+    persisted snapshot). Without it the drawdown throttle would reset to today's
+    equity every session and never fire while the account is underwater.
     """
     marks = marks or {}
     closed = repository.closed(run_id)
@@ -44,13 +49,17 @@ def reconstruct_portfolio(
     portfolio = Portfolio(cash=max(cash, 0.0))
     portfolio.cash = cash  # allow a (rare) negative cash to surface, not be clamped
     portfolio.starting_equity = starting_equity
+    # Recover realized P&L: closed trades were folded into cash above, but the
+    # reported realized_pnl must still reflect them (closed_positions is empty).
+    portfolio.realized_pnl_base = realized
 
     for trade in open_trades:
         position = _restore_position(trade, marks)
         portfolio.positions[position.symbol] = position
 
     portfolio.day_start_equity = portfolio.equity
-    portfolio.peak_equity = portfolio.equity
+    # The true peak is the historical high-water mark, never below current equity.
+    portfolio.peak_equity = max(prior_peak_equity or 0.0, portfolio.equity)
     return portfolio
 
 

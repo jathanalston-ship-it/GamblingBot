@@ -35,6 +35,9 @@ class Portfolio:
         self.peak_equity = cash
         self.positions: dict[str, Position] = {}
         self.closed_positions: list[Position] = []
+        # Realized P&L from prior sessions, recovered from the ledger (crash
+        # recovery folds closed trades into cash but not into closed_positions).
+        self.realized_pnl_base = 0.0
 
     # -- mutation ----------------------------------------------------------- #
     def on_fill(self, fill: Fill, *, sector: str | None = None) -> Position:
@@ -84,8 +87,10 @@ class Portfolio:
 
     @property
     def realized_pnl(self) -> float:
-        return sum(p.realized_pnl for p in self.positions.values()) + sum(
-            p.realized_pnl for p in self.closed_positions
+        return (
+            self.realized_pnl_base
+            + sum(p.realized_pnl for p in self.positions.values())
+            + sum(p.realized_pnl for p in self.closed_positions)
         )
 
     @property
