@@ -250,6 +250,17 @@ trading platform for US equities. Python 3.12, strictly typed. See
   the latest **live** conviction batch and show **"No live conviction data available"** rather
   than fall back to demo.
 
+- **Live scan read-resolution** (`src/momentum/api/services.resolve_active_run_id`,
+  `watchlist_service`, `actions.run_scan`) — fixes "scan results stay on demo / no live
+  conviction" (see `docs/SCAN_PIPELINE_AUDIT.md`). Persistence was always correct; the bug
+  was on **read**: a live scan is dated at the newest *bar* date (≈ yesterday) while the demo
+  seed is dated *today*, so date-only "latest" selection always ranked demo above live. Now
+  every read (`list_scans`/`list_conviction`/`candidate_detail`/`get_watchlists`/
+  `_winning_batch`) pins to the **latest live scan run** (`runs.mode=="scan"`), demo only as a
+  fallback when no live scan exists; `run_scan` also auto-generates watchlists tagged with the
+  same `run_id`, so `GET /scan|/candidates|/conviction|/watchlists` all return one live run and
+  **demo is never surfaced once live data exists** (a stale scan yields empty watchlists, not demo).
+
 - **Data Health Dashboard** (`src/momentum/api/data_health_service.py`,
   `routes/data_health.py`, `desktop/.../views/DataHealth.tsx`) — one read-only aggregate of
   pipeline freshness with green/yellow/red status per metric (provider, connection, last

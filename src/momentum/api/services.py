@@ -140,9 +140,33 @@ def list_risk_metrics(
     return [RiskMetricOut.model_validate(row) for row in session.scalars(stmt)]
 
 
+def resolve_active_run_id(session: Session) -> str | None:
+    """The authoritative run for the read screens: the latest **live** scan.
+
+    A live scan is dated at the newest *bar* date (usually yesterday for daily
+    data), while the demo seed is dated *today*, so a date-only "latest" selection
+    always ranks demo above live. To guarantee *demo is never used when live data
+    exists*, prefer the most recent live scan run (``runs.mode == "scan"``); only
+    when no live scan exists do we fall back to whatever scan data is present (the
+    demo seed). In production data mode the demo rows are filtered out anyway.
+    """
+    live = session.scalar(
+        select(Run.run_id)
+        .where(Run.mode == "scan")
+        .order_by(Run.started_at.desc(), Run.id.desc())
+        .limit(1)
+    )
+    if live is not None:
+        return live
+    return session.scalar(select(ScanResult.run_id).order_by(ScanResult.id.desc()).limit(1))
+
+
 def list_scans(
     session: Session, *, run_id: str | None = None, passed_only: bool = False, limit: int = 100
 ) -> list[ScanResultOut]:
+    # No explicit run → pin the latest live scan so demo never leaks in alongside it.
+    if run_id is None:
+        run_id = resolve_active_run_id(session)
     stmt = select(ScanResult)
     if run_id:
         stmt = stmt.where(ScanResult.run_id == run_id)
@@ -367,6 +391,9 @@ def _explain(out: ConvictionScoreOut) -> ConvictionScoreOut:
 def list_conviction(
     session: Session, *, symbol: str | None = None, run_id: str | None = None, limit: int = 100
 ) -> list[ConvictionScoreOut]:
+    # No explicit run → pin the latest live scan (demo never outranks live by date).
+    if run_id is None:
+        run_id = resolve_active_run_id(session)
     stmt = select(ConvictionScore)
     if symbol:
         stmt = stmt.where(ConvictionScore.symbol == symbol.upper())
@@ -539,6 +566,8 @@ def candidate_detail(
 ) -> CandidateDetailOut:
     """One aggregate that fills the Scan inspector (steps 2-4 at a glance)."""
     sym = symbol.upper()
+    if run_id is None:
+        run_id = resolve_active_run_id(session)
     scan = _latest_scan(session, sym, run_id)
     conviction = latest_conviction(session, sym, run_id)
     opportunity = latest_opportunity(session, sym, run_id)

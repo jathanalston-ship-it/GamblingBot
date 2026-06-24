@@ -20,6 +20,7 @@ from momentum.api.schemas import (
     WatchlistOut,
     WatchlistSetOut,
 )
+from momentum.api.services import resolve_active_run_id
 from momentum.persistence.models import ConvictionScore, ScanResult
 from momentum.persistence.models.watchlist_entry import WatchlistEntryRow
 from momentum.persistence.repositories.watchlist_entries import WatchlistRepository
@@ -72,31 +73,38 @@ DEMO_RUN_ID = "demo"
 
 
 def _winning_batch(conv_rows: list[ConvictionScore]) -> tuple[dt.date, str | None]:
-    """Pick the (as_of, run_id) of the newest conviction batch to watchlist.
+    """Pick the (as_of, run_id) of the conviction batch to watchlist.
 
-    The newest ``as_of`` wins; at a tie, a **live** scan (any ``run_id`` other
-    than ``demo``) beats the demo seed — so live data is never overridden by demo
-    and a freshly-run scan immediately drives the watchlists.
+    **Live always beats demo, regardless of date.** A live scan is dated at the
+    newest *bar* date (usually yesterday for daily data) while the demo seed is
+    dated *today*, so selecting by ``max(as_of)`` first would let demo override a
+    freshly-run live scan. We therefore filter to live rows *first*, and only fall
+    back to demo when no live conviction exists; then the newest ``as_of`` within
+    that pool wins, tie-broken by the most recently written run (highest id).
     """
-    as_of = max(r.as_of for r in conv_rows)
-    at_date = [r for r in conv_rows if r.as_of == as_of]
-    live = [r for r in at_date if r.run_id != DEMO_RUN_ID]
-    pool = live or at_date
-    # The most recently written run at that date (highest id) is authoritative.
-    run_id = max(pool, key=lambda r: r.id).run_id
+    live = [r for r in conv_rows if r.run_id != DEMO_RUN_ID]
+    pool = live or conv_rows
+    as_of = max(r.as_of for r in pool)
+    at_date = [r for r in pool if r.as_of == as_of]
+    run_id = max(at_date, key=lambda r: r.id).run_id
     return as_of, run_id
 
 
 def _load_candidates(
     session: Session, run_id: str | None
-) -> tuple[list[WatchlistCandidate], dt.date | None]:
-    """Build candidates from the newest conviction batch + its scan context."""
+) -> tuple[list[WatchlistCandidate], dt.date | None, str | None]:
+    """Build candidates from the winning conviction batch + its scan context.
+
+    Returns ``(candidates, as_of, batch_run_id)`` — the batch run_id lets the
+    caller tag generated watchlists with the *live* run so the read side and the
+    scan agree on one run_id (live never falls back to demo).
+    """
     cstmt = select(ConvictionScore)
     if run_id is not None:
         cstmt = cstmt.where(ConvictionScore.run_id == run_id)
     conv_rows = list(session.scalars(cstmt.order_by(ConvictionScore.id.desc())))
     if not conv_rows:
-        return [], None
+        return [], None, None
 
     if run_id is None:
         as_of, batch_run_id = _winning_batch(conv_rows)
@@ -127,26 +135,37 @@ def _load_candidates(
                 atr=scan.atr if scan else None,
             )
         )
-    return candidates, as_of
+    return candidates, as_of, batch_run_id
 
 
 def generate_watchlists(
     session: Session, *, run_id: str | None = None, as_of: dt.date | None = None
 ) -> WatchlistSetOut:
-    """Generate, persist (idempotent per date/run) and return the watchlist set."""
-    candidates, conv_as_of = _load_candidates(session, run_id)
+    """Generate, persist (idempotent per date/run) and return the watchlist set.
+
+    When no ``run_id`` is given the watchlists are tagged with the **winning live
+    batch's** run_id (not ``None``), so the read side pins them to the same live
+    run the scan produced and demo is never surfaced alongside.
+    """
+    # Pin generation to the active (latest live) run so a stale live scan with no
+    # conviction yields *empty* watchlists rather than silently re-using demo.
+    target_run = run_id if run_id is not None else resolve_active_run_id(session)
+    candidates, conv_as_of, batch_run_id = _load_candidates(session, target_run)
+    effective_run = target_run if target_run is not None else batch_run_id
     target = as_of or conv_as_of or dt.date.today()
-    produced = WatchlistEngine().generate(candidates, as_of=target, run_id=run_id)
+    produced = WatchlistEngine().generate(candidates, as_of=target, run_id=effective_run)
     flat = [entry for entries in produced.values() for entry in entries]
-    WatchlistRepository(session).replace_for(as_of=target, run_id=run_id, entries=flat)
+    WatchlistRepository(session).replace_for(as_of=target, run_id=effective_run, entries=flat)
     session.commit()
-    return get_watchlists(session, run_id=run_id, as_of=target)
+    return get_watchlists(session, run_id=effective_run, as_of=target)
 
 
 def get_watchlists(
     session: Session, *, run_id: str | None = None, as_of: dt.date | None = None
 ) -> WatchlistSetOut:
-    """The full Today/Week/Month set for a date (latest if unspecified)."""
+    """The full Today/Week/Month set for a date (latest live run if unspecified)."""
+    if run_id is None:
+        run_id = resolve_active_run_id(session)
     repo = WatchlistRepository(session)
     target = as_of or repo.latest_date(run_id)
     horizons: list[WatchlistOut] = []

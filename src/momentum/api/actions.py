@@ -335,6 +335,18 @@ def run_scan(
         scan_persisted = len(scan_rows)
         conviction_persisted = len(conviction_rows)
 
+    # 10. Generate the watchlists from the just-persisted live conviction (tagged
+    #     with this run_id) so the Watchlists screen reflects this scan immediately
+    #     and never falls back to demo. Skipped when stale (no live conviction).
+    watchlists_generated = 0
+    if not stale and conviction_rows:
+        from momentum.api import watchlist_service
+
+        progress(0.95, "generating watchlists")
+        with session_factory() as session:
+            ws = watchlist_service.generate_watchlists(session, run_id=run_id, as_of=as_of)
+            watchlists_generated = sum(len(h.entries) for h in ws.horizons)
+
     progress(1.0, "stale data — conviction skipped" if stale else "done")
     return {
         "run_id": run_id,
@@ -358,6 +370,7 @@ def run_scan(
         "scan_results_persisted": scan_persisted,
         "conviction_scores_persisted": conviction_persisted,
         "regime_persisted": True,
+        "watchlists_generated": watchlists_generated,
     }
 
 

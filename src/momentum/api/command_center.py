@@ -121,7 +121,7 @@ def _highest_conviction(session: Session, run_id: str | None) -> ConvictionScore
 
 def _top_sector(session: Session, run_id: str | None) -> SectorHighlightOut | None:
     """Most attractive sector (highest average conviction across candidates)."""
-    candidates, _ = watchlist_service._load_candidates(session, run_id)
+    candidates, _, _ = watchlist_service._load_candidates(session, run_id)
     sector_scores: dict[str, list[float]] = {}
     for cand in candidates:
         if cand.sector:

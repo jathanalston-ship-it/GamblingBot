@@ -640,7 +640,7 @@ def seed_watchlists(session: Session, as_of: dt.date, rng: np.random.Generator) 
     """
     from momentum.api.watchlist_service import _load_candidates
 
-    candidates, _ = _load_candidates(session, DEMO_TAG)
+    candidates, _, _ = _load_candidates(session, DEMO_TAG)
     if not candidates:
         return 0
     engine = WatchlistEngine()
