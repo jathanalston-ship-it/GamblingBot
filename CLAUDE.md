@@ -279,6 +279,21 @@ trading platform for US equities. Python 3.12, strictly typed. See
   card) so the user always knows where data came from, when, and whether it's demo or live — no
   hidden fallback.
 
+- **Runtime verification + market-data provenance** (`src/momentum/api/verification_service.py`,
+  `market_data_service.py`, `market_data_provenance` table + migration `0019`) — every symbol
+  fetch is logged (provider/request ts/bar ts/bar count/duration/**LIVE-CACHE**/run_id; the scan
+  path is always LIVE, no hidden cache) and surfaced by `GET /market-data/provenance` + a
+  "Last 20 Provider Requests" panel. A hidden **Verification** screen (`GET /verification/status`
+  + `POST /verification/verify-pipeline`) shows backend/provider status + latest counts and runs
+  one live symbol through the **real engines** (features→conviction→analog→trade-plan→watchlist)
+  with PASS/FAIL per stage — no mocks/seed/demo.
+
+- **Production demo-data guards** (`docs/DEMO_DATA_AUDIT.md`, `demo.seed_all`, `api/app.py`
+  startup) — demo seeding is **impossible** in production (`seed_all` itself raises, plus the
+  action/reset paths), and `create_app` **purges any demo rows + asserts zero** at production
+  startup. Combined with the global demo-exclusion query filter, no production screen can ever
+  receive seeded data. Tests prove production scans/watchlists/conviction never use demo rows.
+
 - **Data Health Dashboard** (`src/momentum/api/data_health_service.py`,
   `routes/data_health.py`, `desktop/.../views/DataHealth.tsx`) — one read-only aggregate of
   pipeline freshness with green/yellow/red status per metric (provider, connection, last

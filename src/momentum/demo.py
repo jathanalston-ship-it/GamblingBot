@@ -507,7 +507,17 @@ def seed_all(session: Session, *, progress: ProgressFn | None = None) -> dict[st
     Deterministic and idempotent: prior demo rows are removed first, so calling
     it repeatedly yields the same dataset without duplication. The caller owns
     the transaction (``session.commit()``).
+
+    **Production guard:** seeding is impossible in production data mode — seeded
+    data must never enter a live database. This is the single chokepoint, so the
+    guard holds regardless of caller.
     """
+    from momentum.api import data_mode
+
+    if data_mode.is_production():
+        raise RuntimeError(
+            "demo data cannot be seeded in production data mode (switch to demo mode first)"
+        )
     rng = np.random.default_rng(SEED)
     _report(progress, 0.05, "clearing prior demo rows")
     reset(session)

@@ -139,6 +139,18 @@ def create_app(session_factory: sessionmaker[Session] | None = None) -> FastAPI:
     from momentum.api import data_mode
 
     data_mode.load_from_settings()
+    # Production startup assertion: a live database must contain ZERO demo rows.
+    # Purge any that exist (e.g. a DB created in demo mode then switched), then
+    # assert none remain — so no production screen can ever receive demo data.
+    if data_mode.is_production():
+        with session_factory() as _s:
+            data_mode.purge_demo_rows(_s)
+            _s.commit()
+            _remaining = data_mode.count_demo_rows(_s)
+        if _remaining:
+            raise RuntimeError(
+                f"production startup aborted: {_remaining} demo rows present after purge"
+            )
     # Background-job manager for operator-console actions (scan/backtest/paper/…).
     app.state.job_manager = JobManager()
     # In-memory ring buffer of recent unhandled exceptions (Diagnostics screen).
