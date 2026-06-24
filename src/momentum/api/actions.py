@@ -80,22 +80,51 @@ def refresh_data(
     lookback_days: int,
     progress: Progress,
     cache_dir: str | None = None,
+    session_factory: sessionmaker[Session] | None = None,
+    provider_name: str = "unknown",
 ) -> dict[str, Any]:
-    """Pull bars for the universe and write them to the local parquet cache."""
+    """Pull bars for the universe and write them to the local parquet cache.
+
+    Each fetch is a LIVE provider request and is logged to ``market_data_provenance``
+    (when a ``session_factory`` is supplied) before it is written to the cache, so
+    every symbol fetched is recorded — no hidden cache usage.
+    """
     end = to_utc_timestamp(_today())
     start = end - pd.Timedelta(days=lookback_days)
     cache = BarCache(cache_dir or os.environ.get("MRP_BAR_CACHE", "data/bars"))
     fetched: dict[str, int] = {}
+    prov_rows: list[dict[str, Any]] = []
     total = len(symbols) or 1
     for i, symbol in enumerate(symbols):
         progress(i / total, f"fetching {symbol}")
+        started = dt.datetime.now(tz=dt.UTC)
+        perf = time.perf_counter()
         try:
             frame = provider.get_bars(symbol, start, end, Timeframe.DAY)
         except Exception:  # noqa: BLE001 - one bad symbol must not abort the refresh
-            continue
+            frame = None
+        duration_ms = round((time.perf_counter() - perf) * 1000.0, 1)
+        newest = pd.Timestamp(frame.index[-1]) if frame is not None and not frame.empty else None
+        if newest is not None and newest.tzinfo is None:
+            newest = newest.tz_localize("UTC")
+        prov_rows.append(
+            {
+                "symbol": symbol.upper(),
+                "provider": provider_name,
+                "request_timestamp": started,
+                "bar_timestamp": newest.to_pydatetime() if newest is not None else None,
+                "bar_count": int(len(frame)) if frame is not None else 0,
+                "request_duration_ms": duration_ms,
+                "cache_hit": False,  # a refresh always pulls LIVE (then writes cache)
+            }
+        )
         if frame is not None and not frame.empty:
             cache.write(symbol, Timeframe.DAY, frame)
             fetched[symbol] = int(len(frame))
+    if session_factory is not None and prov_rows:
+        with session_factory() as session:
+            session.add_all(MarketDataProvenance(run_id=None, **r) for r in prov_rows)
+            session.commit()
     progress(1.0, "done")
     return {"requested": len(symbols), "fetched": len(fetched), "bars": fetched}
 

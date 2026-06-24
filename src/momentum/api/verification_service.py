@@ -132,7 +132,21 @@ def verify_pipeline(
     # 1. Pull one live symbol.
     def pull() -> tuple[Any, str]:
         end = to_utc_timestamp(dt.date.today())
+        started = dt.datetime.now(tz=dt.UTC)
+        perf = time.perf_counter()
         frame = provider.get_bars(sym, end - pd.Timedelta(days=lookback_days), end, Timeframe.DAY)
+        # Log the fetch (LIVE) so it shows in provenance + updates "last request".
+        market_data_service.record_fetch(
+            session,
+            symbol=sym,
+            provider=provider_name,
+            started=started,
+            frame=frame,
+            duration_ms=round((time.perf_counter() - perf) * 1000.0, 1),
+            cache_hit=False,
+            run_id=None,
+        )
+        session.commit()
         if frame is None or frame.empty:
             raise RuntimeError(f"provider {provider_name!r} returned no bars for {sym}")
         return frame, f"{len(frame)} bars, newest {pd.Timestamp(frame.index[-1]).date()}"

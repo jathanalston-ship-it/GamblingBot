@@ -109,3 +109,32 @@ def test_empty_when_no_requests(factory: sessionmaker[Session]) -> None:
     with factory() as s:
         assert market_data_service.recent_requests(s) == []
         assert market_data_service.last_request_timestamp(s) is None
+
+
+def test_refresh_data_records_each_fetch(factory: sessionmaker[Session]) -> None:
+    """Refresh Data is a LIVE pull and logs every symbol fetched."""
+    syms = ["AAA", "BBB", "CCC"]
+    actions.refresh_data(
+        provider=StubProvider(),
+        symbols=syms,
+        lookback_days=400,
+        progress=lambda p, m: None,
+        session_factory=factory,
+        provider_name="yahoo",
+    )
+    with factory() as s:
+        rows = list(s.scalars(select(MarketDataProvenance)))
+    assert {r.symbol for r in rows} == {"AAA", "BBB", "CCC"}
+    assert all(r.cache_hit is False and r.provider == "yahoo" for r in rows)  # LIVE
+
+
+def test_verify_pipeline_fetch_is_logged(factory: sessionmaker[Session]) -> None:
+    """Clicking Verify Pipeline records its live fetch (updates last-request)."""
+    app = create_app(session_factory=factory)
+    app.state.provider_factory = lambda: StubProvider()
+    client = TestClient(app)
+    client.post("/verification/verify-pipeline?symbol=AAPL")
+    with factory() as s:
+        recent = market_data_service.recent_requests(s)
+    assert recent and recent[0]["symbol"] == "AAPL"
+    assert recent[0]["source"] == "LIVE"

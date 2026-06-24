@@ -115,12 +115,21 @@ def _selected_universe(
 @router.post("/refresh-data", response_model=JobOut, status_code=202)
 def start_refresh(request: Request, params: ActionParams | None = None) -> JobOut:
     p = params or ActionParams()
+    sf = _session_factory(request)
     provider = _provider(request)
     symbols = _symbols(p)
+    from momentum.api import user_settings
+
+    provider_name = user_settings.read_provider()
 
     def fn(progress: Progress) -> dict[str, object]:
         return actions.refresh_data(
-            provider=provider, symbols=symbols, lookback_days=p.lookback_days, progress=progress
+            provider=provider,
+            symbols=symbols,
+            lookback_days=p.lookback_days,
+            progress=progress,
+            session_factory=sf,
+            provider_name=provider_name,
         )
 
     return JobOut(**_jobs(request).submit("refresh-data", fn).to_dict())
