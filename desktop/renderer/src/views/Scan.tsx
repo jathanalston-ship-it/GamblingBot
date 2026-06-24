@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { ProvenancePanel } from "../components/ProvenancePanel";
 
 import type { Job, ScanMetadata, ScanResult } from "../api/types";
 import { ActionButton } from "../components/ActionButton";
@@ -157,6 +158,10 @@ export default function Scan({ shortlist = false }: { shortlist?: boolean }) {
             ) : null}
           </div>
         ) : null}
+
+        <div className="px-3 pt-2">
+          <ProvenancePanel screen="scan" />
+        </div>
 
         {scanStats ? (
           <div className="flex flex-wrap items-center gap-4 border-b border-surface-border bg-surface-raised/40 px-3 py-1.5 text-xs text-slate-400">

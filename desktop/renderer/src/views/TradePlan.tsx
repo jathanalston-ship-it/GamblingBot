@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { ProvenancePanel } from "../components/ProvenancePanel";
 
 import type {
   OptionsEligibility,
@@ -45,6 +46,7 @@ function Body({ symbol, runId }: { symbol: string; runId: string | null }) {
 
   return (
     <div className="space-y-5 p-5">
+      <ProvenancePanel screen="trade_plans" />
       <PageTitle
         title={`Trade Plan · ${data.symbol}`}
         subtitle="Derived from ATR, support, analogs, volatility & regime — no order is placed"

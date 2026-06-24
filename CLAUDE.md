@@ -261,6 +261,24 @@ trading platform for US equities. Python 3.12, strictly typed. See
   same `run_id`, so `GET /scan|/candidates|/conviction|/watchlists` all return one live run and
   **demo is never surfaced once live data exists** (a stale scan yields empty watchlists, not demo).
 
+- **Live conviction pipeline** (`src/momentum/api/scan_artifacts.py`, `trade_plans` +
+  `candidate_analogs` tables + migration `0018`) — a successful scan now persists the full
+  per-candidate research set under one `run_id`: conviction + regime (existing) and **trade
+  plans** (entry/stop/RR/size + full plan JSON, via `TradePlanEngine`) and **analog cohorts**
+  (regime+sector stats from all historical closed trades), then auto-generates watchlists.
+  Acceptance proven (`test_conviction_pipeline.py`, `tests/integration/test_research_workflow.py`):
+  one scan ⇒ candidates>0, conviction>0, analogs>0, trade_plans>0, watchlists>0, all live, no
+  demo fallback. Analog cohort scoping fixed (`services.analogs`/`tradeplan._analog_stats` now
+  match ALL closed trades, not the empty scan run). See `docs/CONVICTION_PIPELINE_AUDIT.md`.
+
+- **Data lineage / provenance** (`src/momentum/api/provenance_service.py`,
+  `routes/provenance.py`, `desktop/.../components/ProvenancePanel.tsx`) — `GET /provenance`
+  returns, for the active (or given) run: source provider, fetch timestamp, run_id, per-screen
+  generation timestamp + row count, data age, stale flag, and an explicit **demo/live** mode.
+  A `ProvenancePanel` strip is embedded on Scan / Conviction / Watchlists / Trade Plan (+ Options
+  card) so the user always knows where data came from, when, and whether it's demo or live — no
+  hidden fallback.
+
 - **Data Health Dashboard** (`src/momentum/api/data_health_service.py`,
   `routes/data_health.py`, `desktop/.../views/DataHealth.tsx`) — one read-only aggregate of
   pipeline freshness with green/yellow/red status per metric (provider, connection, last

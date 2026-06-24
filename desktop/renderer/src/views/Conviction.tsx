@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import type { ReactNode } from "react";
+import { ProvenancePanel } from "../components/ProvenancePanel";
 
 import type { ConvictionScore } from "../api/types";
 import { ContributionBar } from "../components/ContributionBar";
@@ -67,6 +68,7 @@ function Body({ symbol, runId }: { symbol: string; runId: string | null }) {
 
   return (
     <div className="p-4">
+      <ProvenancePanel screen="conviction" />
       <div className="mb-3 flex items-baseline gap-3">
         <h1 className="text-lg font-semibold text-slate-100">Conviction · {symbol}</h1>
         <span className="text-3xl font-bold tabular-nums text-slate-100">{num(c.score, 0)}</span>

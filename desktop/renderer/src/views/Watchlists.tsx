@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ProvenancePanel } from "../components/ProvenancePanel";
 
 import { apiGet } from "../api/client";
 import type { WatchlistComparison, WatchlistEntry, WatchlistSet } from "../api/types";
@@ -41,6 +42,7 @@ export default function Watchlists() {
 
   return (
     <div className="p-5">
+      <ProvenancePanel screen="watchlists" />
       <PageTitle
         title="Watchlists"
         subtitle="Actionable multi-horizon watchlists — Today · This Week · This Month"
