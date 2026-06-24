@@ -151,6 +151,57 @@ def test_analogs_match_real_history_when_present(factory: sessionmaker[Session])
     assert any(r.sample_size > 0 for r in rows)
 
 
+def test_reads_consume_persisted_artifacts(factory: sessionmaker[Session]) -> None:
+    """The Trade Plan + Analogs endpoints read the PERSISTED rows for the active run
+    (not a recompute): mutating a persisted row changes what the endpoint returns."""
+    from fastapi.testclient import TestClient
+
+    from momentum.api.app import create_app
+    from momentum.api.jobs import JobManager
+
+    with factory() as s:
+        seed_all(s)  # demo trades give the analog cohort real history
+        s.commit()
+    result = _scan(factory)
+    run = result["run_id"]
+
+    with factory() as s:
+        plan = s.scalars(select(TradePlan).where(TradePlan.run_id == run)).first()
+        analog = s.scalars(
+            select(CandidateAnalog).where(
+                CandidateAnalog.run_id == run, CandidateAnalog.sample_size > 0
+            )
+        ).first()
+        assert plan is not None and analog is not None
+        sym_plan, sym_analog = plan.symbol, analog.symbol
+        # Stamp sentinel values into the persisted rows.
+        plan.plan = {**(plan.plan or {}), "entry": 1234.5}
+        analog.sample_size = 4242
+        s.add_all([plan, analog])
+        s.commit()
+
+    app = create_app(session_factory=factory)
+    app.state.job_manager = JobManager(runner=lambda fn: fn())
+    client = TestClient(app)
+
+    tp = client.get(f"/tradeplan/{sym_plan}").json()
+    assert tp["entry"] == 1234.5, "Trade Plan did not read the persisted row"
+
+    an = client.get(f"/analogs?symbol={sym_analog}&run_id={run}").json()
+    assert an["sample_size"] == 4242, "Analogs did not read the persisted row"
+
+
+def test_analogs_fallback_recompute_without_persisted_row(factory: sessionmaker[Session]) -> None:
+    """With no persisted analog row (e.g. demo-only), analogs still compute live."""
+    with factory() as s:
+        seed_all(s)  # demo seeds conviction + Technology trades, but no live scan
+        s.commit()
+        from momentum.api import services
+
+        an = services.analogs(s, symbol="AAPL")
+    assert an.sample_size >= 1  # fell back to the live trade cohort
+
+
 def test_stale_scan_persists_no_artifacts(factory: sessionmaker[Session]) -> None:
     result = _scan(factory, days_old=10)
     run = result["run_id"]

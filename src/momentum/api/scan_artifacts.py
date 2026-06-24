@@ -77,7 +77,8 @@ def _trade_plan_rows(
     symbols = session.scalars(select(ScanResult.symbol).where(ScanResult.run_id == run_id)).all()
     rows: list[TradePlan] = []
     for symbol in symbols:
-        plan = tradeplan_service.trade_plan(session, symbol, run_id)
+        # Compute from scratch — the persisted row is what we're building here.
+        plan = tradeplan_service.compute_trade_plan(session, symbol, run_id)
         if plan is None:
             continue
         rows.append(

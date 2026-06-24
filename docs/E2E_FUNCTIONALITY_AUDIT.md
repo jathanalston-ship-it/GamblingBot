@@ -79,4 +79,22 @@ Every read endpoint returned live data pinned to `scan-20260624` (verified `run_
 single successful live scan. **Analogs is the one screen that can be empty after a successful
 scan**, because its data source is the (initially empty) `trades` table rather than the scan —
 and the newly-persisted `candidate_analogs` rows that *would* fix this are not read by the
-endpoint. No fix applied (diagnosis only).
+endpoint.
+
+## Resolution (applied — see below)
+
+The write/read mismatch is fixed:
+
+- `tradeplan_service.trade_plan` now returns the **persisted `trade_plans` row** for the
+  active run when present (recompute fallback for demo / pre-persistence runs) — so the
+  Trade Plan panel reflects the scan's own output and matches the provenance count. Building
+  the rows uses `compute_trade_plan` directly (no chicken-and-egg).
+- `services.analogs` now reads the **persisted `candidate_analogs` cohort** for the active
+  run + symbol (recompute fallback otherwise); the inspector benefits via `candidate_detail`.
+- The Analogs panel shows an explicit **"No comparable trade history yet"** banner when
+  `sample_size == 0`, clarifying it is a true empty state — not demo/stale/cached. Analogs
+  remain genuinely empty until closed-trade history exists (there is nothing to be analogous
+  *to*); that is by design, now communicated honestly and consistently.
+
+Proven by `test_reads_consume_persisted_artifacts` (mutating a persisted row changes the
+endpoint output) and `test_analogs_fallback_recompute_without_persisted_row`.

@@ -49,6 +49,7 @@ from momentum.conviction.engine import ConvictionBand
 from momentum.conviction.similar_setups import summarize
 from momentum.opportunity.engine import OpportunityTier
 from momentum.persistence.models import (
+    CandidateAnalog,
     ConvictionScore,
     MarketRegime,
     OpportunityClassification,
@@ -477,17 +478,36 @@ def analogs(
     run_id: str | None = None,
     limit: int = 50,
 ) -> AnalogsOut:
-    """Closed trades from setups like this one (same regime + sector cohort)."""
-    sym = symbol.upper() if symbol else None
-    if sym and sector is None:
-        scan = _latest_scan(session, sym, run_id)
-        sector = scan.sector if scan is not None else None
-    if regime is None:
-        reg = latest_regime(session)
-        regime = reg.regime if reg is not None else None
+    """Closed trades from setups like this one (same regime + sector cohort).
 
-    # Analogs are historical: match across ALL closed trades, never the scan run
-    # (which has none), so a live scan candidate still finds comparable setups.
+    Prefers the analog cohort **persisted by the scan** for the active run + symbol
+    (so the panel matches the scan's own output + the provenance row count); falls
+    back to an on-demand cohort for demo / pre-persistence runs. The cohort is drawn
+    from ALL closed trades, so ``sample_size == 0`` honestly means "no comparable
+    trade history yet" — never a demo fallback.
+    """
+    sym = symbol.upper() if symbol else None
+    active = run_id or resolve_active_run_id(session)
+
+    persisted = (
+        session.scalars(
+            select(CandidateAnalog).where(
+                CandidateAnalog.run_id == active, CandidateAnalog.symbol == sym
+            )
+        ).first()
+        if (sym and active)
+        else None
+    )
+    if persisted is not None:
+        regime, sector = persisted.regime, persisted.sector
+    else:
+        if sym and sector is None:
+            scan = _latest_scan(session, sym, active)
+            sector = scan.sector if scan is not None else None
+        if regime is None:
+            reg = latest_regime(session)
+            regime = reg.regime if reg is not None else None
+
     matched = [
         t
         for t in TradeRepository(session).closed(None)
@@ -495,8 +515,23 @@ def analogs(
         and (regime is None or t.regime_label == regime)
         and (sector is None or t.sector == sector)
     ]
-    stats = summarize(matched)
     recent = sorted(matched, key=lambda t: t.exit_ts or t.entry_ts, reverse=True)[:limit]
+    trades_out = [TradeOut.model_validate(t) for t in recent]
+    if persisted is not None:
+        # Authoritative stats come from the persisted row; trades are the matching
+        # cohort for display.
+        return AnalogsOut(
+            symbol=sym,
+            regime=regime,
+            sector=sector,
+            sample_size=persisted.sample_size,
+            expectancy_r=persisted.expectancy_r,
+            win_rate=persisted.win_rate,
+            avg_winner_r=persisted.avg_winner_r,
+            avg_loser_r=persisted.avg_loser_r,
+            trades=trades_out,
+        )
+    stats = summarize(matched)
     return AnalogsOut(
         symbol=sym,
         regime=regime,
@@ -506,7 +541,7 @@ def analogs(
         win_rate=stats.win_rate,
         avg_winner_r=stats.avg_winner_r,
         avg_loser_r=stats.avg_loser_r,
-        trades=[TradeOut.model_validate(t) for t in recent],
+        trades=trades_out,
     )
 
 

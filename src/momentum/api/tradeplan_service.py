@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from momentum.analytics.trade_analysis import compute_trade_stats
 from momentum.api import services
 from momentum.api.schemas import TradePlanOut
-from momentum.persistence.models import PortfolioSnapshot, ScanResult
+from momentum.persistence.models import PortfolioSnapshot, ScanResult, TradePlan
 from momentum.persistence.repositories.trades import TradeRepository
 from momentum.tradeplan import TradePlanEngine, TradePlanInputs
 
@@ -71,7 +71,25 @@ def _latest_equity(session: Session, run_id: str | None) -> float:
 
 
 def trade_plan(session: Session, symbol: str, run_id: str | None = None) -> TradePlanOut | None:
-    """Derive a trade plan for ``symbol`` (None if there is no scan price/ATR)."""
+    """A trade plan for ``symbol``: the **persisted** plan for the active run when
+    one exists (so the panel matches the scan's own output + provenance), else
+    recomputed on demand (demo / pre-persistence runs). ``None`` without scan data.
+    """
+    sym = symbol.upper()
+    active = run_id or services.resolve_active_run_id(session)
+    if active:
+        persisted = session.scalars(
+            select(TradePlan).where(TradePlan.run_id == active, TradePlan.symbol == sym)
+        ).first()
+        if persisted is not None and persisted.plan is not None:
+            return TradePlanOut.model_validate(persisted.plan)
+    return compute_trade_plan(session, sym, active)
+
+
+def compute_trade_plan(
+    session: Session, symbol: str, run_id: str | None = None
+) -> TradePlanOut | None:
+    """Derive a trade plan from scratch (None if there is no scan price/ATR)."""
     sym = symbol.upper()
     stmt = select(ScanResult).where(ScanResult.symbol == sym)
     if run_id:

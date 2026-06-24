@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 
 import type { Analogs as AnalogsData, Trade } from "../api/types";
+import { ProvenancePanel } from "../components/ProvenancePanel";
 import { Badge, regimeTone } from "../components/Badge";
 import { Histogram } from "../components/charts/Histogram";
 import type { Column } from "../components/DataTable";
@@ -59,6 +60,7 @@ function Body({ symbol, runId }: { symbol: string; runId: string | null }) {
 
   return (
     <div className="p-4">
+      <ProvenancePanel screen="analogs" />
       <div className="mb-4 flex items-center gap-3">
         <h1 className="text-lg font-semibold text-slate-100">Historical Analogs · {symbol}</h1>
         <span className="flex items-center gap-2 text-xs text-slate-500">
@@ -68,6 +70,14 @@ function Body({ symbol, runId }: { symbol: string; runId: string | null }) {
         </span>
         <span className="ml-auto text-sm text-slate-400">n = {data.sample_size}</span>
       </div>
+
+      {data.sample_size === 0 ? (
+        <div className="mb-4 rounded-lg border border-surface-border bg-surface-raised p-4 text-sm text-slate-400">
+          <span className="font-medium text-slate-300">No comparable trade history yet.</span>{" "}
+          Analogs are drawn from your closed trades in this regime + sector — they populate as
+          paper/live trades close. This is a true empty state, not demo or stale data.
+        </div>
+      ) : null}
 
       <div className="mb-2 grid grid-cols-2 gap-4 md:grid-cols-5">
         <Stat label="Expectancy" value={`${num(data.expectancy_r, 2)} R`} />
