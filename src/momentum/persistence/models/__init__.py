@@ -18,6 +18,7 @@ from momentum.persistence.models.candidate_analog import CandidateAnalog
 from momentum.persistence.models.conviction_score import ConvictionScore
 from momentum.persistence.models.instrument_selection import InstrumentSelection
 from momentum.persistence.models.market_regime import MarketRegime
+from momentum.persistence.models.market_data_provenance import MarketDataProvenance
 from momentum.persistence.models.opportunity_classification import OpportunityClassification
 from momentum.persistence.models.optimization_result import OptimizationResult
 from momentum.persistence.models.portfolio_snapshot import PortfolioSnapshot
@@ -60,4 +61,5 @@ __all__ = [
     "ScanMetadata",
     "TradePlan",
     "CandidateAnalog",
+    "MarketDataProvenance",
 ]

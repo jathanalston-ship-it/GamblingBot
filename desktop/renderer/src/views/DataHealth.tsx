@@ -3,6 +3,7 @@ import { useState } from "react";
 import { apiGet } from "../api/client";
 import { Card } from "../components/Card";
 import { ErrorBox, Loading, PageTitle } from "../components/Page";
+import { ProviderRequestsPanel } from "../components/ProviderRequestsPanel";
 import { useApi } from "../hooks/useApi";
 
 interface HealthMetric {
@@ -142,6 +143,8 @@ export default function DataHealth() {
               ))}
             </div>
           </Card>
+
+          <ProviderRequestsPanel limit={20} />
 
           <RawDiagnostics />
         </div>

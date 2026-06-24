@@ -35,6 +35,7 @@ from momentum.execution.slippage import BpsSlippage, PerShareCommission
 from momentum.orchestration.engine import DailyOrchestrationEngine
 from momentum.orchestration.session import pull_bars, run_paper_session
 from momentum.persistence.models.conviction_score import ConvictionScore
+from momentum.persistence.models.market_data_provenance import MarketDataProvenance
 from momentum.persistence.models.market_regime import MarketRegime
 from momentum.persistence.models.optimization_result import OptimizationResult
 from momentum.persistence.models.scan_metadata import ScanMetadata
@@ -216,15 +217,37 @@ def run_scan(
     started_perf = time.perf_counter()
 
     # 1. Connect to the provider and pull fresh bars (+ the regime benchmark).
+    #    Every fetch is recorded for market-data provenance (LIVE — the scan path
+    #    never reads the cache). run_id is stamped on the rows once it is known.
     progress(0.1, "pulling market data")
-    bars = pull_bars(provider, symbols, end=_today(), lookback_days=lookback_days)
+    fetch_log: list[dict[str, Any]] = []
+
+    def _record(
+        symbol: str, frame: pd.DataFrame | None, started: dt.datetime, duration_ms: float
+    ) -> None:
+        newest = pd.Timestamp(frame.index[-1]) if frame is not None and not frame.empty else None
+        if newest is not None and newest.tzinfo is None:
+            newest = newest.tz_localize("UTC")
+        fetch_log.append(
+            {
+                "symbol": symbol.upper(),
+                "provider": provider_name,
+                "request_timestamp": started,
+                "bar_timestamp": newest.to_pydatetime() if newest is not None else None,
+                "bar_count": int(len(frame)) if frame is not None else 0,
+                "request_duration_ms": duration_ms,
+                "cache_hit": False,
+            }
+        )
+
+    bars = pull_bars(provider, symbols, end=_today(), lookback_days=lookback_days, recorder=_record)
     if not bars:
         raise RuntimeError(
             f"no market data returned by provider {provider_name!r} for the universe "
             "(connection/auth failure or empty response)"
         )
     benchmark_bars = pull_bars(
-        provider, [BENCHMARK_SYMBOL], end=_today(), lookback_days=lookback_days
+        provider, [BENCHMARK_SYMBOL], end=_today(), lookback_days=lookback_days, recorder=_record
     )
     spy = benchmark_bars.get(BENCHMARK_SYMBOL)
 
@@ -329,6 +352,9 @@ def run_scan(
                 stale=stale,
             )
         )
+
+        # Market-data provenance: one row per symbol fetched (LIVE), stamped with run_id.
+        session.add_all(MarketDataProvenance(run_id=run_id, **entry) for entry in fetch_log)
 
         runs.complete(run, finished_at=dt.datetime.now(tz=dt.UTC))
         session.commit()
