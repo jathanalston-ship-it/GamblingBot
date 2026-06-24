@@ -486,9 +486,11 @@ def analogs(
         reg = latest_regime(session)
         regime = reg.regime if reg is not None else None
 
+    # Analogs are historical: match across ALL closed trades, never the scan run
+    # (which has none), so a live scan candidate still finds comparable setups.
     matched = [
         t
-        for t in TradeRepository(session).closed(run_id)
+        for t in TradeRepository(session).closed(None)
         if t.r_multiple is not None
         and (regime is None or t.regime_label == regime)
         and (sector is None or t.sector == sector)

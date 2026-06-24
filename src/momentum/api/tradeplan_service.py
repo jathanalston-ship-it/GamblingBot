@@ -34,10 +34,16 @@ class _AnalogStats:
 def _analog_stats(
     session: Session, *, sector: str | None, regime: str | None, run_id: str | None
 ) -> _AnalogStats:
-    """Stats for closed trades in the same regime + sector cohort."""
+    """Stats for closed trades in the same regime + sector cohort.
+
+    Analogs are **historical**: the cohort is drawn from all closed trades, never
+    scoped to the scan run (which has none), so a live scan candidate still matches
+    real history. ``run_id`` is accepted for signature stability but not used to
+    scope the cohort.
+    """
     cohort = [
         t
-        for t in TradeRepository(session).analytics_trades(run_id)
+        for t in TradeRepository(session).analytics_trades(None)
         if (regime is None or t.regime == regime) and (sector is None or t.sector == sector)
     ]
     if not cohort:

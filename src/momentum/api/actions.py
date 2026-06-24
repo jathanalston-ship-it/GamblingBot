@@ -335,14 +335,23 @@ def run_scan(
         scan_persisted = len(scan_rows)
         conviction_persisted = len(conviction_rows)
 
-    # 10. Generate the watchlists from the just-persisted live conviction (tagged
-    #     with this run_id) so the Watchlists screen reflects this scan immediately
-    #     and never falls back to demo. Skipped when stale (no live conviction).
+    # 10. Derive the remaining per-candidate artifacts (trade plans + analog
+    #     cohorts) and the watchlists from the just-persisted live conviction, all
+    #     tagged with this run_id, so every screen populates from one scan and never
+    #     falls back to demo. Skipped when stale (no live conviction).
     watchlists_generated = 0
+    trade_plans_persisted = 0
+    analogs_persisted = 0
     if not stale and conviction_rows:
-        from momentum.api import watchlist_service
+        from momentum.api import scan_artifacts, watchlist_service
 
-        progress(0.95, "generating watchlists")
+        progress(0.93, "deriving trade plans + analogs")
+        with session_factory() as session:
+            counts = scan_artifacts.persist_artifacts(session, run_id=run_id, as_of=as_of, ts=ts)
+            trade_plans_persisted = counts["trade_plans"]
+            analogs_persisted = counts["analogs"]
+
+        progress(0.97, "generating watchlists")
         with session_factory() as session:
             ws = watchlist_service.generate_watchlists(session, run_id=run_id, as_of=as_of)
             watchlists_generated = sum(len(h.entries) for h in ws.horizons)
@@ -371,6 +380,8 @@ def run_scan(
         "conviction_scores_persisted": conviction_persisted,
         "regime_persisted": True,
         "watchlists_generated": watchlists_generated,
+        "trade_plans_persisted": trade_plans_persisted,
+        "analogs_persisted": analogs_persisted,
     }
 
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from momentum.persistence.models.audit_log import AuditLog
 from momentum.persistence.models.base import Base, IntPKMixin, TimestampMixin
+from momentum.persistence.models.candidate_analog import CandidateAnalog
 from momentum.persistence.models.conviction_score import ConvictionScore
 from momentum.persistence.models.instrument_selection import InstrumentSelection
 from momentum.persistence.models.market_regime import MarketRegime
@@ -27,6 +28,7 @@ from momentum.persistence.models.run import Run
 from momentum.persistence.models.scan_metadata import ScanMetadata
 from momentum.persistence.models.scan_result import ScanResult
 from momentum.persistence.models.signal import Signal
+from momentum.persistence.models.trade_plan import TradePlan
 from momentum.persistence.models.setup_lifecycle import SetupLifecycle
 from momentum.persistence.models.trade import Trade
 from momentum.persistence.models.user_universe import UserUniverse
@@ -56,4 +58,6 @@ __all__ = [
     "SetupLifecycle",
     "UserUniverse",
     "ScanMetadata",
+    "TradePlan",
+    "CandidateAnalog",
 ]
