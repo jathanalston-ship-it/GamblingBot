@@ -21,6 +21,7 @@ import SignalAudit from "./views/SignalAudit";
 import SignalEvaluation from "./views/SignalEvaluation";
 import TradePlan from "./views/TradePlan";
 import Updates from "./views/Updates";
+import Verification from "./views/Verification";
 import WatchlistPerformance from "./views/WatchlistPerformance";
 import Watchlists from "./views/Watchlists";
 
@@ -64,6 +65,7 @@ export default function App() {
         <Route path="signal-eval" element={<SignalEvaluation />} />
         <Route path="signal-audit" element={<SignalAudit />} />
         <Route path="data-health" element={<DataHealth />} />
+        <Route path="verification" element={<Verification />} />
         <Route path="settings" element={<Settings />} />
         <Route path="updates" element={<Updates />} />
         <Route path="developer" element={<Developer />} />

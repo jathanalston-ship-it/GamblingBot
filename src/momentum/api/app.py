@@ -34,6 +34,7 @@ from momentum.api.routes import (
     diagnostics,
     market_data,
     provenance,
+    verification,
     health,
     opportunity,
     options_eligibility,
@@ -96,6 +97,7 @@ _ROUTERS = (
     data_health,
     provenance,
     market_data,
+    verification,
     diagnostics,
 )
 

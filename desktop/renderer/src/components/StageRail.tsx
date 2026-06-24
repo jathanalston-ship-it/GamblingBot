@@ -72,6 +72,10 @@ export function StageRail() {
             <span className="w-4 text-right text-xs text-amber-400">⚙</span>
             <span className="text-amber-300">Developer</span>
           </NavLink>
+          <NavLink to="/verification" className={itemClass}>
+            <span className="w-4 text-right text-xs text-amber-400">✓</span>
+            <span className="text-amber-300">Verification</span>
+          </NavLink>
         </>
       ) : null}
     </nav>
