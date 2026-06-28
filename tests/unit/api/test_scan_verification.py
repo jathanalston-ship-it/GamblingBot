@@ -198,3 +198,5 @@ def test_scan_metadata_endpoint(factory: sessionmaker[Session]) -> None:
     assert meta["stale"] is False
     assert meta["pull_timestamp"] is not None
     assert meta["provider"] in {"yfinance", "alpaca", "polygon"}
+    # Session-based freshness is surfaced for the banner: today's bars are 0 behind.
+    assert meta["sessions_behind"] == 0

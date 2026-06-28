@@ -451,6 +451,8 @@ export interface ScanMetadata {
   symbol_count: number;
   data_age_minutes: number | null;
   stale: boolean;
+  /** How many trading sessions old the newest bar is (freshness is session-based). */
+  sessions_behind?: number | null;
 }
 
 export interface Run {

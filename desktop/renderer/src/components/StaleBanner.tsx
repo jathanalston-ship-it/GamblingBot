@@ -14,15 +14,22 @@ export function StaleBanner() {
 
   if (!meta || !meta.stale) return null;
 
+  // Freshness is measured in trading sessions, so lead with that when available;
+  // fall back to wall-clock age for older metadata rows without the field.
+  const behind = meta.sessions_behind;
+  const lede =
+    behind != null
+      ? `Newest bar is ${behind} trading session${behind === 1 ? "" : "s"} behind`
+      : `Market data is ${fmtAge(meta.data_age_minutes)} old`;
+
   return (
     <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-bear/40 bg-bear/10 px-3 py-2 text-xs text-bear">
       <span className="rounded bg-bear px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">
         Stale Data
       </span>
       <span>
-        Market data is {fmtAge(meta.data_age_minutes)} old (newest bar{" "}
-        {fmtTime(meta.bar_timestamp)}). Conviction &amp; watchlists are withheld until a fresher
-        scan.
+        {lede} (newest bar {fmtTime(meta.bar_timestamp)}). Conviction &amp; watchlists are withheld
+        until a fresher scan.
       </span>
       <span className="ml-auto flex items-center gap-3 text-bear/80">
         <Stat label="provider" value={meta.provider} />

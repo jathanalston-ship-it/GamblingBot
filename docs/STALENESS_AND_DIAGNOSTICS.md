@@ -70,6 +70,18 @@ data**, independent of staleness.
   the latest live scan; the run dropdown is an explicit opt-in override and shows
   **"latest (auto)"** for the default.
 
+## 5. Banner wording + Scan row cap (polish)
+
+- **`sessions_behind` in the banner.** `GET /universe/scan-metadata` now returns
+  `sessions_behind` (derived in the route from the persisted bar/pull timestamps via
+  the same trading calendar). The shared `StaleBanner` leads with *"Newest bar is N
+  trading session(s) behind"* — matching the session-based gate — and falls back to
+  wall-clock age for older metadata rows without the field. No migration.
+- **Scan row cap.** The Scanner table requested `limit=300`; raised to `2000`, which
+  equals both the API ceiling and the scanner's liquidity prefilter cap
+  (`MRP_MAX_SCAN_SYMBOLS`), so passed candidates can never exceed it — the cap can no
+  longer silently truncate. A "(first 2000)" hint shows only if the ceiling is ever hit.
+
 ## Tests
 
 `tests/unit/api/test_staleness.py` (session math, weekend/holiday skip, minute

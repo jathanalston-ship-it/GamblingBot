@@ -32,7 +32,11 @@ export default function Scan({ shortlist = false }: { shortlist?: boolean }) {
   const navigate = useNavigate();
 
   const effectivePassed = shortlist || passedOnly;
-  const path = `/universe/scans?limit=300${effectivePassed ? "&passed_only=true" : ""}${
+  // The API caps at 2000, which also equals the scanner's liquidity prefilter cap
+  // (MRP_MAX_SCAN_SYMBOLS) — so passed candidates can never exceed it and this
+  // ceiling can't silently truncate real data. A hint shows if it's ever reached.
+  const ROW_LIMIT = 2000;
+  const path = `/universe/scans?limit=${ROW_LIMIT}${effectivePassed ? "&passed_only=true" : ""}${
     runId ? `&run_id=${runId}` : ""
   }`;
   const { data, error, loading, reload } = useApi<ScanResult[]>(path);
@@ -106,6 +110,11 @@ export default function Scan({ shortlist = false }: { shortlist?: boolean }) {
           />
           <span className="text-slate-500">
             {rows.length} {shortlist ? "candidates · passed" : "candidates"}
+            {all.length >= ROW_LIMIT ? (
+              <span className="ml-1 text-neutral" title={`Showing the first ${ROW_LIMIT} rows.`}>
+                (first {ROW_LIMIT})
+              </span>
+            ) : null}
           </span>
           <label className="flex items-center gap-1.5 text-slate-400">
             sector

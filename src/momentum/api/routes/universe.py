@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from momentum.api import services
+from momentum.api import actions, services
 from momentum.api.dependencies import get_session
 from momentum.api.schemas import ScanResultOut
 from momentum.persistence.repositories.scan_metadata import ScanMetadataRepository
@@ -30,10 +30,20 @@ def get_scans(
 def get_scan_metadata(session: Session = Depends(get_session)) -> dict[str, Any] | None:
     """Provenance/freshness of the most recent scan (Scanner-header data).
 
-    Returns ``null`` when no scan has run yet.
+    Returns ``null`` when no scan has run yet. Adds ``sessions_behind`` — how many
+    trading sessions old the newest bar is — derived from the persisted bar/pull
+    timestamps (the freshness rule is session-based, so the banner reports sessions,
+    not just wall-clock age).
     """
     row = ScanMetadataRepository(session).latest()
-    return row.to_dict() if row is not None else None
+    if row is None:
+        return None
+    out = row.to_dict()
+    if row.bar_timestamp is not None and row.pull_timestamp is not None:
+        out["sessions_behind"] = actions._sessions_behind(row.bar_timestamp, row.pull_timestamp)
+    else:
+        out["sessions_behind"] = None
+    return out
 
 
 @router.get("/rejections")
