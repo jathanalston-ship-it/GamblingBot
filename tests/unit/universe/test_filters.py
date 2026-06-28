@@ -85,6 +85,22 @@ def test_combine_reports_eliminations(features: pd.DataFrame) -> None:
     assert report.n_out == 2
 
 
+def test_combine_records_per_symbol_reason(features: pd.DataFrame) -> None:
+    report = combine(
+        features,
+        [MinPrice(5.0), MinDollarVolume(20e6), WithinDistanceOfATH(0.25)],
+    )
+    # Each rejected symbol is attributed to the FIRST filter that dropped it.
+    assert report.reasons["BBB"] == "min_price"
+    assert report.reasons["CCC"] == "min_dollar_volume"
+    # Survivors are absent from reasons.
+    assert "AAA" not in report.reasons
+    assert "DDD" not in report.reasons
+    # reasons covers exactly the rejected set.
+    assert set(report.reasons) == {s for s in features.index if not report.passed.loc[s]}
+
+
 def test_combine_empty_filters(features: pd.DataFrame) -> None:
     report = combine(features, [])
     assert report.passed.all()
+    assert report.reasons == {}

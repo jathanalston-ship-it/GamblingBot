@@ -11,6 +11,7 @@ from momentum.api import services
 from momentum.api.dependencies import get_session
 from momentum.api.schemas import ScanResultOut
 from momentum.persistence.repositories.scan_metadata import ScanMetadataRepository
+from momentum.persistence.repositories.scan_rejections import ScanRejectionRepository
 
 router = APIRouter(prefix="/universe", tags=["universe"])
 
@@ -33,3 +34,19 @@ def get_scan_metadata(session: Session = Depends(get_session)) -> dict[str, Any]
     """
     row = ScanMetadataRepository(session).latest()
     return row.to_dict() if row is not None else None
+
+
+@router.get("/rejections")
+def get_rejections(
+    run_id: str | None = None,
+    session: Session = Depends(get_session),
+) -> list[dict[str, Any]]:
+    """Why each scanned symbol failed the gate, for the active (or given) scan run.
+
+    Explains the scanned→passed drop that ``scan_results`` (passed-only) hides.
+    Empty when no scan has run.
+    """
+    active = run_id or services.resolve_active_run_id(session)
+    if active is None:
+        return []
+    return [r.to_dict() for r in ScanRejectionRepository(session).for_run(active)]

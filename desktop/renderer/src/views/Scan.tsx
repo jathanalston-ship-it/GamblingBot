@@ -7,7 +7,7 @@ import { ActionButton } from "../components/ActionButton";
 import { Badge } from "../components/Badge";
 import { Inspector } from "../components/Inspector";
 import { useApi } from "../hooks/useApi";
-import { num, pct } from "../lib/format";
+import { fmtAge, fmtTime, num, pct } from "../lib/format";
 import { useWorkspace } from "../state/workspace";
 
 type SortKey = "rank" | "momentum_score" | "relative_volume" | "distance_from_ath";
@@ -241,19 +241,6 @@ export default function Scan({ shortlist = false }: { shortlist?: boolean }) {
       <Inspector symbol={symbol} />
     </div>
   );
-}
-
-function fmtAge(minutes: number | null): string {
-  if (minutes == null) return "unknown";
-  if (minutes < 60) return `${Math.round(minutes)}m`;
-  if (minutes < 60 * 24) return `${(minutes / 60).toFixed(1)}h`;
-  return `${(minutes / (60 * 24)).toFixed(1)}d`;
-}
-
-function fmtTime(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleTimeString();
 }
 
 function Stat({ label, value }: { label: string; value: string }) {

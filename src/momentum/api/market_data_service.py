@@ -27,15 +27,20 @@ def record_fetch(
     duration_ms: float,
     cache_hit: bool = False,
     run_id: str | None = None,
+    error: str | None = None,
 ) -> MarketDataProvenance:
     """Add one provenance row for a single symbol fetch (caller commits).
 
     ``cache_hit`` is explicit — the research/scan/verify paths pass ``False`` (LIVE),
-    so there is never hidden cache usage in what the UI shows.
+    so there is never hidden cache usage in what the UI shows. ``error`` records why
+    a fetch returned no bars (None on success); defaults to a no-rows reason when an
+    empty frame is recorded without an explicit reason.
     """
     newest = pd.Timestamp(frame.index[-1]) if frame is not None and not frame.empty else None
     if newest is not None and newest.tzinfo is None:
         newest = newest.tz_localize("UTC")
+    if error is None and (frame is None or frame.empty):
+        error = "provider returned no rows"
     row = MarketDataProvenance(
         symbol=symbol.upper(),
         provider=provider,
@@ -45,6 +50,7 @@ def record_fetch(
         request_duration_ms=duration_ms,
         cache_hit=cache_hit,
         run_id=run_id,
+        error=error,
     )
     session.add(row)
     return row

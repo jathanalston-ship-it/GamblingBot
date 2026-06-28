@@ -31,8 +31,8 @@ from momentum.universe.screener import MomentumScanner
 _log = get_logger("session")
 
 # A provenance recorder is called once per symbol fetch:
-# (symbol, frame_or_None, request_started_utc, duration_ms).
-FetchRecorder = Callable[[str, "pd.DataFrame | None", dt.datetime, float], None]
+# (symbol, frame_or_None, request_started_utc, duration_ms, error_or_None).
+FetchRecorder = Callable[[str, "pd.DataFrame | None", dt.datetime, float, "str | None"], None]
 
 
 def pull_bars(
@@ -47,8 +47,9 @@ def pull_bars(
     """Fetch bars for each symbol; skip those that error or return nothing.
 
     If ``recorder`` is given it is called once per fetch with the symbol, the
-    returned frame (or None on error/empty), the request-start time and the
-    elapsed milliseconds — used for market-data provenance logging.
+    returned frame (or None on error/empty), the request-start time, the elapsed
+    milliseconds and a failure reason (None on success) — used for market-data
+    provenance logging, so a fetch that returned no bars records *why*.
     """
     end_ts = to_utc_timestamp(end)
     start_ts = end_ts - pd.Timedelta(days=lookback_days)
@@ -57,14 +58,18 @@ def pull_bars(
         started = dt.datetime.now(tz=dt.UTC)
         perf = time.perf_counter()
         frame: pd.DataFrame | None
+        error: str | None = None
         try:
             frame = provider.get_bars(symbol, start_ts, end_ts, timeframe)
+            if frame is not None and frame.empty:
+                error = "provider returned no rows"
         except Exception as exc:  # noqa: BLE001 - one bad symbol must not abort the run
             _log.warning("skipping %s: %s", symbol, exc)
             frame = None
+            error = f"{type(exc).__name__}: {exc}"[:256]
         duration_ms = round((time.perf_counter() - perf) * 1000.0, 1)
         if recorder is not None:
-            recorder(symbol, frame, started, duration_ms)
+            recorder(symbol, frame, started, duration_ms, error)
         if frame is not None and not frame.empty:
             bars[symbol] = frame
     _log.info("pulled bars for %d/%d symbols", len(bars), len(symbols))

@@ -4,6 +4,7 @@ import { ProvenancePanel } from "../components/ProvenancePanel";
 
 import type { ConvictionScore } from "../api/types";
 import { ContributionBar } from "../components/ContributionBar";
+import { StaleBanner } from "../components/StaleBanner";
 import { Sparkline } from "../components/charts/Sparkline";
 import { useApi } from "../hooks/useApi";
 import { num, signed } from "../lib/format";
@@ -57,7 +58,13 @@ function Body({ symbol, runId }: { symbol: string; runId: string | null }) {
 
   if (loading) return <Msg>Loading…</Msg>;
   if (error) return <Msg className="text-bear">Failed: {error}</Msg>;
-  if (!c) return <Msg>No conviction score recorded for {symbol}.</Msg>;
+  if (!c)
+    return (
+      <div className="p-4">
+        <StaleBanner />
+        <Msg>No conviction score recorded for {symbol}.</Msg>
+      </div>
+    );
 
   const comps = [...(c.breakdown?.components ?? [])].sort((a, b) => b.contribution - a.contribution);
   const maxC = Math.max(1, ...comps.map((x) => x.contribution));
@@ -68,6 +75,7 @@ function Body({ symbol, runId }: { symbol: string; runId: string | null }) {
 
   return (
     <div className="p-4">
+      <StaleBanner />
       <ProvenancePanel screen="conviction" />
       <div className="mb-3 flex items-baseline gap-3">
         <h1 className="text-lg font-semibold text-slate-100">Conviction · {symbol}</h1>

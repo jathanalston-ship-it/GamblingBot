@@ -16,7 +16,7 @@ router = APIRouter(prefix="/conviction", tags=["conviction"])
 def get_conviction(
     symbol: str | None = None,
     run_id: str | None = None,
-    limit: int = Query(100, ge=1, le=2000),
+    limit: int = Query(2000, ge=1, le=2000),
     session: Session = Depends(get_session),
 ) -> list[ConvictionScoreOut]:
     return services.list_conviction(session, symbol=symbol, run_id=run_id, limit=limit)

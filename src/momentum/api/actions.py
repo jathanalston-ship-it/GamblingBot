@@ -26,6 +26,7 @@ from momentum.conviction.engine import ConvictionEngine
 from momentum.conviction.inputs import ConvictionInputs
 from momentum.core.enums import RegimeState
 from momentum.data.cache import BarCache
+from momentum.data.calendar import TradingCalendar
 from momentum.data.providers.base import MarketDataProvider
 from momentum.data.schema import Timeframe, to_utc_timestamp
 from momentum.demo import seed_all
@@ -39,10 +40,12 @@ from momentum.persistence.models.market_data_provenance import MarketDataProvena
 from momentum.persistence.models.market_regime import MarketRegime
 from momentum.persistence.models.optimization_result import OptimizationResult
 from momentum.persistence.models.scan_metadata import ScanMetadata
+from momentum.persistence.models.scan_rejection import ScanRejection
 from momentum.persistence.repositories.audit_log import AuditLogRepository
 from momentum.persistence.repositories.optimization_results import OptimizationResultRepository
 from momentum.persistence.repositories.runs import RunRepository
 from momentum.persistence.repositories.scan_metadata import ScanMetadataRepository
+from momentum.persistence.repositories.scan_rejections import ScanRejectionRepository
 from momentum.persistence.repositories.scans import ScanResultRepository
 from momentum.persistence.repositories.trades import TradeRepository
 from momentum.risk.risk_manager import RiskManager
@@ -99,10 +102,14 @@ def refresh_data(
         progress(i / total, f"fetching {symbol}")
         started = dt.datetime.now(tz=dt.UTC)
         perf = time.perf_counter()
+        error: str | None = None
         try:
             frame = provider.get_bars(symbol, start, end, Timeframe.DAY)
-        except Exception:  # noqa: BLE001 - one bad symbol must not abort the refresh
+            if frame is not None and frame.empty:
+                error = "provider returned no rows"
+        except Exception as exc:  # noqa: BLE001 - one bad symbol must not abort the refresh
             frame = None
+            error = f"{type(exc).__name__}: {exc}"[:256]
         duration_ms = round((time.perf_counter() - perf) * 1000.0, 1)
         newest = pd.Timestamp(frame.index[-1]) if frame is not None and not frame.empty else None
         if newest is not None and newest.tzinfo is None:
@@ -116,6 +123,7 @@ def refresh_data(
                 "bar_count": int(len(frame)) if frame is not None else 0,
                 "request_duration_ms": duration_ms,
                 "cache_hit": False,  # a refresh always pulls LIVE (then writes cache)
+                "error": error,
             }
         )
         if frame is not None and not frame.empty:
@@ -132,10 +140,20 @@ def refresh_data(
 # --------------------------------------------------------------------------- #
 # Run Scan — the complete live research pipeline
 # --------------------------------------------------------------------------- #
-# A scan whose newest bar is older than this is "stale" and won't generate
-# conviction. The default tolerates weekends/holidays for daily bars; override
-# with MRP_STALE_AFTER_MINUTES (the desktop/intraday use a smaller value).
+# Freshness for daily bars is measured in **trading sessions**, not wall-clock
+# time: a Friday bar read on Monday is 0 sessions behind and therefore fresh.
+# A scan is stale (and won't generate conviction) only when the newest bar is
+# more than this many completed sessions behind the latest session as of the
+# pull. The default tolerates a long holiday weekend + a pre-close run; override
+# with MRP_MAX_STALE_SESSIONS. Intraday callers can opt into a wall-clock-minutes
+# rule via MRP_STALE_AFTER_MINUTES / the ``stale_after_minutes`` arg (see below).
+DEFAULT_MAX_STALE_SESSIONS = 2
+
+# Legacy/intraday wall-clock fallback (only used when explicitly requested).
 DEFAULT_STALE_AFTER_MINUTES = 4 * 24 * 60  # 4 days
+
+# A shared trading calendar for session-based freshness (NYSE sessions).
+_CALENDAR = TradingCalendar()
 
 # Cap the symbols fully scanned (keeps 5000+ universes responsive). 0/None = no cap.
 DEFAULT_MAX_SCAN_SYMBOLS = 2000
@@ -154,7 +172,14 @@ def _max_scan_symbols(override: int | None) -> int | None:
     return DEFAULT_MAX_SCAN_SYMBOLS
 
 
-def _stale_threshold(override: float | None) -> float:
+def _explicit_minute_threshold(override: float | None) -> float | None:
+    """The wall-clock-minutes staleness threshold IF one was explicitly requested.
+
+    Returns ``None`` when no explicit minute threshold is set — the caller then
+    falls back to the default trading-session freshness rule. An explicit value
+    (``stale_after_minutes`` arg or the ``MRP_STALE_AFTER_MINUTES`` env var) opts
+    into the legacy intraday wall-clock rule.
+    """
     if override is not None:
         return override
     raw = os.environ.get("MRP_STALE_AFTER_MINUTES")
@@ -163,7 +188,66 @@ def _stale_threshold(override: float | None) -> float:
             return float(raw)
         except ValueError:
             pass
-    return float(DEFAULT_STALE_AFTER_MINUTES)
+    return None
+
+
+def _max_stale_sessions(override: int | None) -> int:
+    if override is not None:
+        return override
+    raw = os.environ.get("MRP_MAX_STALE_SESSIONS")
+    if raw:
+        try:
+            return int(raw)
+        except ValueError:
+            pass
+    return DEFAULT_MAX_STALE_SESSIONS
+
+
+def _sessions_behind(bar_timestamp: dt.datetime, pull_timestamp: dt.datetime) -> int:
+    """How many completed trading sessions the newest bar lags the pull time.
+
+    0 means the newest bar is the latest session on/before the pull (fresh — e.g.
+    a Friday bar pulled on Saturday/Monday, or yesterday's bar pulled today before
+    the close). Weekends and exchange holidays are skipped via the trading calendar.
+    """
+    bar_date = bar_timestamp.date()
+    ref = _CALENDAR.previous_session(pull_timestamp.date(), inclusive=True).date()
+    if bar_date >= ref:
+        return 0
+    return max(0, _CALENDAR.count_sessions(bar_date, ref) - 1)
+
+
+def _evaluate_staleness(
+    bar_timestamp: dt.datetime | None,
+    pull_timestamp: dt.datetime,
+    *,
+    stale_after_minutes: float | None = None,
+    max_stale_sessions: int | None = None,
+) -> tuple[float | None, bool, str]:
+    """Decide freshness; return ``(data_age_minutes, stale, reason)``.
+
+    ``data_age_minutes`` (wall-clock) is always reported for display. The stale
+    decision is **trading-session based by default** (so weekend/holiday-old daily
+    bars are still fresh); an explicit minute threshold switches to the legacy
+    wall-clock rule for intraday use.
+    """
+    if bar_timestamp is None:
+        return None, True, "no market data returned — cannot verify freshness"
+    data_age_minutes = round((pull_timestamp - bar_timestamp).total_seconds() / 60.0, 1)
+
+    minute_threshold = _explicit_minute_threshold(stale_after_minutes)
+    if minute_threshold is not None:
+        stale = data_age_minutes > minute_threshold
+        verb = "exceeds" if stale else "within"
+        reason = f"data age {data_age_minutes:.0f} min {verb} {minute_threshold:.0f} min threshold"
+        return data_age_minutes, stale, reason
+
+    behind = _sessions_behind(bar_timestamp, pull_timestamp)
+    limit = _max_stale_sessions(max_stale_sessions)
+    stale = behind > limit
+    verb = "exceeds" if stale else "within"
+    reason = f"newest bar is {behind} trading session(s) behind — {verb} the {limit}-session limit"
+    return data_age_minutes, stale, reason
 
 
 def _newest_bar_timestamp(bars: Mapping[str, pd.DataFrame]) -> dt.datetime | None:
@@ -252,7 +336,11 @@ def run_scan(
     fetch_log: list[dict[str, Any]] = []
 
     def _record(
-        symbol: str, frame: pd.DataFrame | None, started: dt.datetime, duration_ms: float
+        symbol: str,
+        frame: pd.DataFrame | None,
+        started: dt.datetime,
+        duration_ms: float,
+        error: str | None = None,
     ) -> None:
         newest = pd.Timestamp(frame.index[-1]) if frame is not None and not frame.empty else None
         if newest is not None and newest.tzinfo is None:
@@ -266,6 +354,7 @@ def run_scan(
                 "bar_count": int(len(frame)) if frame is not None else 0,
                 "request_duration_ms": duration_ms,
                 "cache_hit": False,
+                "error": error,
             }
         )
 
@@ -294,16 +383,16 @@ def run_scan(
     if kept and len(kept) < pulled_count:
         bars = {symbol: bars[symbol] for symbol in kept}
 
-    # 1b. Verify freshness: newest bar timestamp vs the pull time.
+    # 1b. Verify freshness: newest bar vs the pull time, measured in trading
+    #     sessions by default (weekend/holiday-old daily bars are still fresh).
     pull_timestamp = dt.datetime.now(tz=dt.UTC)
     bar_timestamp = _newest_bar_timestamp(bars)
-    threshold = _stale_threshold(stale_after_minutes)
-    if bar_timestamp is None:
-        data_age_minutes: float | None = None
-        stale = True  # cannot prove freshness
-    else:
-        data_age_minutes = round((pull_timestamp - bar_timestamp).total_seconds() / 60.0, 1)
-        stale = data_age_minutes > threshold
+    data_age_minutes, stale, stale_reason = _evaluate_staleness(
+        bar_timestamp, pull_timestamp, stale_after_minutes=stale_after_minutes
+    )
+    sessions_behind = (
+        _sessions_behind(bar_timestamp, pull_timestamp) if bar_timestamp is not None else None
+    )
 
     # 2. Scan + rank the universe (stable ``run_id`` keyed on the data date).
     progress(0.5, "scanning the universe")
@@ -356,6 +445,14 @@ def run_scan(
 
         scan_rows = ScanResultRepository(session).save_records(scan.to_records(run_id=run_id))
 
+        # Persist *why* each scanned-but-rejected symbol failed the gate (the
+        # scanned→passed drop is otherwise invisible — scan_results is passed-only).
+        rejection_rows = [
+            ScanRejection(run_id=run_id, symbol=str(sym), as_of=as_of, reason=reason)
+            for sym, reason in scan.filter_report.reasons.items()
+        ]
+        ScanRejectionRepository(session).replace_for(run_id, rejection_rows)
+
         # A stale re-run must also clear any prior conviction for this run.
         session.execute(delete(ConvictionScore).where(ConvictionScore.run_id == run_id))
         session.add_all(conviction_rows)
@@ -389,6 +486,7 @@ def run_scan(
         session.commit()
         scan_persisted = len(scan_rows)
         conviction_persisted = len(conviction_rows)
+        rejections_persisted = len(rejection_rows)
 
     # 10. Derive the remaining per-candidate artifacts (trade plans + analog
     #     cohorts) and the watchlists from the just-persisted live conviction, all
@@ -411,7 +509,7 @@ def run_scan(
             ws = watchlist_service.generate_watchlists(session, run_id=run_id, as_of=as_of)
             watchlists_generated = sum(len(h.entries) for h in ws.horizons)
 
-    progress(1.0, "stale data — conviction skipped" if stale else "done")
+    progress(1.0, f"stale ({stale_reason}) — conviction skipped" if stale else "done")
     return {
         "run_id": run_id,
         "as_of": scan.as_of.date().isoformat(),
@@ -429,9 +527,12 @@ def run_scan(
         "pull_timestamp": pull_timestamp.isoformat(),
         "data_age_minutes": data_age_minutes,
         "stale": stale,
+        "stale_reason": stale_reason,
+        "sessions_behind": sessions_behind,
         "regime": regime.state.value,
         "breadth": round(breadth, 4) if breadth is not None else None,
         "scan_results_persisted": scan_persisted,
+        "scan_rejections_persisted": rejections_persisted,
         "conviction_scores_persisted": conviction_persisted,
         "regime_persisted": True,
         "watchlists_generated": watchlists_generated,

@@ -32,6 +32,9 @@ class MarketDataProvenance(IntPKMixin, TimestampMixin, Base):
     request_duration_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
     cache_hit: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     run_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # Failure reason for a fetch that returned no bars (exception text or
+    # "provider returned no rows" for an empty response); NULL on success.
+    error: Mapped[str | None] = mapped_column(String(256), nullable=True)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -44,4 +47,5 @@ class MarketDataProvenance(IntPKMixin, TimestampMixin, Base):
             "cache_hit": self.cache_hit,
             "source": "CACHE" if self.cache_hit else "LIVE",
             "run_id": self.run_id,
+            "error": self.error,
         }

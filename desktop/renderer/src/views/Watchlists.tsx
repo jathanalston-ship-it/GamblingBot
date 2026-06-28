@@ -7,6 +7,7 @@ import { ActionButton } from "../components/ActionButton";
 import { Badge, type Tone } from "../components/Badge";
 import { Card } from "../components/Card";
 import { ErrorBox, Loading, PageTitle } from "../components/Page";
+import { StaleBanner } from "../components/StaleBanner";
 import { useApi } from "../hooks/useApi";
 import { num, pct, signed } from "../lib/format";
 import { useWorkspace } from "../state/workspace";
@@ -42,6 +43,7 @@ export default function Watchlists() {
 
   return (
     <div className="p-5">
+      <StaleBanner />
       <ProvenancePanel screen="watchlists" />
       <PageTitle
         title="Watchlists"

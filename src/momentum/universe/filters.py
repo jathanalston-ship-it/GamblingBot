@@ -13,7 +13,7 @@ them trivially unit-testable and reorderable.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 import pandas as pd
@@ -108,11 +108,17 @@ class MinSectorRelativeStrength:
 
 @dataclass
 class FilterReport:
-    """Per-filter elimination counts plus the final combined mask."""
+    """Per-filter elimination counts plus the final combined mask.
+
+    ``reasons`` maps each *rejected* symbol to the name of the **first** filter that
+    eliminated it (passing symbols are absent), so a scan can persist *why* each
+    candidate dropped — not just an aggregate count.
+    """
 
     passed: pd.Series
     eliminated: dict[str, int]
     n_in: int
+    reasons: dict[str, str] = field(default_factory=dict)
 
     @property
     def n_out(self) -> int:
@@ -122,14 +128,19 @@ class FilterReport:
 def combine(features: pd.DataFrame, filters: Sequence[Filter]) -> FilterReport:
     """AND a sequence of filters, recording how many each one removes.
 
-    Filters are applied in order against the *surviving* mask, so ``eliminated``
-    attributes each drop to the first filter that rejects it.
+    Filters are applied in order against the *surviving* mask, so both ``eliminated``
+    (counts) and ``reasons`` (per-symbol) attribute each drop to the first filter
+    that rejects it.
     """
     mask = pd.Series(True, index=features.index)
     eliminated: dict[str, int] = {}
+    reasons: dict[str, str] = {}
     for filt in filters:
         before = int(mask.sum())
         result = filt(features).reindex(features.index).fillna(False).astype(bool)
+        newly_failed = mask & ~result  # passing until now, rejected by this filter
+        for symbol in features.index[newly_failed]:
+            reasons[str(symbol)] = filt.name
         mask &= result
         eliminated[filt.name] = before - int(mask.sum())
-    return FilterReport(passed=mask, eliminated=eliminated, n_in=len(features))
+    return FilterReport(passed=mask, eliminated=eliminated, n_in=len(features), reasons=reasons)
