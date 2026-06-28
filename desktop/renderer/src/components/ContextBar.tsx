@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
 import type { PortfolioSnapshot, Regime, Run } from "../api/types";
@@ -17,9 +16,10 @@ export function ContextBar({ onOpenPalette }: { onOpenPalette: () => void }) {
   const regime = useApi<Regime>("/regimes/latest");
   const snaps = useApi<PortfolioSnapshot[]>("/portfolio/snapshots?limit=400");
 
-  useEffect(() => {
-    if (!runId && runs.data && runs.data.length > 0) setRunId(runs.data[0].run_id);
-  }, [runId, runs.data, setRunId]);
+  // NB: do NOT auto-pin runId here. Leaving it null lets every read resolve to the
+  // latest *live scan* run on the backend (resolve_active_run_id) — auto-pinning to
+  // an arbitrary run (e.g. demo or a paper session) silently emptied or demo-fied
+  // the research screens. The dropdown below remains an explicit opt-in override.
 
   const adx = regime.data ? regime.data["adx"] : null;
   const rv = regime.data ? regime.data["realized_vol"] : null;
@@ -39,7 +39,7 @@ export function ContextBar({ onOpenPalette }: { onOpenPalette: () => void }) {
           onChange={(e) => setRunId(e.target.value || null)}
           className="rounded border border-surface-border bg-surface px-2 py-1 text-slate-200"
         >
-          {(runs.data ?? []).length === 0 ? <option value="">—</option> : null}
+          <option value="">latest (auto)</option>
           {(runs.data ?? []).map((r) => (
             <option key={r.run_id} value={r.run_id}>
               {r.run_id}

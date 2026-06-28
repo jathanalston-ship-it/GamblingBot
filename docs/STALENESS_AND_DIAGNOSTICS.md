@@ -52,9 +52,28 @@ Previously neither failure reason was recoverable from the DB.
 candidates. The default is now `2000` (the max). Latent today (the Conviction view
 queries per-symbol), but correct for any bulk consumer.
 
+## 4. Run-selector pinned the wrong run (the other "empty/demo screens" cause)
+
+**Problem.** `GET /runs` (`services.list_runs`) returned the run_ids **sorted
+alphabetically**, and the desktop `ContextBar` auto-pinned the workspace `runId`
+to `runs[0]` on load. Because every read does `run_id or resolve_active_run_id(...)`,
+an explicit `runId` **bypasses** the latest-live-scan resolution — so the app pinned
+an arbitrary run (often `demo`, or a paper/backtest run with no scan_results /
+conviction / watchlist rows) and **every research screen went empty or showed demo
+data**, independent of staleness.
+
+**Fix.**
+- `list_runs` now orders **newest-first** by the run's `started_at` (registry
+  `runs` table), run_ids without a registry row last. (Sort uses a naive-UTC floor
+  so SQLite's naive read-back can't trip a None/aware comparison.)
+- `ContextBar` **no longer auto-pins** `runId` — it stays `null`, so reads resolve to
+  the latest live scan; the run dropdown is an explicit opt-in override and shows
+  **"latest (auto)"** for the default.
+
 ## Tests
 
 `tests/unit/api/test_staleness.py` (session math, weekend/holiday skip, minute
 override), `tests/unit/api/test_scan_rejections.py` (rejection persistence + reason,
-fetch-error reason, endpoint, idempotent re-run), and an extended
-`tests/unit/universe/test_filters.py` (per-symbol `reasons`).
+fetch-error reason, endpoint, idempotent re-run), an extended
+`tests/unit/universe/test_filters.py` (per-symbol `reasons`), and
+`tests/unit/api/test_run_ordering.py` (run selector is newest-first, not alphabetical).

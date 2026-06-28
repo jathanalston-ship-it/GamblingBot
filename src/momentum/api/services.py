@@ -7,6 +7,7 @@ nothing here mutates state.
 
 from __future__ import annotations
 
+import datetime as dt
 import math
 from dataclasses import asdict
 from pathlib import Path
@@ -303,11 +304,32 @@ def _config_dir() -> Path:
 # Research workflow: runs, conviction, opportunity, analogs, candidate aggregate
 # --------------------------------------------------------------------------- #
 def list_runs(session: Session) -> list[RunOut]:
-    """Distinct research runs seen across scans and trades (run selector)."""
+    """Distinct research runs seen across scans and trades (run selector).
+
+    Ordered **newest-first** by the run's ``started_at`` (from the ``runs``
+    registry), with run_ids lacking a registry row sorted last by id descending.
+    Recency order matters: the UI's run selector must not present an arbitrary
+    (alphabetical) run as "first".
+    """
     run_ids: set[str] = set()
     for col in (ScanResult.run_id, Trade.run_id):
         run_ids.update(r for (r,) in session.execute(select(col).distinct()) if r)
-    return [RunOut(run_id=r) for r in sorted(run_ids)]
+    started: dict[str, dt.datetime] = {
+        rid: ts
+        for rid, ts in session.execute(select(Run.run_id, Run.started_at))
+        if rid in run_ids and ts is not None
+    }
+    # Sort on a naive-UTC floor so a missing/naive timestamp never trips a
+    # None or aware-vs-naive comparison (SQLite reads these columns back naive).
+    floor = dt.datetime.min
+
+    def _key(rid: str) -> tuple[dt.datetime, str]:
+        ts = started.get(rid)
+        naive = (ts.replace(tzinfo=None) if ts.tzinfo else ts) if ts is not None else floor
+        return (naive, rid)
+
+    ordered = sorted(run_ids, key=_key, reverse=True)
+    return [RunOut(run_id=r) for r in ordered]
 
 
 def list_recent_runs(
