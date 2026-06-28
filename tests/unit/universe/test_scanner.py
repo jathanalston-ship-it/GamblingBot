@@ -29,6 +29,24 @@ def sectors() -> dict[str, str]:
     return {"AAA": "Tech", "BBB": "Tech", "CCC": "Energy", "DDD": "Tech", "EEE": "Health"}
 
 
+def test_malformed_frame_is_skipped_not_fatal(scanner, universe, sectors) -> None:
+    """One bad frame must not abort the whole scan (provider-error isolation)."""
+    bad = pd.DataFrame(
+        {
+            "close": ["x", "y", "z"],
+            "high": [1.0, 2.0, 3.0],
+            "low": [1.0, 2.0, 3.0],
+            "volume": [1, 2, 3],
+        },
+        index=pd.date_range("2024-01-01", periods=3, tz="UTC"),
+    )
+    res = scanner.scan({**universe, "BAD": bad}, sectors={**sectors, "BAD": "Tech"})
+    # The malformed symbol is skipped; the good universe still scans + ranks.
+    assert "BAD" not in res.features.index
+    assert len(res.candidates) >= 1
+    assert "AAA" in {c.symbol for c in res.candidates}
+
+
 def test_scan_ranks_strongest_first(scanner, universe, sectors) -> None:
     res = scanner.scan(universe, sectors=sectors)
     assert len(res) >= 1

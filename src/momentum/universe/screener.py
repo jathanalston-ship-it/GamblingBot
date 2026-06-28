@@ -29,6 +29,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from momentum.core.logging import get_logger
 from momentum.signals.indicators import (
     all_time_high,
     atr,
@@ -57,6 +58,8 @@ from momentum.universe.filters import (
     combine,
 )
 from momentum.universe.scanner_config import ScannerConfig
+
+_log = get_logger("scanner")
 
 # Score component column -> ScoreWeights field it is weighted by.
 _COMPONENT_WEIGHTS = {
@@ -204,7 +207,11 @@ class MomentumScanner:
         rows: dict[str, dict[str, Any]] = {}
         last_seen: list[pd.Timestamp] = []
         for symbol, frame in bars.items():
-            row = self._symbol_features(frame, as_of_ts)
+            try:
+                row = self._symbol_features(frame, as_of_ts)
+            except Exception as exc:  # noqa: BLE001 - one bad frame must not abort the scan
+                _log.warning("skipping %s: malformed bars (%s)", symbol, exc)
+                continue
             if row is None:
                 continue
             last_seen.append(row.pop("_last_ts"))
