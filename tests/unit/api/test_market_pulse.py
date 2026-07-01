@@ -5,6 +5,7 @@ and the daemon cycle skips the pipeline entirely when nothing changed."""
 from __future__ import annotations
 
 import datetime as dt
+import zlib
 from types import SimpleNamespace
 from typing import Any
 
@@ -70,7 +71,9 @@ class StubProvider:
 
     def get_bars(self, symbol: str, *a: object, **k: object) -> pd.DataFrame:
         newest = pd.Timestamp(dt.date.today(), tz="UTC")
-        return _bars(abs(hash(symbol)) % 9999, newest, bump=self.bump)
+        # crc32, not hash(): Python string hashing is salted per process, which
+        # would make the generated price paths differ between CI runs.
+        return _bars(zlib.crc32(symbol.encode()) % 9999, newest, bump=self.bump)
 
 
 def _scan(factory: sessionmaker[Session], provider: StubProvider) -> dict[str, Any]:
@@ -147,11 +150,15 @@ def test_identical_rescan_emits_nothing_new(factory: sessionmaker[Session]) -> N
 
 def test_alerts_never_duplicate(factory: sessionmaker[Session]) -> None:
     provider = StubProvider()
-    _scan(factory, provider)
+    first = _scan(factory, provider)
+    # the first scan may legitimately alert from its own snapshot (stop/target)
+    assert _count(factory, Alert) == first["alerts_generated"]
+
     provider.bump = 0.15
     second = _scan(factory, provider)
     alerts_after_change = _count(factory, Alert)
-    assert alerts_after_change == second["alerts_generated"]
+    assert alerts_after_change == first["alerts_generated"] + second["alerts_generated"]
+    assert second["alerts_generated"] > 0  # a 15% jump must alert on something
 
     third = _scan(factory, provider)  # same data again — same transitions, no new alerts
     assert third["alerts_generated"] == 0
