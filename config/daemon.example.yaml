@@ -1,0 +1,25 @@
+# Market-daemon scheduling + resilience. Copy to daemon.yaml to override.
+#
+# The daemon runs automatically while the application is open (the desktop
+# shell sets MRP_DAEMON_AUTOSTART=1). It scans every scan_interval during
+# premarket (04:00-09:30 ET), regular hours (09:30-16:00 ET) and after hours
+# (16:00-20:00 ET); outside those windows it only wakes every closed_interval
+# to re-check the market state — it never scans while closed.
+model_version: v1
+
+enabled: true
+scan_interval_seconds: 60.0
+closed_interval_seconds: 900.0 # 15 minutes
+
+# Error recovery: capped exponential backoff on consecutive failures.
+backoff_base_seconds: 30.0
+backoff_max_seconds: 900.0
+
+# Incremental reanalysis: bars pulled within this window are reused from the
+# in-memory cycle cache (a cache hit — no API call). 0 disables reuse.
+bar_reuse_seconds: 45.0
+# A close move larger than this fraction always counts as "changed".
+price_change_threshold: 0.0005
+
+# Recent daemon events kept in memory for /daemon/events.
+event_buffer: 200

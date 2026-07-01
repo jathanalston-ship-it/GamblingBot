@@ -862,3 +862,96 @@ export interface ManagementAnalytics {
   avg_stop_lowers: number | null;
   avg_health_before_exit: number | null;
 }
+
+/* ------------------------------------------------------------------ */
+/* Market daemon + pulse (timeline, deltas, alerts, activity, stats)   */
+/* ------------------------------------------------------------------ */
+
+export interface DaemonStatus {
+  running: boolean;
+  paused: boolean;
+  scanning_now: boolean;
+  market_state: string;
+  scan_interval_seconds: number;
+  closed_interval_seconds: number;
+  cycles: number;
+  failures: number;
+  consecutive_failures: number;
+  last_scan_at: string | null;
+  last_error: string | null;
+  next_wake_at: string | null;
+  seconds_to_next_wake: number | null;
+  version: number;
+  last_result: Record<string, unknown> | null;
+  cached_symbols: number;
+}
+
+export interface ScanSnapshotHeader {
+  id: number;
+  scan_ts: string | null;
+  run_id: string | null;
+  market_state: string | null;
+  candidates: number;
+}
+
+export interface ScanSnapshotDetail extends ScanSnapshotHeader {
+  payload: Record<string, unknown>;
+}
+
+export interface ScanDelta {
+  scan_ts: string | null;
+  run_id: string | null;
+  prev_scan_ts: string | null;
+  symbol: string | null;
+  metric: string;
+  previous_value: number | null;
+  new_value: number | null;
+  previous_text: string | null;
+  new_text: string | null;
+  delta: number | null;
+  direction: string;
+  reason: string;
+}
+
+export interface LiveAlert {
+  id: number;
+  ts: string | null;
+  run_id: string | null;
+  symbol: string | null;
+  severity: string;
+  kind: string;
+  title: string;
+  description: string;
+}
+
+export interface ActivityEntry {
+  id: number;
+  ts: string | null;
+  run_id: string | null;
+  symbol: string | null;
+  category: string;
+  text: string;
+  payload: Record<string, unknown> | null;
+}
+
+export interface ScanStatRow {
+  id: number;
+  scan_ts: string | null;
+  run_id: string | null;
+  duration_ms: number;
+  symbols_processed: number;
+  symbols_failed: number;
+  provider_latency_ms: number | null;
+  db_writes: number;
+  convictions_generated: number;
+  watchlists_generated: number;
+  alerts_generated: number;
+  deltas_generated: number;
+  activities_generated: number;
+  symbols_skipped: number | null;
+  symbols_recomputed: number | null;
+  cache_hit_rate: number | null;
+  memory_mb: number | null;
+  cpu_percent: number | null;
+  degraded: boolean;
+}

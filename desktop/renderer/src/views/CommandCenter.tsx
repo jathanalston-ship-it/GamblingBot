@@ -4,6 +4,7 @@ import type { CommandCenter as CC, WatchlistEntry } from "../api/types";
 import { Badge, regimeTone } from "../components/Badge";
 import { Card } from "../components/Card";
 import { Freshness } from "../components/Freshness";
+import { LivePulse } from "../components/LivePulse";
 import { ErrorBox, Loading, PageTitle } from "../components/Page";
 import { Stat } from "../components/Stat";
 import { useApi } from "../hooks/useApi";
@@ -42,6 +43,9 @@ export default function CommandCenter() {
           <Freshness updatedAt={updatedAt} />
         </div>
       </PageTitle>
+
+      {/* live pulse: daemon, movers, alerts, activity, performance */}
+      <LivePulse />
 
       {/* top stats */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">

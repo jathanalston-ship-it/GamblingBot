@@ -1062,3 +1062,116 @@ class ManagementAnalyticsOut(BaseModel):
     avg_stop_raises: float | None
     avg_stop_lowers: float | None
     avg_health_before_exit: float | None
+
+
+class DaemonStatusOut(BaseModel):
+    """Live status of the continuous market daemon."""
+
+    running: bool
+    paused: bool
+    scanning_now: bool
+    market_state: str
+    scan_interval_seconds: float
+    closed_interval_seconds: float
+    cycles: int
+    failures: int
+    consecutive_failures: int
+    last_scan_at: str | None
+    last_error: str | None
+    next_wake_at: str | None
+    seconds_to_next_wake: float | None
+    version: int
+    last_result: dict[str, Any] | None
+    cached_symbols: int
+
+
+class DaemonEventOut(BaseModel):
+    """One published daemon event (scan complete / error / control)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    ts: str
+    kind: str
+    message: str
+
+
+class ScanSnapshotOut(BaseModel):
+    """One immutable scan snapshot (header)."""
+
+    id: int
+    scan_ts: str | None
+    run_id: str | None
+    market_state: str | None
+    candidates: int
+
+
+class ScanSnapshotDetailOut(ScanSnapshotOut):
+    """A snapshot with its full frozen payload (replay)."""
+
+    payload: dict[str, Any]
+
+
+class ScanDeltaOut(BaseModel):
+    """One changed metric between two scans (UPGRADE / DOWNGRADE)."""
+
+    scan_ts: str | None = None
+    run_id: str | None = None
+    prev_scan_ts: str | None = None
+    symbol: str | None
+    metric: str
+    previous_value: float | None
+    new_value: float | None
+    previous_text: str | None
+    new_text: str | None
+    delta: float | None
+    direction: str
+    reason: str
+
+
+class AlertOut(BaseModel):
+    """One live alert (deduplicated at write time)."""
+
+    id: int
+    ts: str | None
+    run_id: str | None
+    symbol: str | None
+    severity: str
+    kind: str
+    title: str
+    description: str
+
+
+class ActivityOut(BaseModel):
+    """One market-activity feed entry."""
+
+    id: int
+    ts: str | None
+    run_id: str | None
+    symbol: str | None
+    category: str
+    text: str
+    payload: dict[str, Any] | None
+
+
+class ScanStatOut(BaseModel):
+    """One scan's performance record."""
+
+    id: int
+    scan_ts: str | None
+    run_id: str | None
+    duration_ms: float
+    symbols_processed: int
+    symbols_failed: int
+    provider_latency_ms: float | None
+    db_writes: int
+    convictions_generated: int
+    watchlists_generated: int
+    alerts_generated: int
+    deltas_generated: int
+    activities_generated: int
+    symbols_skipped: int | None
+    symbols_recomputed: int | None
+    cache_hit_rate: float | None
+    memory_mb: float | None
+    cpu_percent: float | None
+    degraded: bool

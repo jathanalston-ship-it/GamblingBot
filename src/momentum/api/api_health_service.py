@@ -34,6 +34,8 @@ _DEFAULT_PARAMS: dict[str, str | int] = {
     "base": "2000-01-01",
     "against": "2000-01-02",
     "limit": 5,
+    "a": 1,  # /timeline/diff snapshot ids (missing ids → a healthy 404)
+    "b": 2,
 }
 _SELF_PATH = "/health/routes"
 

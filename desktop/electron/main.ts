@@ -150,6 +150,9 @@ function backendEnv(cwd: string): NodeJS.ProcessEnv {
     // The backend self-terminates if WE die without cleaning it up (crash /
     // force-kill / system shutdown) — the orphan backstop.
     MRP_PARENT_PID: String(process.pid),
+    // The market daemon runs automatically for as long as the app is open
+    // (pause/stop from the UI); opt out with MRP_DAEMON_AUTOSTART=0.
+    MRP_DAEMON_AUTOSTART: process.env.MRP_DAEMON_AUTOSTART ?? (isSmoke ? "0" : "1"),
     PYTHONPATH: isDev ? join(cwd, "src") : process.env.PYTHONPATH ?? "",
   };
   // Packaged: per-user dirs. Development Mode: the isolated `<repo>/.dev` dirs, so

@@ -12,6 +12,8 @@ opportunity_classifications, runs, audit_log.
 
 from __future__ import annotations
 
+from momentum.persistence.models.activity import Activity
+from momentum.persistence.models.alert import Alert
 from momentum.persistence.models.audit_log import AuditLog
 from momentum.persistence.models.base import Base, IntPKMixin, TimestampMixin
 from momentum.persistence.models.candidate_analog import CandidateAnalog
@@ -26,9 +28,12 @@ from momentum.persistence.models.position_size import PositionSize
 from momentum.persistence.models.research_report import ResearchReport
 from momentum.persistence.models.risk_metric import RiskMetric
 from momentum.persistence.models.run import Run
+from momentum.persistence.models.scan_delta import ScanDelta
 from momentum.persistence.models.scan_metadata import ScanMetadata
 from momentum.persistence.models.scan_rejection import ScanRejection
 from momentum.persistence.models.scan_result import ScanResult
+from momentum.persistence.models.scan_snapshot import ScanSnapshot
+from momentum.persistence.models.scan_stat import ScanStat
 from momentum.persistence.models.signal import Signal
 from momentum.persistence.models.trade_plan import TradePlan
 from momentum.persistence.models.setup_lifecycle import SetupLifecycle
@@ -68,4 +73,9 @@ __all__ = [
     "MarketDataProvenance",
     "TrackedTrade",
     "TradeEvaluation",
+    "ScanSnapshot",
+    "ScanDelta",
+    "Alert",
+    "Activity",
+    "ScanStat",
 ]

@@ -20,6 +20,7 @@ import Settings from "./views/Settings";
 import SignalAudit from "./views/SignalAudit";
 import SignalEvaluation from "./views/SignalEvaluation";
 import TradePlan from "./views/TradePlan";
+import Timeline from "./views/Timeline";
 import Trades from "./views/Trades";
 import Updates from "./views/Updates";
 import Verification from "./views/Verification";
@@ -59,6 +60,7 @@ export default function App() {
         />
         <Route path="tradeplan" element={<TradePlan />} />
         <Route path="trades" element={<Trades />} />
+        <Route path="timeline" element={<Timeline />} />
         <Route path="lifecycle" element={<Lifecycle />} />
         <Route path="watchlists" element={<Watchlists />} />
         <Route path="watchlist-performance" element={<WatchlistPerformance />} />

@@ -305,6 +305,7 @@ def run_scan(
     provider_name: str = "unknown",
     stale_after_minutes: float | None = None,
     max_symbols: int | None = None,
+    market_state: str | None = None,
 ) -> dict[str, Any]:
     """The full live research pipeline behind "Run Scan".
 
@@ -528,6 +529,57 @@ def run_scan(
             trades_linked = lc["linked"]
             trades_realized = lc["realized"]
 
+    # 12. Market pulse: snapshot the scan, diff it against the previous snapshot
+    #     (deltas → alerts → activity feed) and record its performance row.
+    #     A stale scan still records stats (it happened) but takes no snapshot.
+    pulse_counts = {"snapshot": 0, "deltas": 0, "alerts": 0, "activities": 0}
+    scan_finished = dt.datetime.now(tz=dt.UTC)
+    duration_ms = round((time.perf_counter() - started_perf) * 1000.0, 1)
+    latencies = [
+        e["request_duration_ms"] for e in fetch_log if e.get("request_duration_ms") is not None
+    ]
+    failed = sum(1 for e in fetch_log if e.get("error"))
+    incremental_metrics: dict[str, Any] | None = None
+    metrics_fn = getattr(provider, "metrics", None)
+    report_fn = getattr(provider, "report", None)
+    if callable(metrics_fn) and callable(report_fn):
+        change_report = report_fn()
+        incremental_metrics = {
+            **metrics_fn(),
+            "symbols_skipped": len(change_report.unchanged),
+            "symbols_recomputed": len(change_report.changed) + len(change_report.first_seen),
+        }
+    if not stale:
+        from momentum.api import timeline_service
+
+        progress(0.99, "recording scan snapshot + deltas")
+        with session_factory() as session:
+            pulse_counts = timeline_service.record_scan(
+                session,
+                run_id=run_id,
+                ts=scan_finished,
+                market_state=market_state,
+                duration_ms=duration_ms,
+                symbols_processed=len(bars),
+                symbols_failed=failed,
+                provider_latency_ms=(
+                    round(sum(latencies) / len(latencies), 1) if latencies else None
+                ),
+                db_writes=(
+                    scan_persisted
+                    + rejections_persisted
+                    + conviction_persisted
+                    + trade_plans_persisted
+                    + analogs_persisted
+                    + watchlists_generated
+                    + tracked_trades_created
+                    + trades_reevaluated
+                ),
+                convictions_generated=conviction_persisted,
+                watchlists_generated=watchlists_generated,
+                incremental=incremental_metrics,
+            )
+
     progress(1.0, f"stale ({stale_reason}) — conviction skipped" if stale else "done")
     return {
         "run_id": run_id,
@@ -562,6 +614,10 @@ def run_scan(
         "trades_auto_closed": trades_auto_closed,
         "trades_linked": trades_linked,
         "trades_realized": trades_realized,
+        "snapshot_persisted": pulse_counts["snapshot"],
+        "deltas_generated": pulse_counts["deltas"],
+        "alerts_generated": pulse_counts["alerts"],
+        "activities_generated": pulse_counts["activities"],
     }
 
 

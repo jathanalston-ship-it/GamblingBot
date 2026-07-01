@@ -29,11 +29,13 @@ from momentum.api.routes import (
     candidates,
     command_center,
     conviction,
+    daemon,
     dashboard,
     data_health,
     diagnostics,
     market_data,
     provenance,
+    pulse,
     verification,
     health,
     opportunity,
@@ -66,6 +68,7 @@ _log = logging.getLogger(__name__)
 
 _ROUTERS = (
     health,
+    daemon,
     api_health,
     dashboard,
     candidates,
@@ -98,6 +101,7 @@ _ROUTERS = (
     signal_audit,
     data_health,
     provenance,
+    pulse,
     market_data,
     verification,
     diagnostics,
@@ -157,6 +161,31 @@ def create_app(session_factory: sessionmaker[Session] | None = None) -> FastAPI:
     app.state.job_manager = JobManager()
     # In-memory ring buffer of recent unhandled exceptions (Diagnostics screen).
     app.state.error_recorder = ErrorRecorder()
+
+    # Continuous market daemon (dedicated worker thread; never blocks requests).
+    # Auto-starts with the app when MRP_DAEMON_AUTOSTART=1 (the desktop shell sets
+    # it); tests and the bare API keep it off and inject their own if needed.
+    app.state.market_daemon = None
+    app.state.daemon_cache = None
+    if os.environ.get("MRP_DAEMON_AUTOSTART") == "1":
+        from momentum.api import daemon_service
+        from momentum.daemon import default_config as daemon_default_config
+
+        market_daemon, daemon_cache = daemon_service.create_daemon(
+            session_factory,
+            daemon_service.default_provider_factory,
+            config=daemon_default_config(),
+        )
+        app.state.market_daemon = market_daemon
+        app.state.daemon_cache = daemon_cache
+
+        @app.on_event("startup")
+        def _start_daemon() -> None:
+            market_daemon.start()
+
+        @app.on_event("shutdown")
+        def _stop_daemon() -> None:
+            market_daemon.stop()
 
     for module in _ROUTERS:
         app.include_router(module.router)

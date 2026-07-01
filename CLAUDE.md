@@ -433,6 +433,29 @@ trading platform for US equities. Python 3.12, strictly typed. See
   (health-battery cards → thesis, Time-Machine slider over evaluations,
   journal timeline, analytics grid). See `docs/TRADE_LIFECYCLE.md`.
 
+- **Market daemon + pulse** (`src/momentum/daemon/`, `src/momentum/timeline/`,
+  `scan_snapshots`/`scan_deltas`/`alerts`/`activities`/`scan_stats` tables +
+  migration `0025`) — a continuously running market-intelligence loop on a
+  dedicated worker thread (starts with the desktop app via
+  `MRP_DAEMON_AUTOSTART=1`): pure ET schedule (premarket/regular/after-hours →
+  60s ticks; closed → 15-min state checks, never scans), pause/resume, manual
+  `POST /daemon/scan-now`, graceful shutdown, capped-backoff error recovery
+  (survives provider outages). **Incremental reanalysis**: per-symbol
+  fingerprints + an in-memory bar cache (`CachingProvider`) skip the whole
+  pipeline when nothing changed and report skipped/recomputed/cache-hit-rate —
+  results identical to a full scan by construction. Every completed scan
+  freezes an **immutable snapshot** (replay + diff any two via `/timeline`),
+  is diffed against the previous scan (pure `timeline/diffing.py`) into
+  append-only **scan_deltas** (prev/new/delta/UPGRADE-DOWNGRADE/reason/ts;
+  `GET /deltas`), from which deduplicated **alerts** (severity info/warning/
+  critical; unique dedupe_key per transition; `GET /alerts`) and the
+  **activity feed** (`GET /activity`, persisted forever) derive, plus a
+  per-scan **scan_stats** row (duration/latency/db-writes/memory/CPU +
+  degradation alert; `GET /scan-stats`). Desktop: Command Center opens with
+  the live pulse (daemon strip + countdown + pause/resume, movers, alerts,
+  feed, performance), `DeltaValue` flash animations (prev value + arrow always
+  visible), and a **Timeline** view. See `docs/DAEMON.md`.
+
 - **Trade-plan generation** (`src/momentum/tradeplan/`, `api/tradeplan_service.py`)
   — read-only, **no persistence**: derives entry / stop / three scale-out targets /
   reward:risk / expected hold / suggested size + portfolio risk for a candidate from

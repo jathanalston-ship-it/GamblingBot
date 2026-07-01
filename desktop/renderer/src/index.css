@@ -16,3 +16,20 @@ body {
   margin: 0;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
+
+/* Live difference visualization — value-change flashes (never hide changes). */
+@keyframes mrp-flash-up {
+  0% { background-color: rgba(34, 197, 94, 0.45); }
+  100% { background-color: transparent; }
+}
+@keyframes mrp-flash-down {
+  0% { background-color: rgba(239, 68, 68, 0.45); }
+  100% { background-color: transparent; }
+}
+@keyframes mrp-flash-warn {
+  0% { background-color: rgba(245, 158, 11, 0.45); }
+  100% { background-color: transparent; }
+}
+.flash-up { animation: mrp-flash-up 1.2s ease-out; }
+.flash-down { animation: mrp-flash-down 1.2s ease-out; }
+.flash-warn { animation: mrp-flash-warn 1.2s ease-out; }
