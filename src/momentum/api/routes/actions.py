@@ -213,6 +213,23 @@ def start_refresh_lifecycles(request: Request, params: ActionParams | None = Non
     return JobOut(**_jobs(request).submit("refresh-lifecycles", fn).to_dict())
 
 
+@router.post("/reevaluate-trades", response_model=JobOut, status_code=202)
+def start_reevaluate_trades(request: Request, params: ActionParams | None = None) -> JobOut:
+    p = params or ActionParams()
+    sf = _session_factory(request)
+    provider = _provider(request)
+
+    def fn(progress: Progress) -> dict[str, object]:
+        return actions.reevaluate_trades(
+            session_factory=sf,
+            provider=provider,
+            lookback_days=p.lookback_days,
+            progress=progress,
+        )
+
+    return JobOut(**_jobs(request).submit("reevaluate-trades", fn).to_dict())
+
+
 @router.post("/track-watchlist-performance", response_model=JobOut, status_code=202)
 def start_track_watchlist_performance(
     request: Request, params: ActionParams | None = None

@@ -930,3 +930,64 @@ class RecentErrorsOut(BaseModel):
     count: int
     capacity: int
     errors: list[ErrorRecordOut]
+
+
+class TrackedTradeOut(BaseModel):
+    """One tracked trade born from a recommendation (original thesis + current state)."""
+
+    trade_uid: str
+    run_id: str | None
+    symbol: str
+    recommended_at: str | None
+    instrument: str
+    quantity: int | None
+    entry_price: float
+    stop_price: float
+    targets: list[dict[str, Any]] | None
+    conviction_score: float | None
+    conviction_band: str | None
+    regime: str | None
+    sector: str | None
+    thesis: str | None
+    current_thesis_strength: float | None
+    trade_health: str | None
+    status: str
+    last_evaluated_at: str | None
+    closed_at: str | None
+    close_reason: str | None
+
+
+class TradeEvaluationOut(BaseModel):
+    """One appended thesis evaluation for a tracked trade."""
+
+    trade_uid: str
+    run_id: str | None
+    symbol: str
+    evaluated_at: str | None
+    current_conviction: float | None
+    conviction_delta: float | None
+    momentum_trend: str
+    rs_trend: str
+    volume_trend: str
+    atr_expansion: float | None
+    regime_at_entry: str | None
+    regime_now: str | None
+    regime_changed: bool
+    sector_delta: float | None
+    analog_delta: float | None
+    thesis_strength: float
+    thesis_stability: float
+    health: str
+    action: str
+    reasons: list[str] | None
+    price: float
+    stop_breached: bool
+
+
+class TradeLifecycleSummaryOut(BaseModel):
+    """Counts for the trade-lifecycle dashboard."""
+
+    total: int
+    by_status: dict[str, int]
+    by_health: dict[str, int]
+    by_action: dict[str, int]

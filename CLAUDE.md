@@ -400,6 +400,22 @@ trading platform for US equities. Python 3.12, strictly typed. See
   **Lifecycle** view: clickable counted pipeline, state filter, transition history.
   See `docs/LIFECYCLE.md`.
 
+- **Trade lifecycle engine** (`src/momentum/trade_lifecycle/`, `tracked_trades` +
+  `trade_evaluations` tables + migration `0022`) — every trade recommendation (a
+  scan's trade plan) automatically becomes a persistent **tracked trade** (uid,
+  entry/stop/targets, conviction + thesis text, regime, sector, baselines), and
+  every scan **reevaluates every OPEN trade** (no rescan — a thesis regrade):
+  current conviction + delta, momentum/RS/volume trends, ATR expansion,
+  regime/sector/analog changes, thesis strength (0-100) & stability → health
+  (Strong/Stable/Weakening/Broken) + one action (Hold / Scale In / Scale Out /
+  Raise Stop / Lower Stop / Exit) with plain-language reasons. History is
+  **append-only** (`TradeEvaluationRepository.delete` raises); creation is
+  idempotent per open symbol; stop breach auto-closes (config-gated); indexed
+  for thousands of trades. Pure engine (`ThesisReevaluationEngine`), scan hook
+  (`trade_lifecycle_service.run_for_scan`), manual `POST /actions/reevaluate-trades`,
+  reads `GET /trade-lifecycle[/summary|/{uid}|/{uid}/evaluations]`. See
+  `docs/TRADE_LIFECYCLE.md`.
+
 - **Trade-plan generation** (`src/momentum/tradeplan/`, `api/tradeplan_service.py`)
   — read-only, **no persistence**: derives entry / stop / three scale-out targets /
   reward:risk / expected hold / suggested size + portfolio risk for a candidate from

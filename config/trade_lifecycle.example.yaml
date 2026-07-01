@@ -1,0 +1,57 @@
+# Trade-lifecycle / thesis-reevaluation thresholds. Copy to trade_lifecycle.yaml
+# to override.
+#
+# Every trade recommendation creates a tracked trade; every scan reevaluates all
+# OPEN tracked trades against fresh data and appends an evaluation (append-only —
+# history is never overwritten).
+model_version: v1
+
+# Feature derivation from bars
+trend_lookback_bars: 10 # "prev" reading used for trend direction
+trend_flat_band: 0.10 # relative change within ±10% counts as Flat
+volume_short_window: 5
+volume_long_window: 20
+min_bars: 70 # bars required to derive features
+
+# Thesis-strength normalization
+conviction_drop_full: 30.0 # conviction delta of -30 maps to 0
+conviction_gain_full: 15.0 # conviction delta of +15 maps to 1
+atr_expansion_max: 2.5 # ATR expanded 2.5x since entry maps to 0
+analog_delta_full: 0.5 # ±0.5R analog-expectancy change maps to 0..1
+
+# Component weights (normalized by their sum)
+weights:
+  conviction_level: 2.0
+  conviction_delta: 2.0
+  momentum_trend: 1.5
+  rs_trend: 1.0
+  volume_trend: 0.5
+  regime: 1.0
+  volatility: 0.5
+  analog: 0.5
+  price_vs_stop: 1.0
+
+# Health bands on thesis strength (lower bounds)
+strong_strength: 75.0
+stable_strength: 55.0
+weakening_strength: 35.0
+
+# Thesis stability: 1 - clamp(mean successive strength change / stability_scale)
+stability_scale: 25.0
+stability_window: 5
+
+# Action cascade
+exit_strength: 35.0 # thesis broken -> Exit
+exit_conviction_drop: 25.0 # conviction collapsed -> Exit
+scale_out_strength: 50.0 # thesis weakening -> Scale Out
+raise_stop_gain_r: 1.0 # gain >= 1R with a stable thesis -> Raise Stop
+lower_stop_atr_expansion: 1.75 # volatility expanded but thesis strong -> Lower Stop
+allow_lower_stop: true
+scale_in_strength: 80.0 # thesis strengthened -> Scale In
+scale_in_conviction_gain: 5.0
+
+# Close the tracked trade automatically when price breaches the stop.
+auto_close_on_stop: true
+
+# Prior evaluations feeding thesis stability.
+history_limit: 20

@@ -495,8 +495,11 @@ def run_scan(
     watchlists_generated = 0
     trade_plans_persisted = 0
     analogs_persisted = 0
+    tracked_trades_created = 0
+    trades_reevaluated = 0
+    trades_auto_closed = 0
     if not stale and conviction_rows:
-        from momentum.api import scan_artifacts, watchlist_service
+        from momentum.api import scan_artifacts, trade_lifecycle_service, watchlist_service
 
         progress(0.93, "deriving trade plans + analogs")
         with session_factory() as session:
@@ -504,10 +507,22 @@ def run_scan(
             trade_plans_persisted = counts["trade_plans"]
             analogs_persisted = counts["analogs"]
 
-        progress(0.97, "generating watchlists")
+        progress(0.96, "generating watchlists")
         with session_factory() as session:
             ws = watchlist_service.generate_watchlists(session, run_id=run_id, as_of=as_of)
             watchlists_generated = sum(len(h.entries) for h in ws.horizons)
+
+        # 11. Trade lifecycle: every recommendation becomes a tracked trade, and
+        #     every OPEN tracked trade is reevaluated against this scan's own
+        #     fresh bars (thesis regrade — not a rescan). Append-only history.
+        progress(0.98, "reevaluating open trades")
+        with session_factory() as session:
+            lc = trade_lifecycle_service.run_for_scan(
+                session, run_id=run_id, ts=ts, bars=bars, benchmark=spy
+            )
+            tracked_trades_created = lc["created"]
+            trades_reevaluated = lc["evaluated"]
+            trades_auto_closed = lc["closed"]
 
     progress(1.0, f"stale ({stale_reason}) — conviction skipped" if stale else "done")
     return {
@@ -538,6 +553,9 @@ def run_scan(
         "watchlists_generated": watchlists_generated,
         "trade_plans_persisted": trade_plans_persisted,
         "analogs_persisted": analogs_persisted,
+        "tracked_trades_created": tracked_trades_created,
+        "trades_reevaluated": trades_reevaluated,
+        "trades_auto_closed": trades_auto_closed,
     }
 
 
@@ -716,6 +734,49 @@ def refresh_lifecycles(
         n = lifecycle_service.refresh_lifecycles(session, run_id=run_id)
     progress(1.0, "done")
     return {"updated": n}
+
+
+def reevaluate_trades(
+    *,
+    session_factory: sessionmaker[Session],
+    provider: MarketDataProvider,
+    lookback_days: int = 400,
+    progress: Progress,
+) -> dict[str, Any]:
+    """Reevaluate every OPEN tracked trade against freshly pulled bars.
+
+    The scan already does this automatically; this action is the manual trigger
+    for grading held trades between scans. Pulls bars only for the held symbols
+    (+ the regime benchmark) and appends one evaluation per open trade.
+    """
+    from momentum.api import services, trade_lifecycle_service
+    from momentum.persistence.repositories.tracked_trades import TrackedTradeRepository
+
+    progress(0.1, "loading open trades")
+    with session_factory() as session:
+        symbols = sorted({t.symbol for t in TrackedTradeRepository(session).open_trades()})
+    if not symbols:
+        progress(1.0, "no open trades to reevaluate")
+        return {"evaluated": 0, "skipped": 0, "closed": 0, "symbols": 0}
+
+    progress(0.35, f"pulling bars for {len(symbols)} symbols")
+    bars = pull_bars(provider, symbols, end=_today(), lookback_days=lookback_days)
+    benchmark = pull_bars(
+        provider, [BENCHMARK_SYMBOL], end=_today(), lookback_days=lookback_days
+    ).get(BENCHMARK_SYMBOL)
+
+    progress(0.8, "reevaluating theses")
+    with session_factory() as session:
+        run_id = services.resolve_active_run_id(session)
+        counts = trade_lifecycle_service.reevaluate_open_trades(
+            session,
+            bars=bars,
+            benchmark=benchmark,
+            run_id=run_id,
+            ts=dt.datetime.now(tz=dt.UTC),
+        )
+    progress(1.0, "done")
+    return {**counts, "symbols": len(symbols)}
 
 
 def generate_watchlists(
