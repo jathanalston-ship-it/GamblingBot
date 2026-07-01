@@ -28,6 +28,9 @@ from sqlalchemy.orm import Session
 
 from momentum.api import services
 from momentum.api.schemas import (
+    AdviceActionStatsOut,
+    AdviceGradeOut,
+    AdviceReportOut,
     TrackedTradeOut,
     TradeEvaluationOut,
     TradeLifecycleSummaryOut,
@@ -37,6 +40,9 @@ from momentum.conviction.inputs import ConvictionInputs
 from momentum.persistence.models.conviction_score import ConvictionScore
 from momentum.persistence.models.market_regime import MarketRegime
 from momentum.persistence.models.scan_result import ScanResult
+from momentum.persistence.models.tracked_trade import TrackedTrade
+from momentum.persistence.models.trade import Trade
+from momentum.persistence.models.trade_evaluation import TradeEvaluation
 from momentum.persistence.models.trade_plan import TradePlan
 from momentum.persistence.repositories.tracked_trades import TrackedTradeRepository
 from momentum.persistence.repositories.trade_evaluations import TradeEvaluationRepository
@@ -44,10 +50,17 @@ from momentum.trade_lifecycle import (
     EvaluationInputs,
     MarketFeatures,
     ThesisReevaluationEngine,
+    TradeAction,
     TradeLifecycleConfig,
     TradeSpec,
     default_config,
     features_from_bars,
+)
+from momentum.trade_lifecycle.outcomes import (
+    AdviceGrade,
+    advice_summary,
+    grade_advice,
+    overall_accuracy,
 )
 
 
@@ -302,13 +315,131 @@ def run_for_scan(
     benchmark: pd.DataFrame | None = None,
     config: TradeLifecycleConfig | None = None,
 ) -> dict[str, int]:
-    """The scan-time hook: create tracked trades, then reevaluate every open one."""
+    """The scan-time hook: create tracked trades, reevaluate every open one,
+    then link executed journal trades + record any realized outcomes."""
     cfg = config or default_config()
     created = create_from_recommendations(session, run_id=run_id, ts=ts, config=cfg)
     counts = reevaluate_open_trades(
         session, bars=bars, benchmark=benchmark, run_id=run_id, ts=ts, config=cfg
     )
-    return {"created": created, **counts}
+    link_counts = link_journal_trades(session, ts=ts)
+    return {"created": created, **counts, **link_counts}
+
+
+# --------------------------------------------------------------------------- #
+# Journal link + realized outcomes → advice grading
+# --------------------------------------------------------------------------- #
+def _naive(value: dt.datetime) -> dt.datetime:
+    """SQLite returns naive datetimes; normalize both sides before comparing."""
+    return value.replace(tzinfo=None) if value.tzinfo is not None else value
+
+
+def link_journal_trades(session: Session, *, ts: dt.datetime) -> dict[str, int]:
+    """Connect tracked trades to their executed journal trades. Commits.
+
+    A recommendation and its execution are matched by symbol: the earliest
+    unclaimed journal trade entered on/after the recommendation (24h tolerance
+    for timezone skew). Once the linked journal trade closes, its realized
+    outcome (R multiple, net P&L) is recorded on the tracked trade and the
+    tracked trade is closed — from then on every evaluation the trade received
+    can be graded with hindsight (see ``advice_report``).
+    """
+    repo = TrackedTradeRepository(session)
+    linked = realized = 0
+
+    unlinked = repo.unlinked()
+    if unlinked:
+        claimed = repo.linked_journal_ids()
+        journal_by_symbol: dict[str, list[Trade]] = {}
+        for jt in session.scalars(select(Trade).order_by(Trade.entry_ts)):
+            journal_by_symbol.setdefault(jt.symbol, []).append(jt)
+        tolerance = dt.timedelta(hours=24)
+        for tracked in unlinked:
+            earliest = _naive(tracked.recommended_at) - tolerance
+            for jt in journal_by_symbol.get(tracked.symbol, []):
+                if jt.id in claimed or _naive(jt.entry_ts) < earliest:
+                    continue
+                repo.link_journal(tracked, jt.id)
+                claimed.add(jt.id)
+                linked += 1
+                break
+
+    for tracked in repo.linked_unrealized():
+        journal = session.get(Trade, tracked.journal_trade_id)
+        if journal is None or journal.status != "closed":
+            continue
+        repo.realize(
+            tracked,
+            realized_r=journal.r_multiple,
+            realized_pnl=journal.net_pnl,
+            ts=ts,
+            reason=f"journal trade closed ({journal.exit_reason or 'unknown'})",
+        )
+        realized += 1
+
+    session.commit()
+    return {"linked": linked, "realized": realized}
+
+
+def _grades_for(trade: TrackedTrade, evaluations: list[TradeEvaluation]) -> list[AdviceGrade]:
+    """Grade every evaluation of one realized trade (pure given the rows)."""
+    if trade.realized_r is None:
+        return []
+    risk = trade.entry_price - trade.stop_price
+    if risk <= 0:
+        return []
+    grades: list[AdviceGrade] = []
+    for ev in evaluations:
+        r_at_eval = (ev.price - trade.entry_price) / risk
+        try:
+            action = TradeAction(ev.action)
+        except ValueError:
+            continue
+        grades.append(
+            AdviceGrade(
+                trade_uid=trade.trade_uid,
+                symbol=trade.symbol,
+                evaluated_at=ev.evaluated_at.isoformat() if ev.evaluated_at else None,
+                action=action,
+                r_at_evaluation=r_at_eval,
+                final_r=trade.realized_r,
+                remaining_r=trade.realized_r - r_at_eval,
+                verdict=grade_advice(action, r_at_eval, trade.realized_r),
+            )
+        )
+    return grades
+
+
+def trade_grades(session: Session, trade_uid: str) -> list[AdviceGradeOut]:
+    """Hindsight grades for one realized trade's advice (empty until realized)."""
+    trade = TrackedTradeRepository(session).get_by_uid(trade_uid)
+    if trade is None:
+        return []
+    evaluations = TradeEvaluationRepository(session).for_trade(trade_uid)
+    return [AdviceGradeOut(**g.to_dict()) for g in _grades_for(trade, evaluations)]
+
+
+def advice_report(session: Session, *, recent_limit: int = 50) -> AdviceReportOut:
+    """How good has the reevaluation advice been, judged by realized outcomes?
+
+    Grades every evaluation of every realized (linked + closed) tracked trade
+    and aggregates per-action accuracy. Derived on demand — no extra tables.
+    """
+    trades_repo = TrackedTradeRepository(session)
+    evals_repo = TradeEvaluationRepository(session)
+    grades: list[AdviceGrade] = []
+    realized_trades = trades_repo.realized()
+    for trade in realized_trades:
+        grades.extend(_grades_for(trade, evals_repo.for_trade(trade.trade_uid)))
+
+    grades.sort(key=lambda g: g.evaluated_at or "", reverse=True)
+    return AdviceReportOut(
+        trades_realized=len(realized_trades),
+        evaluations_graded=len(grades),
+        overall_accuracy=overall_accuracy(grades),
+        by_action=[AdviceActionStatsOut(**s.to_dict()) for s in advice_summary(grades)],
+        recent_grades=[AdviceGradeOut(**g.to_dict()) for g in grades[:recent_limit]],
+    )
 
 
 # --------------------------------------------------------------------------- #

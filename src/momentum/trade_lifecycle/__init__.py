@@ -14,6 +14,14 @@ from momentum.trade_lifecycle.config import (
 )
 from momentum.trade_lifecycle.engine import ThesisReevaluationEngine
 from momentum.trade_lifecycle.features import features_from_bars
+from momentum.trade_lifecycle.outcomes import (
+    AdviceActionStats,
+    AdviceGrade,
+    AdviceVerdict,
+    advice_summary,
+    grade_advice,
+    overall_accuracy,
+)
 from momentum.trade_lifecycle.types import (
     EvaluationInputs,
     MarketFeatures,
@@ -26,6 +34,9 @@ from momentum.trade_lifecycle.types import (
 )
 
 __all__ = [
+    "AdviceActionStats",
+    "AdviceGrade",
+    "AdviceVerdict",
     "EvaluationInputs",
     "MarketFeatures",
     "ThesisEvaluation",
@@ -37,6 +48,9 @@ __all__ = [
     "TradeSpec",
     "TradeStatus",
     "Trend",
+    "advice_summary",
     "default_config",
     "features_from_bars",
+    "grade_advice",
+    "overall_accuracy",
 ]

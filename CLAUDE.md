@@ -413,7 +413,14 @@ trading platform for US equities. Python 3.12, strictly typed. See
   idempotent per open symbol; stop breach auto-closes (config-gated); indexed
   for thousands of trades. Pure engine (`ThesisReevaluationEngine`), scan hook
   (`trade_lifecycle_service.run_for_scan`), manual `POST /actions/reevaluate-trades`,
-  reads `GET /trade-lifecycle[/summary|/{uid}|/{uid}/evaluations]`. See
+  reads `GET /trade-lifecycle[/summary|/{uid}|/{uid}/evaluations]`. **Realized
+  outcomes grade the advice** (migration `0023`): each recommendation is
+  auto-linked to its executed journal trade (symbol + entry time, one-to-one,
+  idempotent); when that trade closes, its R/P&L land on the tracked trade and
+  every evaluation is graded with hindsight (defensive advice correct if the
+  trade then deteriorated, constructive if it improved, ±0.25R = Unclear;
+  pure `trade_lifecycle/outcomes.py`, derived on demand) — `GET
+  /trade-lifecycle/advice-report` + `/{uid}/grades`. See
   `docs/TRADE_LIFECYCLE.md`.
 
 - **Trade-plan generation** (`src/momentum/tradeplan/`, `api/tradeplan_service.py`)

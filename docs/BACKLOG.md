@@ -53,9 +53,6 @@ they belong in a dedicated market-data slice with its own tests:
 
 ## Trade lifecycle — deferred follow-ups
 
-- **Link tracked trades to the journal** — a tracked trade records the
-  *recommendation*; link it to the executed `trades` row (entry_signal-style FK)
-  so realized outcomes can grade the reevaluation advice.
 - **Options instrument at creation** — `instrument` is `"shares"`; wire the
   options-eligibility verdict into `create_from_recommendations`.
 - **Desktop Trades view** — the `/trade-lifecycle` API is complete; a screen with

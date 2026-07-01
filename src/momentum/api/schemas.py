@@ -955,6 +955,10 @@ class TrackedTradeOut(BaseModel):
     last_evaluated_at: str | None
     closed_at: str | None
     close_reason: str | None
+    journal_trade_id: int | None
+    realized_r: float | None
+    realized_pnl: float | None
+    realized_at: str | None
 
 
 class TradeEvaluationOut(BaseModel):
@@ -991,3 +995,38 @@ class TradeLifecycleSummaryOut(BaseModel):
     by_status: dict[str, int]
     by_health: dict[str, int]
     by_action: dict[str, int]
+
+
+class AdviceGradeOut(BaseModel):
+    """One evaluation's advice graded against the trade's realized outcome."""
+
+    trade_uid: str
+    symbol: str
+    evaluated_at: str | None
+    action: str
+    r_at_evaluation: float
+    final_r: float
+    remaining_r: float
+    verdict: str
+
+
+class AdviceActionStatsOut(BaseModel):
+    """Hindsight accuracy for one action across all realized trades."""
+
+    action: str
+    n: int
+    correct: int
+    incorrect: int
+    unclear: int
+    accuracy: float | None
+    avg_remaining_r: float | None
+
+
+class AdviceReportOut(BaseModel):
+    """How good the reevaluation advice has been, judged by realized outcomes."""
+
+    trades_realized: int
+    evaluations_graded: int
+    overall_accuracy: float | None
+    by_action: list[AdviceActionStatsOut]
+    recent_grades: list[AdviceGradeOut]

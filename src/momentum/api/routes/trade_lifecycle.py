@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from momentum.api import trade_lifecycle_service
 from momentum.api.dependencies import get_session
 from momentum.api.schemas import (
+    AdviceGradeOut,
+    AdviceReportOut,
     TrackedTradeOut,
     TradeEvaluationOut,
     TradeLifecycleSummaryOut,
@@ -36,6 +38,12 @@ def summary(session: Session = Depends(get_session)) -> TradeLifecycleSummaryOut
     return trade_lifecycle_service.lifecycle_summary(session)
 
 
+@router.get("/advice-report", response_model=AdviceReportOut)
+def advice_report(session: Session = Depends(get_session)) -> AdviceReportOut:
+    """Hindsight accuracy of the reevaluation advice over realized outcomes."""
+    return trade_lifecycle_service.advice_report(session)
+
+
 @router.get("/{trade_uid}", response_model=TrackedTradeOut)
 def get_trade(trade_uid: str, session: Session = Depends(get_session)) -> TrackedTradeOut:
     """One tracked trade (original thesis + current state)."""
@@ -55,3 +63,11 @@ def evaluations(
     if trade_lifecycle_service.get_trade(session, trade_uid) is None:
         raise HTTPException(status_code=404, detail=f"no tracked trade {trade_uid!r}")
     return trade_lifecycle_service.trade_evaluations(session, trade_uid, limit=limit)
+
+
+@router.get("/{trade_uid}/grades", response_model=list[AdviceGradeOut])
+def grades(trade_uid: str, session: Session = Depends(get_session)) -> list[AdviceGradeOut]:
+    """Hindsight grades for one trade's advice (empty until its outcome is realized)."""
+    if trade_lifecycle_service.get_trade(session, trade_uid) is None:
+        raise HTTPException(status_code=404, detail=f"no tracked trade {trade_uid!r}")
+    return trade_lifecycle_service.trade_grades(session, trade_uid)

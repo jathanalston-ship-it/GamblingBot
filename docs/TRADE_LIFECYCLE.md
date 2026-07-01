@@ -85,17 +85,50 @@ Service (`api/trade_lifecycle_service.py`): `run_for_scan` is the scan hook —
 no second pull). `actions.reevaluate_trades` is the manual between-scans
 trigger: it pulls bars for just the held symbols (+ SPY) and reevaluates.
 
+## Realized outcomes grade the advice
+
+A tracked trade records the *recommendation*; when it is actually executed, the
+journal trade (`trades` table) records the *outcome* — and the two are linked
+automatically (migration `0023`: `tracked_trades.journal_trade_id` FK +
+`realized_r` / `realized_pnl` / `realized_at`).
+
+- **Linking** (`link_journal_trades`, run at the end of every scan and by the
+  manual reevaluate action): a recommendation is matched to the earliest
+  unclaimed journal trade of the same symbol entered on/after the
+  recommendation (24 h tolerance). One journal trade claims exactly one tracked
+  trade; linking is idempotent.
+- **Realization**: when the linked journal trade closes, its R multiple and net
+  P&L are recorded on the tracked trade and the tracked trade is closed
+  (`close_reason` = the journal exit reason).
+- **Hindsight grading** (`trade_lifecycle/outcomes.py`, pure; derived on
+  demand, no extra tables): for every evaluation of a realized trade, compare
+  the R the trade was at when the advice was issued with the R it finally
+  closed at. Defensive advice (Exit / Scale Out / Raise Stop) is **Correct**
+  when the trade subsequently deteriorated and **Incorrect** when it kept
+  climbing; constructive advice (Hold / Scale In / Lower Stop) is the mirror.
+  Post-advice moves inside ±0.25R are **Unclear** and excluded from accuracy.
+  The advice report aggregates per-action accuracy + average post-advice R, so
+  the reevaluation engine itself is measurable — and its thresholds tunable —
+  against realized results.
+
 ## API
 
 - `GET /trade-lifecycle?status=&symbol=&limit=&offset=` — tracked trades,
   newest recommendation first.
 - `GET /trade-lifecycle/summary` — counts by status / health / action.
-- `GET /trade-lifecycle/{trade_uid}` — one trade (original thesis + current state).
+- `GET /trade-lifecycle/advice-report` — hindsight accuracy of the advice
+  (overall + per action + recent grades) over realized outcomes.
+- `GET /trade-lifecycle/{trade_uid}` — one trade (original thesis + current
+  state + realized outcome once linked & closed).
 - `GET /trade-lifecycle/{trade_uid}/evaluations` — the full appended history.
-- `POST /actions/reevaluate-trades` — manual reevaluation job (pulls fresh bars).
+- `GET /trade-lifecycle/{trade_uid}/grades` — that trade's advice graded
+  against its realized outcome (empty until realized).
+- `POST /actions/reevaluate-trades` — manual reevaluation job (pulls fresh
+  bars, then links/realizes).
 
 Scan results (`run_scan`) now report `tracked_trades_created`,
-`trades_reevaluated` and `trades_auto_closed`.
+`trades_reevaluated`, `trades_auto_closed`, `trades_linked` and
+`trades_realized`.
 
 ## Configuration
 
@@ -106,9 +139,10 @@ a `config_hash` stamped semantics via `model_version`.
 
 ## Limits / follow-ups
 
-- The tracked trade records the *recommendation*; it is not connected to the
-  paper-trading journal (`trades`). Linking a tracked trade to an executed
-  journal trade (entry_signal-style) is a natural follow-up.
+- Advice grading uses the tracked trade's own entry/stop to compute the R at
+  evaluation time and the journal's realized R for the outcome; execution
+  slippage between the recommended and filled entry introduces a small,
+  honest basis difference.
 - `instrument` is `"shares"` today; wiring the options-eligibility verdict into
   creation would populate `"options"` recommendations.
 - No desktop view yet — the API is complete, so a **Trades** screen (open

@@ -12,7 +12,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, Float, Index, Integer, String, Text
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from momentum.persistence.models.base import Base, IntPKMixin, TimestampMixin
@@ -56,6 +56,15 @@ class TrackedTrade(IntPKMixin, TimestampMixin, Base):
     closed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     close_reason: Mapped[str | None] = mapped_column(String(160), nullable=True)
 
+    # Link to the executed journal trade (trades.id) + the realized outcome once
+    # that trade closes — this is what lets hindsight grade the advice.
+    journal_trade_id: Mapped[int | None] = mapped_column(
+        ForeignKey("trades.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    realized_r: Mapped[float | None] = mapped_column(Float, nullable=True)
+    realized_pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
+    realized_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     model_version: Mapped[str] = mapped_column(String(32), nullable=False, default="v1")
 
     # status+symbol serves the hot "every OPEN trade (for symbol X)" reevaluation
@@ -86,4 +95,8 @@ class TrackedTrade(IntPKMixin, TimestampMixin, Base):
             ),
             "closed_at": self.closed_at.isoformat() if self.closed_at else None,
             "close_reason": self.close_reason,
+            "journal_trade_id": self.journal_trade_id,
+            "realized_r": self.realized_r,
+            "realized_pnl": self.realized_pnl,
+            "realized_at": self.realized_at.isoformat() if self.realized_at else None,
         }

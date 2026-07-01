@@ -77,6 +77,63 @@ class TrackedTradeRepository(Repository[TrackedTrade]):
         self.session.flush()
         return row
 
+    def link_journal(self, row: TrackedTrade, journal_trade_id: int) -> TrackedTrade:
+        """Attach the executed journal trade backing this recommendation."""
+        row.journal_trade_id = journal_trade_id
+        self.session.flush()
+        return row
+
+    def realize(
+        self,
+        row: TrackedTrade,
+        *,
+        realized_r: float | None,
+        realized_pnl: float | None,
+        ts: dt.datetime,
+        reason: str,
+    ) -> TrackedTrade:
+        """Record the linked journal trade's closed outcome (and close the record)."""
+        row.realized_r = realized_r
+        row.realized_pnl = realized_pnl
+        row.realized_at = ts
+        if row.status == TradeStatus.OPEN.value:
+            self.close(row, ts=ts, reason=reason)
+        else:
+            self.session.flush()
+        return row
+
+    def unlinked(self) -> list[TrackedTrade]:
+        """Tracked trades with no journal link yet (candidates for matching)."""
+        stmt = (
+            select(TrackedTrade)
+            .where(TrackedTrade.journal_trade_id.is_(None))
+            .order_by(TrackedTrade.recommended_at)
+        )
+        return list(self.session.scalars(stmt).all())
+
+    def linked_unrealized(self) -> list[TrackedTrade]:
+        """Linked trades whose journal outcome hasn't been recorded yet."""
+        stmt = select(TrackedTrade).where(
+            TrackedTrade.journal_trade_id.is_not(None),
+            TrackedTrade.realized_at.is_(None),
+        )
+        return list(self.session.scalars(stmt).all())
+
+    def realized(self) -> list[TrackedTrade]:
+        """Trades with a realized outcome (the advice-grading cohort)."""
+        stmt = (
+            select(TrackedTrade)
+            .where(TrackedTrade.realized_r.is_not(None))
+            .order_by(TrackedTrade.realized_at.desc())
+        )
+        return list(self.session.scalars(stmt).all())
+
+    def linked_journal_ids(self) -> set[int]:
+        stmt = select(TrackedTrade.journal_trade_id).where(
+            TrackedTrade.journal_trade_id.is_not(None)
+        )
+        return {int(jid) for jid in self.session.scalars(stmt).all() if jid is not None}
+
     def list_trades(
         self,
         *,

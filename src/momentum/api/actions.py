@@ -498,6 +498,8 @@ def run_scan(
     tracked_trades_created = 0
     trades_reevaluated = 0
     trades_auto_closed = 0
+    trades_linked = 0
+    trades_realized = 0
     if not stale and conviction_rows:
         from momentum.api import scan_artifacts, trade_lifecycle_service, watchlist_service
 
@@ -523,6 +525,8 @@ def run_scan(
             tracked_trades_created = lc["created"]
             trades_reevaluated = lc["evaluated"]
             trades_auto_closed = lc["closed"]
+            trades_linked = lc["linked"]
+            trades_realized = lc["realized"]
 
     progress(1.0, f"stale ({stale_reason}) — conviction skipped" if stale else "done")
     return {
@@ -556,6 +560,8 @@ def run_scan(
         "tracked_trades_created": tracked_trades_created,
         "trades_reevaluated": trades_reevaluated,
         "trades_auto_closed": trades_auto_closed,
+        "trades_linked": trades_linked,
+        "trades_realized": trades_realized,
     }
 
 
@@ -766,6 +772,7 @@ def reevaluate_trades(
     ).get(BENCHMARK_SYMBOL)
 
     progress(0.8, "reevaluating theses")
+    now = dt.datetime.now(tz=dt.UTC)
     with session_factory() as session:
         run_id = services.resolve_active_run_id(session)
         counts = trade_lifecycle_service.reevaluate_open_trades(
@@ -773,10 +780,11 @@ def reevaluate_trades(
             bars=bars,
             benchmark=benchmark,
             run_id=run_id,
-            ts=dt.datetime.now(tz=dt.UTC),
+            ts=now,
         )
+        link_counts = trade_lifecycle_service.link_journal_trades(session, ts=now)
     progress(1.0, "done")
-    return {**counts, "symbols": len(symbols)}
+    return {**counts, **link_counts, "symbols": len(symbols)}
 
 
 def generate_watchlists(
