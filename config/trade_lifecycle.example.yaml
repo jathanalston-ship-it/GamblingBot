@@ -55,3 +55,21 @@ auto_close_on_stop: true
 
 # Prior evaluations feeding thesis stability.
 history_limit: 20
+
+# Trade Health — the trade's battery percentage (0-100). Eight explainable,
+# weighted components; every point gained or lost carries its measured reason.
+health_weights:
+  conviction: 2.5
+  trend: 2.0
+  volume: 1.0
+  volatility: 1.0
+  regime: 1.5
+  sector: 1.0
+  time_decay: 1.0
+  analog_confidence: 1.0
+
+# Time decay: full health until `grace` days held, ramping to zero at `full`.
+time_decay_grace_days: 20.0
+time_decay_full_days: 60.0
+# Analog confidence needs this many comparable trades to count fully.
+analog_min_sample: 10

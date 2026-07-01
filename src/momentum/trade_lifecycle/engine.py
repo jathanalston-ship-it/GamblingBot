@@ -18,6 +18,8 @@ from momentum.trade_lifecycle.evaluation import (
     thesis_strength,
     trend_of,
 )
+from momentum.trade_lifecycle.explain import build_explanation
+from momentum.trade_lifecycle.health import compute_health
 from momentum.trade_lifecycle.types import EvaluationInputs, ThesisEvaluation
 
 
@@ -54,6 +56,22 @@ class ThesisReevaluationEngine:
             expansion=expansion,
             config=cfg,
         )
+        health_score = compute_health(
+            inputs,
+            momentum_trend=momentum_trend,
+            rs_trend=rs_trend,
+            volume_trend=volume_trend,
+            expansion=expansion,
+            config=cfg,
+        )
+        explanation = build_explanation(
+            inputs,
+            health=health_score,
+            action=action,
+            reasons=reasons,
+            momentum_trend=momentum_trend,
+            rs_trend=rs_trend,
+        )
 
         sector_delta = (
             inputs.sector_rs_now - inputs.sector_rs_at_entry
@@ -84,9 +102,12 @@ class ThesisReevaluationEngine:
             analog_delta=analog_delta,
             thesis_strength=strength,
             thesis_stability=stability,
-            health=health_of(strength, cfg),
+            health=health_of(health_score.score, cfg),
+            health_score=health_score.score,
+            health_breakdown=health_score.breakdown(),
             action=action,
             reasons=reasons,
             price=inputs.price,
             stop_breached=inputs.price <= inputs.stop_price,
+            explanation=explanation,
         )

@@ -65,6 +65,7 @@ class TrackedTradeRepository(Repository[TrackedTrade]):
     ) -> TrackedTrade:
         """Refresh the current-state cache from one evaluation (originals untouched)."""
         row.current_thesis_strength = evaluation.thesis_strength
+        row.current_health_score = evaluation.health_score
         row.trade_health = evaluation.health.value
         row.last_evaluated_at = ts
         self.session.flush()

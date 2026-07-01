@@ -15,6 +15,7 @@ const STAGES: { to: string; n: string; label: string; end?: boolean }[] = [
 
 const UTILITIES: { to: string; label: string }[] = [
   { to: "/tradeplan", label: "Trade Plan" },
+  { to: "/trades", label: "Trades" },
   { to: "/lifecycle", label: "Lifecycle" },
   { to: "/watchlists", label: "Watchlists" },
   { to: "/watchlist-performance", label: "WL Performance" },

@@ -420,8 +420,18 @@ trading platform for US equities. Python 3.12, strictly typed. See
   every evaluation is graded with hindsight (defensive advice correct if the
   trade then deteriorated, constructive if it improved, ±0.25R = Unclear;
   pure `trade_lifecycle/outcomes.py`, derived on demand) — `GET
-  /trade-lifecycle/advice-report` + `/{uid}/grades`. See
-  `docs/TRADE_LIFECYCLE.md`.
+  /trade-lifecycle/advice-report` + `/{uid}/grades`. **Trade Health** (migration
+  `0024`): every evaluation also carries an explainable 0-100 battery score
+  (`health.py`: conviction/trend/volume/volatility/regime/sector/time-decay/
+  analog-confidence; per-component points + measured detail, components sum to
+  the score — never black-box), a **data-only explanation** (`explain.py`: what
+  changed / why / confidence direction / evidence for & against, ≤250-word
+  narrative), a derived **thesis journal** (`/{uid}/journal`) and
+  **management analytics** (`/management-analytics`: conviction decay/recovery,
+  avg health, thesis age, best/worst exits, stop movement, health-before-exit;
+  pure `management.py`). Desktop **Trades** view = Portfolio Command Center
+  (health-battery cards → thesis, Time-Machine slider over evaluations,
+  journal timeline, analytics grid). See `docs/TRADE_LIFECYCLE.md`.
 
 - **Trade-plan generation** (`src/momentum/tradeplan/`, `api/tradeplan_service.py`)
   — read-only, **no persistence**: derives entry / stop / three scale-out targets /

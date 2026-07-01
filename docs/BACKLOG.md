@@ -55,8 +55,8 @@ they belong in a dedicated market-data slice with its own tests:
 
 - **Options instrument at creation** — `instrument` is `"shares"`; wire the
   options-eligibility verdict into `create_from_recommendations`.
-- **Desktop Trades view** — the `/trade-lifecycle` API is complete; a screen with
-  health chips, action badges and per-trade strength history is UI-only work.
+- **Demo-seed tracked trades** — the Trades screen is live-only today; seed a few
+  demo tracked trades + evaluation histories so the screen demos like the others.
 
 ## Options recommendation — deferred follow-ups
 

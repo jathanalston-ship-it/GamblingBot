@@ -749,3 +749,116 @@ export interface RecentErrors {
   capacity: number;
   errors: ErrorRecord[];
 }
+
+/* ------------------------------------------------------------------ */
+/* Trade lifecycle — tracked trades, health, explainability, journal   */
+/* ------------------------------------------------------------------ */
+
+export interface HealthComponent {
+  name: string;
+  weight: number;
+  available: number;
+  earned: number;
+  delta: number;
+  detail: string;
+}
+
+export interface TradeExplanation {
+  what_changed: string[];
+  why_changed: string[];
+  confidence: { direction: string; reason: string };
+  supporting: string[];
+  contradicting: string[];
+  narrative: string;
+}
+
+export interface TrackedTrade {
+  trade_uid: string;
+  run_id: string | null;
+  symbol: string;
+  recommended_at: string | null;
+  instrument: string;
+  quantity: number | null;
+  entry_price: number;
+  stop_price: number;
+  targets: Record<string, unknown>[] | null;
+  conviction_score: number | null;
+  conviction_band: string | null;
+  regime: string | null;
+  sector: string | null;
+  thesis: string | null;
+  current_thesis_strength: number | null;
+  current_health_score: number | null;
+  trade_health: string | null;
+  status: string;
+  last_evaluated_at: string | null;
+  closed_at: string | null;
+  close_reason: string | null;
+  journal_trade_id: number | null;
+  realized_r: number | null;
+  realized_pnl: number | null;
+  realized_at: string | null;
+}
+
+export interface TradeEvaluation {
+  trade_uid: string;
+  run_id: string | null;
+  symbol: string;
+  evaluated_at: string | null;
+  current_conviction: number | null;
+  conviction_delta: number | null;
+  momentum_trend: string;
+  rs_trend: string;
+  volume_trend: string;
+  atr_expansion: number | null;
+  regime_at_entry: string | null;
+  regime_now: string | null;
+  regime_changed: boolean;
+  sector_delta: number | null;
+  analog_delta: number | null;
+  thesis_strength: number;
+  thesis_stability: number;
+  health: string;
+  health_score: number | null;
+  health_breakdown: HealthComponent[] | null;
+  action: string;
+  reasons: string[] | null;
+  price: number;
+  stop_breached: boolean;
+  explanation: TradeExplanation | null;
+}
+
+export interface JournalEntry {
+  at: string | null;
+  label: string;
+  detail: string | null;
+  health_score: number | null;
+  conviction: number | null;
+  action: string | null;
+}
+
+export interface AdviceGrade {
+  trade_uid: string;
+  symbol: string;
+  evaluated_at: string | null;
+  action: string;
+  r_at_evaluation: number;
+  final_r: number;
+  remaining_r: number;
+  verdict: string;
+}
+
+export interface ManagementAnalytics {
+  trades_tracked: number;
+  avg_conviction_decay: number | null;
+  avg_trade_health: number | null;
+  avg_holding_period_days: number | null;
+  max_thesis_age_days: number | null;
+  most_successful_health: { bucket: string; avg_realized_r: number; trades: number } | null;
+  best_exits: AdviceGrade[];
+  worst_exits: AdviceGrade[];
+  avg_conviction_recovery: number | null;
+  avg_stop_raises: number | null;
+  avg_stop_lowers: number | null;
+  avg_health_before_exit: number | null;
+}

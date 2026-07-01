@@ -48,6 +48,7 @@ class TrackedTrade(IntPKMixin, TimestampMixin, Base):
 
     # Current-state cache, refreshed by every reevaluation.
     current_thesis_strength: Mapped[float | None] = mapped_column(Float, nullable=True)
+    current_health_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     trade_health: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(8), nullable=False, default="open", index=True)
     last_evaluated_at: Mapped[dt.datetime | None] = mapped_column(
@@ -88,6 +89,7 @@ class TrackedTrade(IntPKMixin, TimestampMixin, Base):
             "sector": self.sector,
             "thesis": self.thesis,
             "current_thesis_strength": self.current_thesis_strength,
+            "current_health_score": self.current_health_score,
             "trade_health": self.trade_health,
             "status": self.status,
             "last_evaluated_at": (

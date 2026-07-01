@@ -32,6 +32,28 @@ class ThesisWeights(BaseModel):
         return {k: float(v) for k, v in self.model_dump().items()}
 
 
+class HealthWeights(BaseModel):
+    """Relative weights of the eight trade-health components (normalized by sum).
+
+    Health is the trade's "battery percentage": every component's points and the
+    reason they were gained or lost are reported — never a black-box number.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    conviction: float = Field(2.5, ge=0)
+    trend: float = Field(2.0, ge=0)
+    volume: float = Field(1.0, ge=0)
+    volatility: float = Field(1.0, ge=0)
+    regime: float = Field(1.5, ge=0)
+    sector: float = Field(1.0, ge=0)
+    time_decay: float = Field(1.0, ge=0)
+    analog_confidence: float = Field(1.0, ge=0)
+
+    def as_dict(self) -> dict[str, float]:
+        return {k: float(v) for k, v in self.model_dump().items()}
+
+
 class TradeLifecycleConfig(BaseModel):
     """Thresholds that grade an open trade's thesis and choose an action."""
 
@@ -53,6 +75,13 @@ class TradeLifecycleConfig(BaseModel):
     analog_delta_full: float = Field(0.5, gt=0)  # ±delta R mapping to 0..1
 
     weights: ThesisWeights = ThesisWeights()
+    health_weights: HealthWeights = HealthWeights()
+
+    # Time decay: full health until `grace` days held, ramping to zero at `full`.
+    time_decay_grace_days: float = Field(20.0, ge=0)
+    time_decay_full_days: float = Field(60.0, gt=0)
+    # Analog confidence needs this many comparable trades to count fully.
+    analog_min_sample: int = Field(10, ge=1)
 
     # Health bands on thesis strength (lower bound of each band)
     strong_strength: float = Field(75.0, ge=0, le=100)
@@ -87,6 +116,8 @@ class TradeLifecycleConfig(BaseModel):
             raise ValueError("exit_strength must be <= scale_out_strength")
         if self.volume_short_window >= self.volume_long_window:
             raise ValueError("volume_short_window must be < volume_long_window")
+        if self.time_decay_grace_days >= self.time_decay_full_days:
+            raise ValueError("time_decay_grace_days must be < time_decay_full_days")
         return self
 
     @classmethod

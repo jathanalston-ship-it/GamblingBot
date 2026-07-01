@@ -31,6 +31,8 @@ from momentum.api.schemas import (
     AdviceActionStatsOut,
     AdviceGradeOut,
     AdviceReportOut,
+    JournalEntryOut,
+    ManagementAnalyticsOut,
     TrackedTradeOut,
     TradeEvaluationOut,
     TradeLifecycleSummaryOut,
@@ -49,6 +51,7 @@ from momentum.persistence.repositories.trade_evaluations import TradeEvaluationR
 from momentum.trade_lifecycle import (
     EvaluationInputs,
     MarketFeatures,
+    PriorSnapshot,
     ThesisReevaluationEngine,
     TradeAction,
     TradeLifecycleConfig,
@@ -56,6 +59,7 @@ from momentum.trade_lifecycle import (
     default_config,
     features_from_bars,
 )
+from momentum.trade_lifecycle import management
 from momentum.trade_lifecycle.outcomes import (
     AdviceGrade,
     advice_summary,
@@ -131,9 +135,17 @@ def create_from_recommendations(
 
 
 def _analog_expectancy(session: Session, *, sector: str | None, regime: str | None) -> float | None:
+    return _analog_cohort(session, sector=sector, regime=regime)[0]
+
+
+def _analog_cohort(
+    session: Session, *, sector: str | None, regime: str | None
+) -> tuple[float | None, int]:
+    """(expectancy_r, sample_size) of the historical regime+sector cohort."""
     from momentum.api.tradeplan_service import _analog_stats
 
-    return _analog_stats(session, sector=sector, regime=regime, run_id=None).expectancy_r
+    stats = _analog_stats(session, sector=sector, regime=regime, run_id=None)
+    return stats.expectancy_r, stats.sample_size
 
 
 def _fallback_features(scan: ScanResult | None) -> MarketFeatures | None:
@@ -238,7 +250,7 @@ def reevaluate_open_trades(
             )
         }
     # Analog cohorts repeat across trades — compute once per (sector, regime).
-    analog_cache: dict[tuple[str | None, str | None], float | None] = {}
+    analog_cache: dict[tuple[str | None, str | None], tuple[float | None, int]] = {}
 
     evaluated = skipped = closed = 0
     for trade in open_trades:
@@ -254,10 +266,25 @@ def reevaluate_open_trades(
 
         key = (trade.sector, regime_label)
         if key not in analog_cache:
-            analog_cache[key] = _analog_expectancy(
-                session, sector=trade.sector, regime=regime_label
-            )
+            analog_cache[key] = _analog_cohort(session, sector=trade.sector, regime=regime_label)
+        analog_now, analog_sample = analog_cache[key]
         current_scan = scan if scan is not None else _latest_scan_row(session, symbol)
+        prior_row = evals.latest_for(trade.trade_uid)
+        prior = (
+            PriorSnapshot(
+                evaluated_at=(
+                    prior_row.evaluated_at.isoformat() if prior_row.evaluated_at else None
+                ),
+                conviction=prior_row.current_conviction,
+                health_score=prior_row.health_score,
+                thesis_strength=prior_row.thesis_strength,
+                action=prior_row.action,
+                price=prior_row.price,
+            )
+            if prior_row is not None
+            else None
+        )
+        days_held = max(0.0, (_naive(ts) - _naive(trade.recommended_at)).total_seconds() / 86400.0)
         inputs = EvaluationInputs(
             symbol=symbol,
             entry_price=trade.entry_price,
@@ -286,7 +313,10 @@ def reevaluate_open_trades(
             sector_rs_at_entry=trade.sector_rs,
             sector_rs_now=current_scan.sector_rs if current_scan else None,
             analog_expectancy_at_entry=trade.analog_expectancy_r,
-            analog_expectancy_now=analog_cache[key],
+            analog_expectancy_now=analog_now,
+            analog_sample_size=analog_sample,
+            days_held=days_held,
+            prior=prior,
             prior_strengths=evals.recent_strengths(trade.trade_uid, limit=cfg.history_limit),
         )
         evaluation = engine.evaluate(inputs)
@@ -480,4 +510,158 @@ def lifecycle_summary(session: Session) -> TradeLifecycleSummaryOut:
         by_status=by_status,
         by_health=trades.counts_by_health(),
         by_action=evals.counts_by_action(),
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Thesis journal (Phase 7) — the trade's story, derived from append-only rows
+# --------------------------------------------------------------------------- #
+def _journal_label(ev: TradeEvaluation, prev_health: float | None) -> str:
+    """A short, measurable label for one evaluation."""
+    if ev.action != TradeAction.HOLD.value:
+        return ev.action
+    score = ev.health_score if ev.health_score is not None else ev.thesis_strength
+    if prev_health is not None and score is not None:
+        if score - prev_health >= 3.0:
+            return "Thesis strengthening"
+        if score - prev_health <= -3.0:
+            if ev.momentum_trend == "Falling":
+                return "Momentum slowing"
+            return "Thesis weakening"
+    return "Still on thesis"
+
+
+def trade_journal(session: Session, trade_uid: str) -> list[JournalEntryOut]:
+    """The trade's full story: opened → every evaluation → closed (append-only)."""
+    trade = TrackedTradeRepository(session).get_by_uid(trade_uid)
+    if trade is None:
+        return []
+    entries: list[JournalEntryOut] = [
+        JournalEntryOut(
+            at=trade.recommended_at.isoformat() if trade.recommended_at else None,
+            label="Opened",
+            detail=(
+                f"Conviction {trade.conviction_score:.0f}"
+                f"{f' ({trade.conviction_band})' if trade.conviction_band else ''}"
+                f" — entry {trade.entry_price:.2f}, stop {trade.stop_price:.2f}"
+                if trade.conviction_score is not None
+                else f"entry {trade.entry_price:.2f}, stop {trade.stop_price:.2f}"
+            ),
+            health_score=None,
+            conviction=trade.conviction_score,
+            action=None,
+        )
+    ]
+    history = list(reversed(TradeEvaluationRepository(session).for_trade(trade_uid)))
+    prev_health: float | None = None
+    for ev in history:
+        score = ev.health_score if ev.health_score is not None else ev.thesis_strength
+        narrative = (ev.explanation or {}).get("narrative") if ev.explanation else None
+        entries.append(
+            JournalEntryOut(
+                at=ev.evaluated_at.isoformat() if ev.evaluated_at else None,
+                label=_journal_label(ev, prev_health),
+                detail=narrative or "; ".join(ev.reasons or []),
+                health_score=score,
+                conviction=ev.current_conviction,
+                action=ev.action,
+            )
+        )
+        prev_health = score
+    if trade.status == "closed":
+        detail = trade.close_reason or "closed"
+        if trade.realized_r is not None:
+            detail = f"{detail} — realized {trade.realized_r:+.2f}R"
+        entries.append(
+            JournalEntryOut(
+                at=trade.closed_at.isoformat() if trade.closed_at else None,
+                label="Exited",
+                detail=detail,
+                health_score=trade.current_health_score,
+                conviction=None,
+                action=None,
+            )
+        )
+    return entries
+
+
+# --------------------------------------------------------------------------- #
+# Management analytics (Phase 8) — grades the management logic itself
+# --------------------------------------------------------------------------- #
+def _eval_health(ev: TradeEvaluation) -> float:
+    return ev.health_score if ev.health_score is not None else ev.thesis_strength
+
+
+def management_analytics(session: Session) -> ManagementAnalyticsOut:
+    """Metrics about how theses are managed — independent of market conditions."""
+    trades_repo = TrackedTradeRepository(session)
+    evals_repo = TradeEvaluationRepository(session)
+    trades = trades_repo.list_trades(limit=100_000)
+
+    decays: list[float] = []
+    recoveries: list[float] = []
+    all_healths: list[float] = []
+    holding_days: list[float] = []
+    ages: list[float] = []
+    final_healths: list[float] = []
+    raise_counts: list[int] = []
+    lower_counts: list[int] = []
+    health_vs_r: list[tuple[float, float]] = []
+
+    for trade in trades:
+        history = list(reversed(evals_repo.for_trade(trade.trade_uid)))
+        healths = [_eval_health(ev) for ev in history]
+        convictions = [ev.current_conviction for ev in history if ev.current_conviction is not None]
+        all_healths.extend(healths)
+        if convictions:
+            decay = management.conviction_decay(trade.conviction_score, convictions[-1])
+            if decay is not None:
+                decays.append(decay)
+            recovery = management.conviction_recovery(convictions)
+            if recovery is not None:
+                recoveries.append(recovery)
+        raise_counts.append(sum(1 for ev in history if ev.action == "Raise Stop"))
+        lower_counts.append(sum(1 for ev in history if ev.action == "Lower Stop"))
+
+        start = _naive(trade.recommended_at)
+        end_ts = trade.closed_at or trade.last_evaluated_at
+        if end_ts is not None:
+            ages.append(max(0.0, (_naive(end_ts) - start).total_seconds() / 86400.0))
+        if trade.status == "closed":
+            if trade.closed_at is not None:
+                holding_days.append(
+                    max(0.0, (_naive(trade.closed_at) - start).total_seconds() / 86400.0)
+                )
+            if healths:
+                final_healths.append(healths[-1])
+        if trade.realized_r is not None and healths:
+            avg_health = sum(healths) / len(healths)
+            health_vs_r.append((avg_health, trade.realized_r))
+
+    # Best / worst exits: Exit advice ranked by what happened afterwards.
+    exit_grades: list[AdviceGrade] = []
+    for trade in trades_repo.realized():
+        exit_grades.extend(
+            g
+            for g in _grades_for(trade, evals_repo.for_trade(trade.trade_uid))
+            if g.action is TradeAction.EXIT
+        )
+    exit_grades.sort(key=lambda g: g.remaining_r)  # most-negative first = best exits
+
+    def _round(value: float | None) -> float | None:
+        return round(value, 2) if value is not None else None
+
+    return ManagementAnalyticsOut(
+        trades_tracked=len(trades),
+        avg_conviction_decay=_round(management.mean(decays)),
+        avg_trade_health=_round(management.mean(all_healths)),
+        avg_holding_period_days=_round(management.mean(holding_days)),
+        max_thesis_age_days=_round(max(ages) if ages else None),
+        most_successful_health=management.best_health_bucket(health_vs_r),
+        best_exits=[AdviceGradeOut(**g.to_dict()) for g in exit_grades[:3]],
+        worst_exits=[AdviceGradeOut(**g.to_dict()) for g in list(reversed(exit_grades))[:3]],
+        avg_conviction_recovery=_round(management.mean(recoveries)),
+        avg_stop_raises=_round(management.mean([float(n) for n in raise_counts])),
+        avg_stop_lowers=_round(management.mean([float(n) for n in lower_counts])),
+        avg_health_before_exit=_round(management.mean(final_healths)),
     )

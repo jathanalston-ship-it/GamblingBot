@@ -39,10 +39,15 @@ class TradeEvaluation(IntPKMixin, TimestampMixin, Base):
     thesis_strength: Mapped[float] = mapped_column(Float, nullable=False)
     thesis_stability: Mapped[float] = mapped_column(Float, nullable=False)
     health: Mapped[str] = mapped_column(String(16), nullable=False)
+    # The explainable 0-100 battery percentage + its per-component accounting.
+    health_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    health_breakdown: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
     action: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
     reasons: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     price: Mapped[float] = mapped_column(Float, nullable=False)
     stop_breached: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Explainability engine output (what/why/confidence/evidence + narrative).
+    explanation: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
     model_version: Mapped[str] = mapped_column(String(32), nullable=False, default="v1")
 
@@ -69,8 +74,11 @@ class TradeEvaluation(IntPKMixin, TimestampMixin, Base):
             "thesis_strength": self.thesis_strength,
             "thesis_stability": self.thesis_stability,
             "health": self.health,
+            "health_score": self.health_score,
+            "health_breakdown": self.health_breakdown,
             "action": self.action,
             "reasons": self.reasons,
             "price": self.price,
             "stop_breached": self.stop_breached,
+            "explanation": self.explanation,
         }

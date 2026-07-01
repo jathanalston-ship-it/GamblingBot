@@ -111,6 +111,18 @@ class MarketFeatures:
 
 
 @dataclass(frozen=True, slots=True)
+class PriorSnapshot:
+    """Key readings from the trade's previous evaluation (for explainability)."""
+
+    evaluated_at: str | None = None  # ISO timestamp
+    conviction: float | None = None
+    health_score: float | None = None
+    thesis_strength: float | None = None
+    action: str | None = None
+    price: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class EvaluationInputs:
     """Everything the pure grading functions need for one open trade."""
 
@@ -133,6 +145,9 @@ class EvaluationInputs:
     sector_rs_now: float | None = None
     analog_expectancy_at_entry: float | None = None
     analog_expectancy_now: float | None = None
+    analog_sample_size: int = 0
+    days_held: float | None = None
+    prior: PriorSnapshot | None = None
     prior_strengths: tuple[float, ...] = field(default=())
 
 
@@ -155,10 +170,13 @@ class ThesisEvaluation:
     thesis_strength: float  # 0-100
     thesis_stability: float  # 0-1 (1 = perfectly stable across evaluations)
     health: TradeHealth
+    health_score: float  # 0-100 "battery percentage" (explainable, see health.py)
+    health_breakdown: tuple[dict[str, Any], ...]  # per-component points, never black-box
     action: TradeAction
     reasons: tuple[str, ...]
     price: float
     stop_breached: bool
+    explanation: dict[str, Any] | None = None  # explainability engine output
 
     def to_record(self) -> dict[str, Any]:
         """Column mapping for the ``trade_evaluations`` table (sans trade uid/ts)."""
@@ -178,8 +196,11 @@ class ThesisEvaluation:
             "thesis_strength": self.thesis_strength,
             "thesis_stability": self.thesis_stability,
             "health": self.health.value,
+            "health_score": self.health_score,
+            "health_breakdown": list(self.health_breakdown),
             "action": self.action.value,
             "reasons": list(self.reasons),
             "price": self.price,
             "stop_breached": self.stop_breached,
+            "explanation": self.explanation,
         }

@@ -63,6 +63,65 @@ Broken), and one **action** from a deterministic, most-defensive-first cascade:
 
 Every evaluation stores its reasons in plain language.
 
+## Trade Health — the battery percentage (never a black box)
+
+Alongside thesis strength, every evaluation computes an explainable **0–100
+Trade Health score** (`trade_lifecycle/health.py`) from eight weighted
+components — Conviction, Trend, Volume, Volatility, Regime, Sector, **Time
+decay** (thesis age vs a grace/full-decay window) and **Analog confidence**
+(historical cohort expectancy, shrunk for small samples). Each component
+reports the points it earned out of the points available, the delta versus a
+neutral reading, and a detail string quoting the measured values (e.g.
+`conviction 72/100, +2 since entry`) — the components sum exactly to the score,
+proven by test. Weights + decay windows live in
+`config/trade_lifecycle.example.yaml` (`health_weights`,
+`time_decay_grace_days` / `time_decay_full_days`, `analog_min_sample`). The
+health *band* (Strong/Stable/Weakening/Broken) and the trade's cached
+`current_health_score` derive from this score; the full breakdown is persisted
+per evaluation (`health_breakdown`, migration `0024`).
+
+## Explainability engine
+
+Every evaluation also persists a structured, **data-only** explanation
+(`trade_lifecycle/explain.py`, stored in `trade_evaluations.explanation`):
+**what changed** (price/conviction/health/action vs the previous evaluation,
+with exact numbers), **why it changed** (the components that moved the score
+most), **why confidence increased or decreased** (health delta + its largest
+factor), **evidence for** and **evidence against** the recommendation (the
+positive / negative health components with their measured details), and a
+narrative capped at **250 words**. Everything is deterministic templating over
+values the engine actually computed — no free text, no hallucination surface.
+
+## Thesis journal
+
+`GET /trade-lifecycle/{uid}/journal` turns the append-only history into the
+trade's story: **Opened** (conviction/entry/stop) → one entry per evaluation
+(the action when it isn't Hold; otherwise a measured label — *Thesis
+strengthening / weakening*, *Momentum slowing*, *Still on thesis* — plus the
+evaluation's narrative) → **Exited** (close reason + realized R). Derived on
+demand from the immutable rows; nothing is ever replaced.
+
+## Management analytics
+
+`GET /trade-lifecycle/management-analytics` grades the **management logic
+itself** — not win rate, not profit: average conviction decay, average trade
+health, average holding period, maximum thesis age, the most successful health
+decile (by realized R), best exits (loss avoided) and worst exits (upside left
+behind, from the hindsight grades), average conviction recovery after dips,
+average stop raises/lowers per trade, and average health before exit. Pure
+helpers in `trade_lifecycle/management.py`; derived on demand.
+
+## Desktop — Trades (Portfolio Command Center)
+
+The **Trades** view is the daily screen: a card per tracked trade (symbol, the
+health battery with color band, the current stance), click-through to the full
+thesis. The detail panel includes a **Time Machine** — a slider over the
+trade's evaluations showing health, action and the explanation at each point in
+time (plus a clickable health-history strip) — the per-point **health
+breakdown** table, the **explanation** panel (what changed / confidence /
+evidence for & against), the **thesis journal** timeline, and the management
+analytics grid.
+
 ## Architecture
 
 ```
@@ -123,6 +182,8 @@ automatically (migration `0023`: `tracked_trades.journal_trade_id` FK +
 - `GET /trade-lifecycle/{trade_uid}/evaluations` — the full appended history.
 - `GET /trade-lifecycle/{trade_uid}/grades` — that trade's advice graded
   against its realized outcome (empty until realized).
+- `GET /trade-lifecycle/{trade_uid}/journal` — the thesis journal (the story).
+- `GET /trade-lifecycle/management-analytics` — the management-quality metrics.
 - `POST /actions/reevaluate-trades` — manual reevaluation job (pulls fresh
   bars, then links/realizes).
 

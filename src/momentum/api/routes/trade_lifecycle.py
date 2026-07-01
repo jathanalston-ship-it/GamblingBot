@@ -10,6 +10,8 @@ from momentum.api.dependencies import get_session
 from momentum.api.schemas import (
     AdviceGradeOut,
     AdviceReportOut,
+    JournalEntryOut,
+    ManagementAnalyticsOut,
     TrackedTradeOut,
     TradeEvaluationOut,
     TradeLifecycleSummaryOut,
@@ -44,6 +46,13 @@ def advice_report(session: Session = Depends(get_session)) -> AdviceReportOut:
     return trade_lifecycle_service.advice_report(session)
 
 
+@router.get("/management-analytics", response_model=ManagementAnalyticsOut)
+def management_analytics(session: Session = Depends(get_session)) -> ManagementAnalyticsOut:
+    """Metrics that grade the management logic itself (conviction decay, health,
+    thesis age, best/worst exits, recovery, stop movement)."""
+    return trade_lifecycle_service.management_analytics(session)
+
+
 @router.get("/{trade_uid}", response_model=TrackedTradeOut)
 def get_trade(trade_uid: str, session: Session = Depends(get_session)) -> TrackedTradeOut:
     """One tracked trade (original thesis + current state)."""
@@ -71,3 +80,12 @@ def grades(trade_uid: str, session: Session = Depends(get_session)) -> list[Advi
     if trade_lifecycle_service.get_trade(session, trade_uid) is None:
         raise HTTPException(status_code=404, detail=f"no tracked trade {trade_uid!r}")
     return trade_lifecycle_service.trade_grades(session, trade_uid)
+
+
+@router.get("/{trade_uid}/journal", response_model=list[JournalEntryOut])
+def journal(trade_uid: str, session: Session = Depends(get_session)) -> list[JournalEntryOut]:
+    """The trade's thesis journal: opened → every evaluation → exited."""
+    entries = trade_lifecycle_service.trade_journal(session, trade_uid)
+    if not entries:
+        raise HTTPException(status_code=404, detail=f"no tracked trade {trade_uid!r}")
+    return entries

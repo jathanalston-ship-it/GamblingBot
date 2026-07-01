@@ -950,6 +950,7 @@ class TrackedTradeOut(BaseModel):
     sector: str | None
     thesis: str | None
     current_thesis_strength: float | None
+    current_health_score: float | None
     trade_health: str | None
     status: str
     last_evaluated_at: str | None
@@ -982,10 +983,13 @@ class TradeEvaluationOut(BaseModel):
     thesis_strength: float
     thesis_stability: float
     health: str
+    health_score: float | None
+    health_breakdown: list[dict[str, Any]] | None
     action: str
     reasons: list[str] | None
     price: float
     stop_breached: bool
+    explanation: dict[str, Any] | None
 
 
 class TradeLifecycleSummaryOut(BaseModel):
@@ -1030,3 +1034,31 @@ class AdviceReportOut(BaseModel):
     overall_accuracy: float | None
     by_action: list[AdviceActionStatsOut]
     recent_grades: list[AdviceGradeOut]
+
+
+class JournalEntryOut(BaseModel):
+    """One entry in a trade's thesis journal (opened → evaluations → exited)."""
+
+    at: str | None
+    label: str
+    detail: str | None
+    health_score: float | None
+    conviction: float | None
+    action: str | None
+
+
+class ManagementAnalyticsOut(BaseModel):
+    """Metrics that grade the management logic itself (not win rate, not profit)."""
+
+    trades_tracked: int
+    avg_conviction_decay: float | None
+    avg_trade_health: float | None
+    avg_holding_period_days: float | None
+    max_thesis_age_days: float | None
+    most_successful_health: dict[str, Any] | None
+    best_exits: list[AdviceGradeOut]
+    worst_exits: list[AdviceGradeOut]
+    avg_conviction_recovery: float | None
+    avg_stop_raises: float | None
+    avg_stop_lowers: float | None
+    avg_health_before_exit: float | None
