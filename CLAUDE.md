@@ -623,14 +623,18 @@ trading platform for US equities. Python 3.12, strictly typed. See
   journal `scale_out`/`update_stop`, recovery-safe; reasons
   `trailing_stop`/`scale_out`); **orders/fills persistence** (`orders` + `fills`
   tables, migration `0026`, `OrderRepository.persist` idempotent per client
-  order id, wired into pipeline entries + engine exits, `GET /orders`);
-  **backtest run detail** (`optimization_results.details` = equity curve +
-  trade list, `GET /backtests/optimizations/{run_id}/detail`, Backtesting view
-  equity chart + trade table); **Plotly tearsheet**
+  order id, wired into pipeline entries + engine exits, `GET /orders` + a
+  Paper-screen **Orders & Fills** panel); **backtest run detail**
+  (`optimization_results.details` = equity curve + trade list,
+  `GET /backtests/optimizations/{run_id}/detail`, Backtesting view equity
+  chart + trade table); **Plotly tearsheet**
   (`reporting/{plots,tearsheet,report_generator}.py`, self-contained HTML
-  written per backtest run); demo-seeded **tracked trades** (Trades screen
-  demos); Electron **single-instance lock grace-retry** (12×750 ms). The
-  remaining backlog is only externally-blocked items — see `docs/BACKLOG.md`.
+  written per backtest run, served at `GET
+  /backtests/optimizations/{run_id}/tearsheet` behind an **Open tearsheet**
+  button); demo-seeded **tracked trades** (Trades screen demos); Electron
+  **single-instance lock grace-retry** (12×750 ms); partial scale-outs are
+  reported as `num_scale_outs`, never counted in `num_closed`. The remaining
+  backlog is only externally-blocked items — see `docs/BACKLOG.md`.
 
 ## Philosophy (what we optimise for)
 

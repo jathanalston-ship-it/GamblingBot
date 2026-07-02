@@ -37,7 +37,12 @@ class DailyReport:
 
     @property
     def num_closed(self) -> int:
-        return len(self.closed)
+        """Full position closes only — partial scale-outs are counted separately."""
+        return sum(1 for c in self.closed if c.get("reason") != "scale_out")
+
+    @property
+    def num_scale_outs(self) -> int:
+        return sum(1 for c in self.closed if c.get("reason") == "scale_out")
 
     @property
     def day_pnl(self) -> float:
@@ -57,6 +62,7 @@ class DailyReport:
             "num_open_positions": self.num_open_positions,
             "num_opened": self.num_opened,
             "num_closed": self.num_closed,
+            "num_scale_outs": self.num_scale_outs,
             "opened": list(self.opened),
             "closed": list(self.closed),
             "entry_outcomes": dict(self.entry_outcomes),
@@ -73,7 +79,8 @@ class DailyReport:
             f"- **Realised P&L:** {self.realized_pnl:+,.2f} | "
             f"**Unrealised:** {self.unrealized_pnl:+,.2f}",
             f"- **Open positions:** {self.num_open_positions}",
-            f"- **Opened today:** {self.num_opened} | **Closed today:** {self.num_closed}",
+            f"- **Opened today:** {self.num_opened} | **Closed today:** {self.num_closed}"
+            + (f" | **Scale-outs:** {self.num_scale_outs}" if self.num_scale_outs else ""),
             "",
         ]
         if self.opened:

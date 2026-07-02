@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { apiBaseUrl } from "../api/client";
 import type { Optimization } from "../api/types";
 import { ActionButton } from "../components/ActionButton";
 import { Card } from "../components/Card";
@@ -111,6 +112,36 @@ const tradeCols: Column<BacktestTrade>[] = [
   { key: "exit_reason", header: "Exit reason", render: (t) => t.exit_reason ?? "—" },
 ];
 
+/** Opens the run's persisted HTML tearsheet in the system browser. */
+function TearsheetButton({ runId }: { runId: string }) {
+  const [note, setNote] = useState<string | null>(null);
+  const url = `${apiBaseUrl()}/backtests/optimizations/${runId}/tearsheet`;
+  const open = async () => {
+    try {
+      const res = await fetch(url, { method: "GET" });
+      if (!res.ok) {
+        setNote("no tearsheet on disk for this run (re-run the backtest to generate one)");
+        return;
+      }
+      setNote(null);
+      window.open(url); // Electron routes this to the OS default browser
+    } catch {
+      setNote("tearsheet unavailable — backend unreachable");
+    }
+  };
+  return (
+    <span className="flex items-center gap-2">
+      <button
+        onClick={() => void open()}
+        className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-surface"
+      >
+        Open tearsheet
+      </button>
+      {note && <span className="text-[11px] text-amber-400">{note}</span>}
+    </span>
+  );
+}
+
 function RunDetail({ runId }: { runId: string }) {
   const { data, error, loading } = useApi<BacktestDetail>(
     `/backtests/optimizations/${runId}/detail`,
@@ -119,6 +150,9 @@ function RunDetail({ runId }: { runId: string }) {
   if (error) return <ErrorBox message={`no detail for this run: ${error}`} />;
   return (
     <div className="space-y-4">
+      <div className="flex justify-end">
+        <TearsheetButton runId={runId} />
+      </div>
       <EquityCurve points={data?.equity_curve ?? []} />
       <DataTable
         columns={tradeCols}

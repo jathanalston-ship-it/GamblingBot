@@ -240,7 +240,8 @@ class DailyOrchestrationEngine:
                 finished_at=when,
                 equity_end=portfolio.equity,
                 num_opened=len(opened),
-                num_closed=len(closed),
+                # Full closes only — a partial scale-out leaves the position open.
+                num_closed=sum(1 for c in closed if c.get("reason") != SCALE_OUT),
             )
             session.commit()
 

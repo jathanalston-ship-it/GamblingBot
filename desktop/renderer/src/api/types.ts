@@ -99,6 +99,34 @@ export interface Signal {
   [k: string]: unknown;
 }
 
+export interface OrderFill {
+  order_id: string;
+  symbol: string;
+  side: string;
+  shares: number;
+  price: number;
+  fees: number;
+  ts: string | null;
+}
+
+export interface PaperOrder {
+  order_id: string;
+  run_id: string | null;
+  symbol: string;
+  side: string;
+  quantity: number;
+  order_type: string;
+  time_in_force: string;
+  status: string;
+  filled_quantity: number;
+  avg_fill_price: number | null;
+  total_fees: number;
+  reject_reason: string | null;
+  created_ts: string | null;
+  fills: OrderFill[];
+  [k: string]: unknown;
+}
+
 export interface RiskMetric {
   as_of: string;
   scope: string;

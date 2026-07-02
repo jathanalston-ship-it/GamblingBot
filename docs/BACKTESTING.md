@@ -116,4 +116,7 @@ backtest** button) persists more than the summary row:
   drawdown/underwater, R-distribution, rolling expectancy + headline metrics,
   stamped with run id & package version) to
   `<MRP_USER_DIR>/reports/tearsheet-<run_id>.html`; the path is returned in the
-  job summary. Best-effort: a reporting failure never fails the backtest.
+  job summary and the document is served by `GET
+  /backtests/optimizations/{run_id}/tearsheet` — the Backtesting run detail has
+  an **Open tearsheet** button that opens it in the system browser.
+  Best-effort: a reporting failure never fails the backtest.

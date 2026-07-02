@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 
-import type { AuditEvent, PortfolioSnapshot, RunDetail, Signal, Trade } from "../api/types";
+import type {
+  AuditEvent,
+  PaperOrder,
+  PortfolioSnapshot,
+  RunDetail,
+  Signal,
+  Trade,
+} from "../api/types";
 import { ActionButton } from "../components/ActionButton";
 import { Badge, regimeTone, type Tone } from "../components/Badge";
 import { Card } from "../components/Card";
@@ -25,6 +32,7 @@ export default function Paper() {
   const closedT = useApi<Trade[]>(`/trades?status=closed&limit=200${runQ}`);
   const sigs = useApi<Signal[]>(`/signals?limit=25${runQ}`);
   const aud = useApi<AuditEvent[]>(`/audit?limit=40${runQ}`);
+  const orders = useApi<PaperOrder[]>(`/orders?limit=40${runQ}`);
 
   // Default the selection to the most recent paper session.
   useEffect(() => {
@@ -38,6 +46,7 @@ export default function Paper() {
     closedT.reload();
     sigs.reload();
     aud.reload();
+    orders.reload();
   };
 
   // Headline account stats from the latest snapshot of the selected run (or any).
@@ -109,8 +118,8 @@ export default function Paper() {
               )}
             </Async>
             <p className="mt-2 text-xs text-slate-500">
-              Mark-to-market (live price / unrealized P&amp;L) requires a market-data feed — coming
-              with the quotes endpoint.
+              Live mark-to-market (last price / unrealized R &amp; P&amp;L / distance to stop) is on
+              the <b className="text-slate-400">Trades</b> screen, refreshed by each scan.
             </p>
           </Card>
 
@@ -125,6 +134,15 @@ export default function Paper() {
           <Card title={`Recent Signals · ${sigs.data?.length ?? 0}`}>
             <Async state={sigs} empty="No signals recorded.">
               {(rows) => <SignalTable rows={rows} />}
+            </Async>
+          </Card>
+
+          <Card
+            title={`Orders & Fills · ${orders.data?.length ?? 0}`}
+            action={<RunFilterNote run={run} />}
+          >
+            <Async state={orders} empty="No orders recorded — run a paper session.">
+              {(rows) => <OrderTable rows={rows} />}
             </Async>
           </Card>
         </div>
@@ -294,6 +312,69 @@ function TradeTable({
             </tr>
           );
         })}
+      </tbody>
+    </table>
+  );
+}
+
+const ORDER_STATUS_TONE: Record<string, string> = {
+  filled: "text-bull",
+  partially_filled: "text-amber-400",
+  rejected: "text-bear",
+  cancelled: "text-slate-400",
+};
+
+function OrderTable({ rows }: { rows: PaperOrder[] }): ReactNode {
+  return (
+    <table className="w-full text-sm">
+      <thead className="text-xs uppercase tracking-wide text-slate-400">
+        <tr className="border-b border-surface-border text-left">
+          <th className="px-2 py-1.5 font-medium">Time</th>
+          <th className="px-2 py-1.5 font-medium">Symbol</th>
+          <th className="px-2 py-1.5 font-medium">Side</th>
+          <th className="px-2 py-1.5 text-right font-medium">Qty</th>
+          <th className="px-2 py-1.5 text-right font-medium">Avg fill</th>
+          <th className="px-2 py-1.5 text-right font-medium">Fees</th>
+          <th className="px-2 py-1.5 font-medium">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((o) => (
+          <tr
+            key={o.order_id}
+            className="border-b border-surface-border/40"
+            title={
+              o.reject_reason ??
+              o.fills.map((f) => `${f.shares} @ ${f.price.toFixed(2)}`).join(", ")
+            }
+          >
+            <td className="px-2 py-1.5 tabular-nums text-slate-400">{date(o.created_ts)}</td>
+            <td className="px-2 py-1.5 font-medium text-slate-200">{o.symbol}</td>
+            <td className="px-2 py-1.5">
+              <span className={o.side === "long" ? "text-bull" : "text-bear"}>
+                {o.side === "long" ? "BUY" : "SELL"}
+              </span>
+            </td>
+            <td className="px-2 py-1.5 text-right tabular-nums text-slate-300">
+              {num(o.filled_quantity || o.quantity, 0)}
+              {o.filled_quantity > 0 && o.filled_quantity < o.quantity
+                ? ` / ${num(o.quantity, 0)}`
+                : ""}
+            </td>
+            <td className="px-2 py-1.5 text-right tabular-nums text-slate-300">
+              {money(o.avg_fill_price)}
+            </td>
+            <td className="px-2 py-1.5 text-right tabular-nums text-slate-400">
+              {num(o.total_fees, 2)}
+            </td>
+            <td className={`px-2 py-1.5 ${ORDER_STATUS_TONE[o.status] ?? "text-slate-300"}`}>
+              {o.status}
+              {o.reject_reason ? (
+                <span className="ml-1 text-[10px] text-slate-500">({o.reject_reason})</span>
+              ) : null}
+            </td>
+          </tr>
+        ))}
       </tbody>
     </table>
   );

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -40,3 +43,20 @@ def get_backtest_detail(run_id: str, session: Session = Depends(get_session)) ->
         equity_curve=detail.get("equity_curve", []),
         trades=detail.get("trades", []),
     )
+
+
+# Run ids are timestamps like "backtest-20260702-153000" — never path segments.
+_RUN_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+@router.get("/optimizations/{run_id}/tearsheet", response_class=HTMLResponse)
+def get_tearsheet(run_id: str) -> HTMLResponse:
+    """The self-contained HTML tearsheet written when the backtest ran."""
+    from momentum.api.user_settings import _user_dir
+
+    if not _RUN_ID_RE.fullmatch(run_id):
+        raise HTTPException(status_code=404, detail="invalid run id")
+    path = _user_dir() / "reports" / f"tearsheet-{run_id}.html"
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail=f"no tearsheet on disk for run {run_id}")
+    return HTMLResponse(path.read_text(encoding="utf-8"))

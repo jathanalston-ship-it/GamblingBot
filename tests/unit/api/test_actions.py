@@ -220,6 +220,14 @@ def test_run_backtest_persists_equity_curve_and_trades(
     assert tearsheet.exists()
     assert result["run_id"] in tearsheet.read_text(encoding="utf-8")
 
+    # ... and is served in-app (Backtesting → Open tearsheet).
+    sheet = client.get(f"/backtests/optimizations/{result['run_id']}/tearsheet")
+    assert sheet.status_code == 200
+    assert "text/html" in sheet.headers["content-type"]
+    assert result["run_id"] in sheet.text
+    assert client.get("/backtests/optimizations/none/tearsheet").status_code == 404
+    assert client.get("/backtests/optimizations/a%2Fb/tearsheet").status_code == 404
+
 
 def test_seed_demo_data_is_idempotent(factory: sessionmaker[Session]) -> None:
     from momentum.persistence.models import PortfolioSnapshot, ScanResult, Trade

@@ -242,10 +242,15 @@ def test_scale_out_banks_profit_and_keeps_position(session: Session, make_scan: 
         as_of=dt.date(2026, 1, 6),
         regime=RegimeState.BULLISH,
     )
-    assert day2.num_closed == 1
+    # A scale-out is a partial close: reported separately, not as a full close.
+    assert day2.num_closed == 0
+    assert day2.num_scale_outs == 1
+    assert day2.to_dict()["num_scale_outs"] == 1
     assert day2.closed[0]["reason"] == "scale_out"
     assert day2.closed[0]["net_pnl"] > 0
     assert day2.num_open_positions == 1  # still holding the runner
+    run_row = RunRepository(session).get(day2.run_id)
+    assert run_row is not None and run_row.num_closed == 0  # runs table agrees
 
     trade = TradeRepository(session).open_for_symbol("STRONG")
     assert trade is not None and trade.status == "open"
