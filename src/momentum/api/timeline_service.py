@@ -13,9 +13,13 @@ its recent median).
 from __future__ import annotations
 
 import datetime as dt
-import os
-import resource
+import sys
 from typing import Any
+
+try:  # resource is Unix-only; Windows reports memory as unavailable (NULL column)
+    import resource
+except ImportError:  # pragma: no cover — exercised on Windows builds
+    resource = None  # type: ignore[assignment]
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -287,10 +291,12 @@ def record_scan(
     }
 
 
-def _memory_mb() -> float:
-    """Peak RSS of this process in MB (Linux reports ru_maxrss in KB)."""
+def _memory_mb() -> float | None:
+    """Peak RSS of this process in MB; ``None`` where unavailable (Windows)."""
+    if resource is None:
+        return None
     usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    if os.uname().sysname == "Darwin":  # macOS reports bytes
+    if sys.platform == "darwin":  # macOS reports bytes, Linux kilobytes
         return round(usage / (1024.0 * 1024.0), 1)
     return round(usage / 1024.0, 1)
 

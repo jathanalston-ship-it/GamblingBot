@@ -29,6 +29,16 @@ hidden = collect_submodules("momentum") + collect_submodules("uvicorn")
 datas = collect_data_files("momentum")
 datas += [(os.path.join(REPO_ROOT, "config"), "config")]
 
+# zoneinfo needs the IANA database on Windows (no system tzdb). zoneinfo pulls
+# tzdata lazily via importlib.resources, which static analysis can't see — so
+# collect the package + its zone files explicitly for the market daemon's
+# US/Eastern schedule.
+try:
+    datas += collect_data_files("tzdata")
+    hidden += ["tzdata"]
+except Exception:  # tzdata not installed (non-Windows dev build) — zoneinfo uses the OS tzdb
+    pass
+
 block_cipher = None
 
 a = Analysis(
