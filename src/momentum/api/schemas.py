@@ -130,6 +130,7 @@ class RegimeOut(_ORMModel):
     ma_slow: float | None
     adx: float | None
     realized_vol: float | None
+    breadth: float | None
 
 
 class PortfolioSnapshotOut(_ORMModel):
@@ -186,6 +187,7 @@ class ScanResultOut(_ORMModel):
     dollar_volume: float | None
     relative_volume: float | None
     distance_from_ath: float | None
+    atr: float | None
     sector: str | None
 
 
@@ -960,6 +962,11 @@ class TrackedTradeOut(BaseModel):
     realized_r: float | None
     realized_pnl: float | None
     realized_at: str | None
+    # Mark-to-market (last scan-known price; computed on read, never stored)
+    last_price: float | None = None
+    unrealized_r: float | None = None
+    unrealized_pnl: float | None = None
+    distance_to_stop_pct: float | None = None
 
 
 class TradeEvaluationOut(BaseModel):
@@ -1192,3 +1199,82 @@ class ClockOut(BaseModel):
     seconds_to_premarket: float
     seconds_to_next_scan: float | None
     daemon_running: bool
+
+
+class BarOut(BaseModel):
+    """One daily OHLCV bar for charting."""
+
+    ts: str  # calendar date (YYYY-MM-DD)
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float | None
+
+
+class BarsOut(BaseModel):
+    """A symbol's chartable bars + where they came from."""
+
+    symbol: str
+    source: str  # cache | live | stale-cache
+    bars: list[BarOut]
+
+
+class EquityPointOut(BaseModel):
+    """One point on a persisted backtest equity curve."""
+
+    ts: str  # calendar date (YYYY-MM-DD)
+    equity: float
+
+
+class BacktestTradeOut(BaseModel):
+    """One closed trade from a persisted backtest run."""
+
+    symbol: str
+    entry_date: str | None
+    exit_date: str | None
+    pnl: float
+    r_multiple: float
+    holding_days: int
+    exit_reason: str | None
+
+
+class BacktestDetailOut(BaseModel):
+    """Equity curve + trade list persisted for one backtest run."""
+
+    run_id: str
+    equity_curve: list[EquityPointOut]
+    trades: list[BacktestTradeOut]
+
+
+class OrderFillOut(BaseModel):
+    """One persisted execution against an order."""
+
+    order_id: str
+    symbol: str
+    side: str
+    shares: int
+    price: float
+    fees: float
+    ts: str | None
+
+
+class OrderOut(BaseModel):
+    """One persisted broker order with its fills (the execution audit trail)."""
+
+    order_id: str
+    run_id: str | None
+    symbol: str
+    side: str
+    quantity: int
+    order_type: str
+    time_in_force: str
+    limit_price: float | None
+    stop_price: float | None
+    status: str
+    filled_quantity: int
+    avg_fill_price: float | None
+    total_fees: float
+    reject_reason: str | None
+    created_ts: str | None
+    fills: list[OrderFillOut]

@@ -10,3 +10,14 @@ target_r: 3.0
 
 # Exit after this many calendar days held (null = no time stop).
 max_holding_days: 30
+
+# Ratchet the stop to this fraction below the mark (above, for shorts).
+# Stops only ever tighten — never loosen (null = no trailing stop).
+trailing_stop_pct: null
+
+# Take partial profits once at this many R (null = no scale-out).
+# Must be below target_r when both are set.
+scale_out_r: null
+
+# Fraction of the position to sell when the scale-out fires.
+scale_out_fraction: 0.5

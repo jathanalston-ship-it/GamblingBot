@@ -52,12 +52,22 @@ def _parse_date(value: str | None) -> dt.date:
 
 
 def _make_provider(name: str) -> MarketDataProvider:
-    """Build a market-data provider by name (kept tiny so tests can monkeypatch)."""
-    from momentum.data.providers.yfinance import YahooProvider
+    """Build a market-data provider by name (kept tiny so tests can monkeypatch).
 
-    if name.lower() in ("yahoo", "yfinance"):
+    ``yahoo`` is keyless; ``alpaca``/``polygon`` read their API keys from the
+    environment / ``.env`` exactly like the desktop Settings screen (the shared
+    ``user_settings.build_provider`` does the wiring + validation).
+    """
+    lowered = name.lower()
+    if lowered == "yahoo":
+        from momentum.data.providers.yfinance import YahooProvider
+
         return YahooProvider()
-    raise typer.BadParameter(f"unknown provider {name!r} (supported: yahoo)")
+    if lowered in ("alpaca", "polygon"):
+        from momentum.api import user_settings
+
+        return user_settings.build_provider(lowered)
+    raise typer.BadParameter(f"unknown provider {name!r} (supported: yahoo, alpaca, polygon)")
 
 
 def _session_factory(ensure_schema: bool) -> sessionmaker[Session]:
@@ -115,7 +125,7 @@ def paper_run(
     as_of: str = typer.Option(None, "--as-of", help="Session date YYYY-MM-DD (default today)."),
     equity: float = typer.Option(100_000.0, help="Starting account equity."),
     lookback_days: int = typer.Option(400, help="Calendar days of history to pull."),
-    provider: str = typer.Option("yahoo", help="Market-data provider."),
+    provider: str = typer.Option("yahoo", help="Market-data provider (yahoo, alpaca, polygon)."),
     log_json: bool = typer.Option(False, "--json", help="Structured JSON logs."),
     log_level: str = typer.Option("INFO", help="Log level."),
 ) -> None:
@@ -160,7 +170,7 @@ def scan(
     ),
     lookback_days: int = typer.Option(400, help="Calendar days of history to pull."),
     top: int = typer.Option(10, help="How many ranked candidates to show."),
-    provider: str = typer.Option("yahoo", help="Market-data provider."),
+    provider: str = typer.Option("yahoo", help="Market-data provider (yahoo, alpaca, polygon)."),
     log_json: bool = typer.Option(False, "--json", help="Structured JSON logs."),
     log_level: str = typer.Option("WARNING", help="Log level."),
 ) -> None:

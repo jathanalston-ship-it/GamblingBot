@@ -26,18 +26,19 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from momentum.conviction.engine import ConvictionBand, ConvictionEngine
-from momentum.core.enums import RegimeState, Side
+from momentum.core.enums import AuditEvent, RegimeState, Side
 from momentum.execution.broker import Broker, OrderRequest
 from momentum.orchestration.daily_report import DailyReport, tally_outcomes
-from momentum.orchestration.exits import ExitManager, ExitSignal
+from momentum.orchestration.exits import SCALE_OUT, ExitManager, ExitSignal
 from momentum.orchestration.pipeline import DailyPaperPipeline
 from momentum.orchestration.recovery import reconstruct_portfolio
 from momentum.portfolio.journal import TradeJournal
 from momentum.portfolio.portfolio import Portfolio
-from momentum.persistence.audit import AuditLogger
+from momentum.persistence.audit import AuditLogger, AuditRecord
 from momentum.persistence.models.portfolio_snapshot import PortfolioSnapshot
 from momentum.persistence.models.risk_metric import RiskMetric
 from momentum.persistence.repositories.audit_log import AuditLogRepository
+from momentum.persistence.repositories.orders import OrderRepository
 from momentum.persistence.repositories.portfolio_snapshots import PortfolioSnapshotRepository
 from momentum.persistence.repositories.risk_metrics import RiskMetricRepository
 from momentum.persistence.repositories.runs import RunRepository
@@ -183,6 +184,7 @@ class DailyOrchestrationEngine:
         trades = TradeRepository(session)
         runs = RunRepository(session)
         journal = TradeJournal(trades)
+        orders = OrderRepository(session)
         audit = AuditLogger(AuditLogRepository(session)) if self.enable_audit else None
 
         # 1-2. Recover the account from the ledger; record a durable running marker.
@@ -210,7 +212,7 @@ class DailyOrchestrationEngine:
         try:
             # 3. Manage exits on the recovered book.
             closed = self._manage_exits(
-                portfolio, journal, trades, audit, marks, as_of, when, run_id
+                portfolio, journal, trades, orders, audit, marks, as_of, when, run_id
             )
             session.commit()
 
@@ -225,6 +227,7 @@ class DailyOrchestrationEngine:
                 min_conviction_band=self.min_conviction_band,
                 entry_reason=self.entry_reason,
                 audit=audit,
+                orders=orders,
             )
             report = pipeline.run(scan, run_id=run_id, regime=regime, ts=when)
             opened = [d.to_dict() for d in report.opened]
@@ -336,19 +339,25 @@ class DailyOrchestrationEngine:
         portfolio: Portfolio,
         journal: TradeJournal,
         trades: TradeRepository,
+        orders: OrderRepository,
         audit: AuditLogger | None,
         marks: dict[str, float],
         as_of: dt.date,
         ts: dt.datetime,
         run_id: str,
     ) -> list[dict[str, Any]]:
+        # Ratchet trailing stops on the live book *before* evaluating exits, so
+        # a mark through the tightened stop closes on this same cycle.
+        self._apply_trailing_stops(portfolio, journal, trades, audit, marks, ts, run_id)
+
         closed: list[dict[str, Any]] = []
         for signal in self.exit_manager.exits(portfolio.open_positions, marks, as_of):
             position = portfolio.positions[signal.symbol]
             exit_side = Side.SHORT if position.side is Side.LONG else Side.LONG
+            intent = "scale" if signal.is_partial else "exit"
             order = self.broker.submit(
                 OrderRequest(
-                    client_order_id=f"{run_id}:exit:{signal.symbol}",
+                    client_order_id=f"{run_id}:{intent}:{signal.symbol}",
                     symbol=signal.symbol,
                     side=exit_side,
                     quantity=signal.quantity,
@@ -356,6 +365,7 @@ class DailyOrchestrationEngine:
                     ts=ts,
                 )
             )
+            orders.persist(order, run_id=run_id)
             if audit is not None:
                 audit.order_submitted(order, ts=ts, run_id=run_id)
             if not order.is_filled:
@@ -365,12 +375,58 @@ class DailyOrchestrationEngine:
             trade = trades.open_for_symbol(signal.symbol)
             if trade is None:
                 continue
+            if signal.is_partial:
+                banked_before = trade.scaled_out_pnl or 0.0
+                journal.scale_out(trade, fill)
+                if audit is not None:
+                    audit.order_filled(order, fill, run_id=run_id)
+                closed.append(
+                    {
+                        "symbol": signal.symbol,
+                        "reason": SCALE_OUT,
+                        "exit_price": fill.price,
+                        "quantity": fill.shares,
+                        "r_multiple": None,
+                        "net_pnl": round((trade.scaled_out_pnl or 0.0) - banked_before, 2),
+                    }
+                )
+                continue
             closed_trade = journal.close_trade(trade, fill, exit_reason=signal.reason)
             if audit is not None:
                 audit.order_filled(order, fill, run_id=run_id)
                 audit.position_closed(closed_trade, reason=signal.reason, run_id=run_id)
             closed.append(_closed_record(signal, closed_trade))
         return closed
+
+    def _apply_trailing_stops(
+        self,
+        portfolio: Portfolio,
+        journal: TradeJournal,
+        trades: TradeRepository,
+        audit: AuditLogger | None,
+        marks: dict[str, float],
+        ts: dt.datetime,
+        run_id: str,
+    ) -> None:
+        for symbol, new_stop in self.exit_manager.stop_adjustments(
+            portfolio.open_positions, marks
+        ).items():
+            portfolio.positions[symbol].set_stop(new_stop)
+            trade = trades.open_for_symbol(symbol)
+            if trade is not None:
+                journal.update_stop(trade, new_stop)
+            if audit is not None:
+                audit.record(
+                    AuditRecord(
+                        event=AuditEvent.RISK_ADJUSTMENT,
+                        summary=f"trailing stop on {symbol} tightened to {new_stop:.2f}",
+                        ts=ts,
+                        run_id=run_id,
+                        symbol=symbol,
+                        entity_type="position",
+                        payload={"new_stop": new_stop},
+                    )
+                )
 
 
 def _closed_record(signal: ExitSignal, trade: Any) -> dict[str, Any]:

@@ -14,16 +14,25 @@ recover state → manage exits → run entries → persist run → daily report
   1. **Recover** — `reconstruct_portfolio` rebuilds the `Portfolio` from the
      `trades` ledger (open positions + derived cash); marks to the day's prices.
   2. **Run marker** — writes a `running` row to the `runs` table (durable).
-  3. **Manage exits** — `ExitManager` evaluates each open position; a triggered
-     stop / target / time-stop becomes a closing paper order → portfolio update →
-     `TradeJournal.close_trade`.
+  3. **Manage exits** — trailing stops are ratcheted first (`stop_adjustments`,
+     persisted to `trades.current_stop` so they survive restarts), then
+     `ExitManager` evaluates each open position; a triggered stop / trailing
+     stop / target / scale-out / time-stop becomes a (possibly partial) paper
+     order → portfolio update → `TradeJournal.close_trade` (or
+     `TradeJournal.scale_out`, which banks the partial P&L on the open row).
+     Every exit order + fill is persisted to `orders`/`fills`.
   4. **Run entries** — delegates to `DailyPaperPipeline` (scan → conviction →
-     risk sizing → paper order → position tracking → journal).
+     risk sizing → paper order → position tracking → journal); entry orders are
+     persisted too.
   5. **Persist** — flips the run to `completed` (or `failed`) and returns a
      `DailyReport`.
-- **`exits.py`** — `ExitConfig` (immutable Pydantic; `config/exits.example.yaml`),
-  the pure `evaluate_exit` rule (stop → target-R → time-stop, in priority order)
-  and `ExitManager`.
+- **`exits.py`** — `ExitConfig` (immutable Pydantic; `config/exits.example.yaml`):
+  `use_stop`, `target_r`, `max_holding_days`, plus `trailing_stop_pct` (ratchet
+  the stop that fraction below the mark — tightens only, never loosens) and
+  `scale_out_r`/`scale_out_fraction` (one partial profit-take at a lower R than
+  the full target; fires once, at full size). Pure rules: `trailing_stop` and
+  `evaluate_exit` (stop → target-R → scale-out → time-stop, in priority order)
+  and `ExitManager` (`stop_adjustments` + `exits`).
 - **`recovery.py`** — `reconstruct_portfolio`: cash is derived, not stored, so the
   ledger alone reproduces the live portfolio exactly.
 - **`daily_report.py`** — `DailyReport` (equity before/after, opened/closed,

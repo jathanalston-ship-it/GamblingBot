@@ -178,6 +178,49 @@ def test_run_backtest_persists_optimization_result(factory: sessionmaker[Session
     assert row.objective == "expectancy_r"
 
 
+def test_run_backtest_persists_equity_curve_and_trades(
+    factory: sessionmaker[Session], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The full backtest report: equity curve + trade list, readable via the API."""
+    from fastapi.testclient import TestClient
+
+    from momentum.api.app import create_app
+    from momentum.persistence.models import OptimizationResult
+
+    monkeypatch.setenv("MRP_USER_DIR", str(tmp_path))
+    result = actions.run_backtest(
+        provider=StubProvider(),
+        symbols=["AAA", "BBB"],
+        lookback_days=600,
+        progress=_noop,
+        session_factory=factory,
+    )
+    with factory() as session:
+        row = session.query(OptimizationResult).one()
+        detail = row.details
+    assert detail is not None
+    assert len(detail["equity_curve"]) >= 2
+    assert len(detail["equity_curve"]) <= 251  # downsampled
+    point = detail["equity_curve"][0]
+    assert set(point) == {"ts", "equity"}
+    assert detail["trades"], "closed trades should be recorded"
+    trade = detail["trades"][0]
+    assert {"symbol", "pnl", "r_multiple", "exit_date"} <= set(trade)
+
+    app = create_app(session_factory=factory)
+    client = TestClient(app)
+    body = client.get(f"/backtests/optimizations/{result['run_id']}/detail").json()
+    assert body["run_id"] == result["run_id"]
+    assert body["equity_curve"] == detail["equity_curve"]
+    assert client.get("/backtests/optimizations/nope/detail").status_code == 404
+
+    # The tearsheet was written beside the user data and reported in the summary.
+    assert "tearsheet" in result
+    tearsheet = Path(result["tearsheet"])
+    assert tearsheet.exists()
+    assert result["run_id"] in tearsheet.read_text(encoding="utf-8")
+
+
 def test_seed_demo_data_is_idempotent(factory: sessionmaker[Session]) -> None:
     from momentum.persistence.models import PortfolioSnapshot, ScanResult, Trade
 

@@ -79,6 +79,8 @@ def test_seed_all_returns_counts_and_populates(session: Session) -> None:
 
 
 def test_seed_all_is_idempotent(session: Session) -> None:
+    from momentum.persistence.models import TrackedTrade
+
     seed_demo.seed_all(session)
     session.commit()
     seed_demo.seed_all(session)  # second run must replace, not duplicate
@@ -86,6 +88,24 @@ def test_seed_all_is_idempotent(session: Session) -> None:
     assert _count(session, Trade) == 50
     assert _count(session, ScanResult) == len(seed_demo.SYMBOLS)
     assert _count(session, PortfolioSnapshot) == 30
+    assert _count(session, TrackedTrade) == 4
+
+
+def test_seed_populates_tracked_trades(session: Session) -> None:
+    """The Trades screen (tracked trades + evaluation history) demos too."""
+    from momentum.persistence.models import TrackedTrade, TradeEvaluation
+
+    counts = seed_demo.seed_all(session)
+    session.commit()
+    tracked = list(session.scalars(select(TrackedTrade)))
+    assert len(tracked) == counts["tracked_trades"] == 4
+    assert {t.status for t in tracked} == {"open", "closed"}
+    assert all(t.run_id == "demo" and t.trade_health for t in tracked)
+    closed = next(t for t in tracked if t.status == "closed")
+    assert closed.realized_r is not None and closed.realized_pnl is not None
+    evals = list(session.scalars(select(TradeEvaluation)))
+    assert len(evals) == counts["trade_evaluations"] > 20
+    assert all(e.run_id == "demo" for e in evals)
 
 
 def test_seed_creates_expected_counts(session: Session) -> None:

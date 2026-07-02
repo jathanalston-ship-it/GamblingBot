@@ -24,6 +24,7 @@ from momentum.conviction.inputs import ConvictionInputs
 from momentum.core.enums import RegimeState, Side
 from momentum.execution.broker import Broker, OrderRequest
 from momentum.persistence.audit import AuditLogger
+from momentum.persistence.repositories.orders import OrderRepository
 from momentum.portfolio.journal import TradeJournal
 from momentum.portfolio.portfolio import Portfolio
 from momentum.risk.risk_budget import DynamicRiskBudgetEngine, RiskBudgetRequest
@@ -123,6 +124,7 @@ class DailyPaperPipeline:
         min_conviction_band: ConvictionBand = ConvictionBand.MEDIUM,
         entry_reason: str = "momentum_breakout",
         audit: AuditLogger | None = None,
+        orders: OrderRepository | None = None,
     ) -> None:
         self.conviction = conviction
         self.risk = risk
@@ -133,6 +135,7 @@ class DailyPaperPipeline:
         self.min_conviction_band = min_conviction_band
         self.entry_reason = entry_reason
         self.audit = audit
+        self.orders = orders
 
     def run(
         self,
@@ -228,6 +231,8 @@ class DailyPaperPipeline:
                 ts=ts,
             )
         )
+        if self.orders is not None:
+            self.orders.persist(order, run_id=run_id)
         if self.audit is not None:
             self.audit.risk_adjustment(assessment, ts=ts, run_id=run_id)
             self.audit.order_submitted(order, ts=ts, run_id=run_id)

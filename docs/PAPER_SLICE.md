@@ -71,12 +71,26 @@ and re-runnable.
    recorded on the `Position`.
 6. **Journal entry** — `TradeJournal.open_trade` writes the open `trades` row.
 
+## Since the original slice
+
+Later sessions filled the original gaps:
+
+- **Order/fill persistence** — every routed order (entry and exit) is snapshotted
+  to the `orders` table and its executions to `fills` (migration `0026`),
+  idempotent per client order id (`OrderRepository.persist` upserts the order and
+  replaces its fills). Read via `GET /orders`.
+- **Exits** — the orchestration engine runs a full exit pass (stop / trailing
+  stop / target / partial scale-out / time-stop); see `docs/ORCHESTRATION.md`.
+- **Partial-exit accounting** — `TradeJournal.scale_out` reduces the open row's
+  quantity and banks the partial P&L (`scaled_out_quantity`/`scaled_out_pnl`);
+  `close_trade` folds it into the final gross/net/R, and recovery reproduces the
+  cash. `TradeJournal.update_stop` persists trailing-stop moves
+  (`trades.current_stop`).
+- **Scheduler/recovery and the append-only audit log** — see
+  `docs/ORCHESTRATION.md` and `docs/AUDIT_LOGGING.md`.
+
 ## Limitations (deliberately out of this slice)
 
-- **No persistence of orders/positions/fills** — only the journal (`trades`
-  table) is persisted; an orders/positions/fills schema + migration is future
-  work.
-- **Exits** — `TradeJournal.close_trade` and `Portfolio` support closing, but the
-  pipeline only opens entries; an exit pass (stop/target/signal) is future work.
-- **No partial-exit accounting in the journal**, no live broker adapter, no
-  scheduler/recovery, no append-only audit log. See `docs/BACKLOG.md`.
+- **No live broker adapter** — paper-only by design; the `Broker` protocol +
+  persisted orders/fills are the seam a live adapter plugs into. See
+  `docs/BACKLOG.md`.

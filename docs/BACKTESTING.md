@@ -99,3 +99,21 @@ result.equity_curve.plot()
 Orders are filled at the next open; protective stops (mandatory on entries)
 are then enforced gap-aware each subsequent bar, with MFE/MAE tracked so the
 analytics layer can report trend capture.
+
+## Persisted run detail + tearsheet
+
+The operator-console backtest (`api/actions.run_backtest`, the desktop **Run
+backtest** button) persists more than the summary row:
+
+- **`optimization_results.details`** carries the run's **equity curve**
+  (downsampled to ≤ ~250 points) and **trade list** (symbol, entry/exit dates,
+  P&L, R, holding days, exit reason). `GET
+  /backtests/optimizations/{run_id}/detail` serves it; the desktop
+  **Backtesting** view renders the equity curve (SVG) + trade table when a run
+  is selected.
+- **HTML tearsheet** — `momentum.reporting` (`plots.py` → `tearsheet.py` →
+  `report_generator.py`) renders a self-contained Plotly document (equity,
+  drawdown/underwater, R-distribution, rolling expectancy + headline metrics,
+  stamped with run id & package version) to
+  `<MRP_USER_DIR>/reports/tearsheet-<run_id>.html`; the path is returned in the
+  job summary. Best-effort: a reporting failure never fails the backtest.

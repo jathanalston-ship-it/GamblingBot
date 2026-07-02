@@ -42,6 +42,7 @@ python scripts/seed_demo.py --reset-only
 | Opportunity tiers | 15 (Normal / Enhanced / Home Run) | Scanner / Conviction badges |
 | Risk metrics | 3 windows (inception / 90d / 30d) | **Portfolio** risk card |
 | Optimization results | 14 (2 studies, ranked, 1 selected each) | **Backtesting** |
+| Tracked trades | 4 (3 open, 1 closed w/ realized R) + 7-day evaluation trails | **Trades** (health battery, Time Machine, journal) |
 | Run + audit trail | 1 `demo` run, full event log | **Replay** (`mrp replay`) |
 
 The 50 closed trades are the analytics dataset — they have a realistic

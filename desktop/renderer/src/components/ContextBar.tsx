@@ -23,6 +23,7 @@ export function ContextBar({ onOpenPalette }: { onOpenPalette: () => void }) {
 
   const adx = regime.data ? regime.data["adx"] : null;
   const rv = regime.data ? regime.data["realized_vol"] : null;
+  const breadth = regime.data ? regime.data["breadth"] : null;
 
   const latest =
     snaps.data && snaps.data.length > 0 ? snaps.data[snaps.data.length - 1] : null;
@@ -57,6 +58,11 @@ export function ContextBar({ onOpenPalette }: { onOpenPalette: () => void }) {
         {adx != null ? <span className="text-xs text-slate-500">ADX {String(adx)}</span> : null}
         {typeof rv === "number" ? (
           <span className="text-xs text-slate-500">RV {pct(rv, 1)}</span>
+        ) : null}
+        {typeof breadth === "number" ? (
+          <span className="text-xs text-slate-500" title="% of universe above its 200DMA">
+            Breadth {pct(breadth, 0)}
+          </span>
         ) : null}
       </span>
 

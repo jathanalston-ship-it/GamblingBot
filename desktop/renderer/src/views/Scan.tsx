@@ -211,6 +211,12 @@ export default function Scan({ shortlist = false }: { shortlist?: boolean }) {
                   <Th onClick={() => onSort("distance_from_ath")} align="right">
                     ΔATH{caret("distance_from_ath")}
                   </Th>
+                  <th className="px-3 py-2 text-right font-medium" title="20-day average dollar volume">
+                    $ADV
+                  </th>
+                  <th className="px-3 py-2 text-right font-medium" title="Average true range (14)">
+                    ATR
+                  </th>
                   <th className="px-3 py-2 text-left font-medium">Sector</th>
                   <th className="px-3 py-2 text-left font-medium">Gate</th>
                 </tr>
@@ -234,6 +240,14 @@ export default function Scan({ shortlist = false }: { shortlist?: boolean }) {
                     </td>
                     <td className="px-3 py-1.5 text-right tabular-nums">
                       {pct(r.distance_from_ath)}
+                    </td>
+                    <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">
+                      {typeof r["dollar_volume"] === "number"
+                        ? `$${num(r["dollar_volume"] / 1e6, 0)}M`
+                        : "—"}
+                    </td>
+                    <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">
+                      {typeof r["atr"] === "number" ? num(r["atr"], 2) : "—"}
                     </td>
                     <td className="px-3 py-1.5 text-slate-400">{r.sector ?? "—"}</td>
                     <td className="px-3 py-1.5">

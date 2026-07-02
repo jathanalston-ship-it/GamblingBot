@@ -125,6 +125,49 @@ def test_close_rejects_quantity_mismatch(session: Session) -> None:
         journal.close_trade(trade, exit_fill(shares=50), exit_reason="target")
 
 
+def test_scale_out_banks_partial_pnl(session: Session) -> None:
+    journal = TradeJournal(TradeRepository(session))
+    trade = journal.open_trade(entry_fill=entry_fill(), assessment=assessment(), run_id="paper-1")
+    session.commit()
+
+    journal.scale_out(trade, exit_fill(shares=50, price=58.0, fees=0.5))
+    session.commit()
+
+    assert trade.status == "open"
+    assert trade.quantity == 50
+    assert trade.scaled_out_quantity == 50
+    # (58-50)*50 - 0.5 fees = 399.5, net of the scale-out fill's own fees.
+    assert trade.scaled_out_pnl == pytest.approx(399.5)
+    assert trade.fees == pytest.approx(1.0)  # entry fees only
+
+    closed = journal.close_trade(trade, exit_fill(shares=50, price=60.0), exit_reason="target")
+    session.commit()
+    # gross = (60-50)*50 + banked 399.5 = 899.5; fees = 1 entry + 1 exit = 2.
+    assert closed.gross_pnl == pytest.approx(899.5)
+    assert closed.net_pnl == pytest.approx(897.5)
+    # Return on the ORIGINAL notional (100 shares * 50).
+    assert closed.return_pct == pytest.approx(897.5 / 5000.0)
+    assert closed.r_multiple == pytest.approx(897.5 / 200.0)
+
+
+def test_scale_out_rejects_full_close(session: Session) -> None:
+    journal = TradeJournal(TradeRepository(session))
+    trade = journal.open_trade(entry_fill=entry_fill(), assessment=assessment())
+    session.commit()
+    with pytest.raises(ValueError, match="use close_trade"):
+        journal.scale_out(trade, exit_fill(shares=100))
+
+
+def test_update_stop_persists(session: Session) -> None:
+    journal = TradeJournal(TradeRepository(session))
+    trade = journal.open_trade(entry_fill=entry_fill(), assessment=assessment())
+    session.commit()
+    journal.update_stop(trade, 52.5)
+    session.commit()
+    assert trade.current_stop == pytest.approx(52.5)
+    assert trade.initial_stop == pytest.approx(48.0)  # never rewritten
+
+
 def test_close_is_idempotent(session: Session) -> None:
     journal = TradeJournal(TradeRepository(session))
     trade = journal.open_trade(entry_fill=entry_fill(), assessment=assessment())

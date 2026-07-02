@@ -9,12 +9,15 @@ import pytest
 
 from momentum.core.enums import Side
 from momentum.orchestration.exits import (
+    SCALE_OUT,
     STOP,
     TARGET,
     TIME_STOP,
+    TRAILING_STOP,
     ExitConfig,
     ExitManager,
     evaluate_exit,
+    trailing_stop,
 )
 from momentum.portfolio.position import Position
 
@@ -99,6 +102,80 @@ class TestExitManager:
         assert [s.symbol for s in signals] == ["AAPL"]
 
 
+class TestTrailingStop:
+    def test_ratchets_up_with_price(self) -> None:
+        cfg = ExitConfig(trailing_stop_pct=0.05)
+        pos = long_position(entry=100.0, stop=95.0)
+        new_stop = trailing_stop(pos, 110.0, cfg)  # 110 * 0.95 = 104.5 > 95
+        assert new_stop == pytest.approx(104.5)
+
+    def test_never_loosens(self) -> None:
+        cfg = ExitConfig(trailing_stop_pct=0.05)
+        pos = long_position(entry=100.0, stop=95.0)
+        pos.set_stop(104.5)  # already ratcheted on a prior mark
+        assert trailing_stop(pos, 105.0, cfg) is None  # 99.75 would loosen it
+
+    def test_disabled_by_default(self) -> None:
+        assert trailing_stop(long_position(), 200.0, ExitConfig()) is None
+
+    def test_exit_through_ratcheted_stop_is_trailing(self) -> None:
+        cfg = ExitConfig(trailing_stop_pct=0.05)
+        pos = long_position(entry=100.0, stop=95.0)
+        pos.set_stop(104.5)
+        signal = evaluate_exit(pos, 104.0, AS_OF, cfg)
+        assert signal is not None and signal.reason == TRAILING_STOP
+        assert signal.quantity == 100
+
+    def test_exit_through_initial_stop_is_plain_stop(self) -> None:
+        signal = evaluate_exit(long_position(stop=95.0), 94.0, AS_OF, ExitConfig())
+        assert signal is not None and signal.reason == STOP
+
+    def test_manager_collects_adjustments(self) -> None:
+        manager = ExitManager(ExitConfig(trailing_stop_pct=0.10))
+        pos = long_position(entry=100.0, stop=95.0)
+        adjustments = manager.stop_adjustments([pos], {"AAPL": 120.0})
+        assert adjustments == {"AAPL": pytest.approx(108.0)}
+
+
+class TestScaleOut:
+    def test_fires_at_scale_out_r(self) -> None:
+        # entry 100, stop 95 -> 1R = 5/share. Price 110 -> R = 2.0.
+        cfg = ExitConfig(scale_out_r=2.0, scale_out_fraction=0.5, target_r=4.0)
+        signal = evaluate_exit(long_position(entry=100.0, stop=95.0), 110.0, AS_OF, cfg)
+        assert signal is not None and signal.reason == SCALE_OUT
+        assert signal.quantity == 50
+        assert signal.is_partial
+
+    def test_fires_only_once(self) -> None:
+        cfg = ExitConfig(scale_out_r=2.0, scale_out_fraction=0.5)
+        pos = long_position(entry=100.0, stop=95.0)
+        pos.quantity = 50  # already scaled out (initial_quantity stays 100)
+        assert evaluate_exit(pos, 111.0, AS_OF, cfg) is None
+
+    def test_target_takes_priority(self) -> None:
+        cfg = ExitConfig(scale_out_r=2.0, target_r=3.0)
+        signal = evaluate_exit(long_position(entry=100.0, stop=95.0), 116.0, AS_OF, cfg)
+        assert signal is not None and signal.reason == TARGET
+        assert signal.quantity == 100
+
+    def test_one_share_position_never_scales(self) -> None:
+        cfg = ExitConfig(scale_out_r=2.0, scale_out_fraction=0.5)
+        pos = Position.restore(
+            symbol="AAPL",
+            side=Side.LONG,
+            quantity=1,
+            avg_price=100.0,
+            last_price=100.0,
+            initial_stop=95.0,
+            stop=95.0,
+        )
+        assert evaluate_exit(pos, 111.0, AS_OF, cfg) is None
+
+    def test_scale_out_must_be_below_target(self) -> None:
+        with pytest.raises(ValidationError):
+            ExitConfig(scale_out_r=3.0, target_r=3.0)
+
+
 def test_config_validation_and_hash() -> None:
     with pytest.raises(ValidationError):
         ExitConfig.from_dict({"target_r": -1.0})
@@ -113,3 +190,6 @@ def test_example_yaml_loads() -> None:
     assert cfg.use_stop is True
     assert cfg.target_r == 3.0
     assert cfg.max_holding_days == 30
+    assert cfg.trailing_stop_pct is None
+    assert cfg.scale_out_r is None
+    assert cfg.scale_out_fraction == 0.5

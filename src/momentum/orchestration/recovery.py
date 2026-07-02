@@ -43,8 +43,11 @@ def reconstruct_portfolio(
     open_trades = repository.open_positions(run_id)
 
     realized = sum(t.net_pnl for t in closed if t.net_pnl is not None)
+    # Partial scale-outs on still-open trades already returned cash: the sold
+    # shares' entry cost plus their banked P&L (net of the scale-out fees).
+    banked = sum(t.scaled_out_pnl or 0.0 for t in open_trades)
     tied_up = sum(_entry_cost(t) for t in open_trades)
-    cash = starting_equity + realized - tied_up
+    cash = starting_equity + realized + banked - tied_up
 
     portfolio = Portfolio(cash=max(cash, 0.0))
     portfolio.cash = cash  # allow a (rare) negative cash to surface, not be clamped
@@ -77,8 +80,10 @@ def _restore_position(trade: Trade, marks: dict[str, float]) -> Position:
         avg_price=trade.entry_price,
         last_price=last_price,
         initial_stop=trade.initial_stop,
-        stop=trade.initial_stop,
+        stop=trade.current_stop if trade.current_stop is not None else trade.initial_stop,
         entry_fees=trade.fees or 0.0,
         sector=trade.sector,
         opened_ts=trade.entry_ts,
+        # Restore the original entry size so a one-shot scale-out never re-fires.
+        initial_quantity=trade.quantity + (trade.scaled_out_quantity or 0),
     )

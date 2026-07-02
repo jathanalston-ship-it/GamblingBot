@@ -105,6 +105,32 @@ def test_closed_trades_contribute_realized_pnl(session: Session) -> None:
     assert pf.realized_pnl == pytest.approx(998.0)
 
 
+def test_recovery_of_scaled_out_position(session: Session) -> None:
+    """A partially scaled-out trade recovers its cash, size and ratcheted stop."""
+    journal = TradeJournal(TradeRepository(session))
+    _open(journal, "AAPL", 100, 50.0, 48.0)
+    session.commit()
+    trade = TradeRepository(session).open_for_symbol("AAPL", "paper-1")
+    assert trade is not None
+    journal.scale_out(trade, Fill("AAPL-s", "AAPL", Side.SHORT, 40, 58.0, 0.5, TS))
+    journal.update_stop(trade, 52.0)  # trailing stop ratcheted above entry
+    session.commit()
+
+    pf = reconstruct_portfolio(
+        TradeRepository(session), starting_equity=100_000.0, marks={"AAPL": 58.0}
+    )
+    position = pf.positions["AAPL"]
+    assert position.quantity == 60
+    assert position.initial_quantity == 100  # scale-out won't re-fire
+    assert position.stop == pytest.approx(52.0)
+    assert position.initial_stop == pytest.approx(48.0)
+    # Cash = 100_000 - (100*50 + 1) entry + 40*58 - 0.5 from the scale-out
+    #      = 100_000 - 5_001 + 2_319.5 = 97_318.5.
+    assert pf.cash == pytest.approx(97_318.5)
+    # Equity = cash + 60 * 58 = 100_798.5.
+    assert pf.equity == pytest.approx(100_798.5)
+
+
 def test_empty_ledger_returns_starting_equity(session: Session) -> None:
     pf = reconstruct_portfolio(TradeRepository(session), starting_equity=50_000.0, marks={})
     assert pf.equity == pytest.approx(50_000.0)

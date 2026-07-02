@@ -8,6 +8,7 @@ import type {
 } from "../api/types";
 import { Card } from "../components/Card";
 import { ErrorBox, Loading, PageTitle } from "../components/Page";
+import { PriceChart } from "../components/PriceChart";
 import { TradeActions } from "../components/TradeActions";
 import { Stat } from "../components/Stat";
 import { useApi } from "../hooks/useApi";
@@ -90,6 +91,21 @@ function Body({ symbol, runId }: { symbol: string; runId: string | null }) {
           stops &amp; targets snap to swing pivots (EMA fallback when none)
         </span>
       </div>
+
+      <Card title="Price — plan levels on real bars">
+        <PriceChart
+          symbol={data.symbol}
+          overlays={[
+            { label: "entry", price: data.entry, kind: "entry" },
+            { label: "stop", price: data.stop, kind: "stop" },
+            ...data.targets.map((t) => ({
+              label: t.label,
+              price: t.price,
+              kind: "target" as const,
+            })),
+          ]}
+        />
+      </Card>
 
       <OptionsEligibilityCard symbol={data.symbol} runId={runId} />
 

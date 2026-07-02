@@ -68,6 +68,18 @@ from momentum.trade_lifecycle.outcomes import (
 )
 
 
+def _instrument_for(session: Session, symbol: str, run_id: str | None) -> str:
+    """ "shares" or "options", from the options-eligibility verdict (cheap, pure
+    inputs from persisted rows; shares when the gate can't run)."""
+    try:
+        from momentum.api import options_eligibility_service
+
+        verdict = options_eligibility_service.options_eligibility(session, symbol, run_id)
+    except Exception:  # noqa: BLE001 — eligibility must never block tracking
+        return "shares"
+    return "options" if verdict is not None and verdict.eligible else "shares"
+
+
 def _targets_of(plan: TradePlan) -> tuple[dict[str, Any], ...]:
     payload = plan.plan or {}
     targets = payload.get("targets")
@@ -113,7 +125,7 @@ def create_from_recommendations(
             symbol=symbol,
             recommended_at=ts,
             run_id=run_id,
-            instrument="shares",
+            instrument=_instrument_for(session, symbol, run_id),
             quantity=plan.suggested_shares,
             entry_price=plan.entry,
             stop_price=plan.stop,
@@ -475,6 +487,26 @@ def advice_report(session: Session, *, recent_limit: int = 50) -> AdviceReportOu
 # --------------------------------------------------------------------------- #
 # Reads (the /trade-lifecycle routes)
 # --------------------------------------------------------------------------- #
+def _mark_to_market(session: Session, row: TrackedTrade) -> dict[str, Any]:
+    """Live-ish valuation from the last known price (the latest evaluation's
+    price — scan-fresh, not a realtime quote; labeled as such in the UI)."""
+    if row.status != "open":
+        return {}
+    latest = TradeEvaluationRepository(session).latest_for(row.trade_uid)
+    price = latest.price if latest is not None else None
+    if price is None:
+        return {}
+    risk = row.entry_price - row.stop_price
+    unrealized_r = (price - row.entry_price) / risk if risk > 0 else None
+    quantity = row.quantity or 0
+    return {
+        "last_price": round(price, 4),
+        "unrealized_r": round(unrealized_r, 3) if unrealized_r is not None else None,
+        "unrealized_pnl": (round((price - row.entry_price) * quantity, 2) if quantity else None),
+        "distance_to_stop_pct": (round((price - row.stop_price) / price, 4) if price > 0 else None),
+    }
+
+
 def list_trades(
     session: Session,
     *,
@@ -486,12 +518,14 @@ def list_trades(
     rows = TrackedTradeRepository(session).list_trades(
         status=status, symbol=symbol, limit=limit, offset=offset
     )
-    return [TrackedTradeOut(**row.to_dict()) for row in rows]
+    return [TrackedTradeOut(**row.to_dict(), **_mark_to_market(session, row)) for row in rows]
 
 
 def get_trade(session: Session, trade_uid: str) -> TrackedTradeOut | None:
     row = TrackedTradeRepository(session).get_by_uid(trade_uid)
-    return TrackedTradeOut(**row.to_dict()) if row is not None else None
+    if row is None:
+        return None
+    return TrackedTradeOut(**row.to_dict(), **_mark_to_market(session, row))
 
 
 def trade_evaluations(
@@ -708,7 +742,7 @@ def track_symbol(session: Session, symbol: str, *, ts: dt.datetime) -> dict[str,
         symbol=sym,
         recommended_at=ts,
         run_id=plan.run_id,
-        instrument="shares",
+        instrument=_instrument_for(session, sym, plan.run_id),
         quantity=plan.suggested_shares,
         entry_price=plan.entry,
         stop_price=plan.stop,
@@ -763,10 +797,20 @@ def take_trade(
     entry_price = scan.price if scan is not None and scan.price else plan.entry
     regime = services.latest_regime(session)
     risk_per_share = max(0.0, entry_price - plan.stop)
+    # Link the scan's entry signal so Signal Eval grades manual takes too.
+    from momentum.persistence.models.signal import Signal
+
+    entry_signal = session.scalars(
+        select(Signal)
+        .where(Signal.symbol == sym, Signal.signal_type == "entry")
+        .order_by(Signal.ts.desc(), Signal.id.desc())
+        .limit(1)
+    ).first()
     journal_trade = Trade(
         run_id="manual",
         symbol=sym,
         direction="long",
+        entry_signal_id=entry_signal.id if entry_signal is not None else None,
         entry_ts=ts,
         entry_price=entry_price,
         quantity=int(shares),

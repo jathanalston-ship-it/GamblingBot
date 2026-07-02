@@ -610,6 +610,28 @@ trading platform for US equities. Python 3.12, strictly typed. See
   presence only; guarded by `desktop/scripts/no-secret-exposure.test.cjs`). See
   `docs/SECRETS.md`.
 
+- **Backlog sweep (2026-07)** — everything offline-implementable in
+  `docs/BACKLOG.md` was built: scan-emitted entry **signals** + scan
+  **audit-logging**; manual takes link `entry_signal_id`; tracked trades carry
+  the options-eligibility **instrument**; CLI `--provider yahoo|alpaca|polygon`;
+  `GET /bars/{symbol}` (cache-first, live fallback) + **PriceChart** SVG
+  candlesticks with entry/stop/target overlays (Trade Plan, Trades);
+  **mark-to-market** on open tracked trades (last price / unrealized R & P&L /
+  distance-to-stop); breadth in the context bar + $ADV/ATR scan columns;
+  **richer exits** (`trailing_stop_pct` ratchet persisted to
+  `trades.current_stop`, one-shot partial `scale_out_r`/`scale_out_fraction`,
+  journal `scale_out`/`update_stop`, recovery-safe; reasons
+  `trailing_stop`/`scale_out`); **orders/fills persistence** (`orders` + `fills`
+  tables, migration `0026`, `OrderRepository.persist` idempotent per client
+  order id, wired into pipeline entries + engine exits, `GET /orders`);
+  **backtest run detail** (`optimization_results.details` = equity curve +
+  trade list, `GET /backtests/optimizations/{run_id}/detail`, Backtesting view
+  equity chart + trade table); **Plotly tearsheet**
+  (`reporting/{plots,tearsheet,report_generator}.py`, self-contained HTML
+  written per backtest run); demo-seeded **tracked trades** (Trades screen
+  demos); Electron **single-instance lock grace-retry** (12×750 ms). The
+  remaining backlog is only externally-blocked items — see `docs/BACKLOG.md`.
+
 ## Philosophy (what we optimise for)
 
 Optimise for **expectancy, profit factor, average winner, largest winner, trend

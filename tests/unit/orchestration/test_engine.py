@@ -218,6 +218,120 @@ def test_exit_closes_position_on_stop(session: Session, make_scan: MakeScan) -> 
     assert len(closed) == 1 and closed[0].status == "closed"
 
 
+def test_scale_out_banks_profit_and_keeps_position(session: Session, make_scan: MakeScan) -> None:
+    engine = build_engine(
+        exit_config=ExitConfig(use_stop=True, scale_out_r=1.0, scale_out_fraction=0.5)
+    )
+    engine.run_day(
+        session,
+        scan=make_scan([STRONG]),
+        marks={"STRONG": 100.0},
+        as_of=dt.date(2026, 1, 5),
+        regime=RegimeState.BULLISH,
+    )
+    trade = TradeRepository(session).open_for_symbol("STRONG")
+    assert trade is not None and trade.initial_stop is not None
+    original_quantity = trade.quantity
+    one_r = trade.entry_price - trade.initial_stop
+    above_scale_r = trade.entry_price + 1.5 * one_r
+
+    day2 = engine.run_day(
+        session,
+        scan=make_scan([]),
+        marks={"STRONG": above_scale_r},
+        as_of=dt.date(2026, 1, 6),
+        regime=RegimeState.BULLISH,
+    )
+    assert day2.num_closed == 1
+    assert day2.closed[0]["reason"] == "scale_out"
+    assert day2.closed[0]["net_pnl"] > 0
+    assert day2.num_open_positions == 1  # still holding the runner
+
+    trade = TradeRepository(session).open_for_symbol("STRONG")
+    assert trade is not None and trade.status == "open"
+    assert trade.quantity < original_quantity
+    assert trade.scaled_out_quantity == original_quantity - trade.quantity
+    assert trade.scaled_out_pnl > 0
+
+    # Same mark next day: the scale-out must not fire twice.
+    day3 = engine.run_day(
+        session,
+        scan=make_scan([]),
+        marks={"STRONG": above_scale_r},
+        as_of=dt.date(2026, 1, 7),
+        regime=RegimeState.BULLISH,
+    )
+    assert day3.num_closed == 0
+    assert day3.num_open_positions == 1
+
+
+def test_trailing_stop_ratchets_and_closes(session: Session, make_scan: MakeScan) -> None:
+    engine = build_engine(exit_config=ExitConfig(use_stop=True, trailing_stop_pct=0.05))
+    engine.run_day(
+        session,
+        scan=make_scan([STRONG]),
+        marks={"STRONG": 100.0},
+        as_of=dt.date(2026, 1, 5),
+        regime=RegimeState.BULLISH,
+    )
+    # A strong rally ratchets the stop above the entry (and persists it).
+    engine.run_day(
+        session,
+        scan=make_scan([]),
+        marks={"STRONG": 130.0},
+        as_of=dt.date(2026, 1, 6),
+        regime=RegimeState.BULLISH,
+    )
+    trade = TradeRepository(session).open_for_symbol("STRONG")
+    assert trade is not None
+    assert trade.current_stop == pytest.approx(130.0 * 0.95)
+    assert trade.initial_stop is not None and trade.current_stop > trade.initial_stop
+
+    # A pullback through the ratcheted stop closes as a trailing-stop exit.
+    day3 = engine.run_day(
+        session,
+        scan=make_scan([]),
+        marks={"STRONG": 120.0},
+        as_of=dt.date(2026, 1, 7),
+        regime=RegimeState.BULLISH,
+    )
+    assert day3.num_closed == 1
+    assert day3.closed[0]["reason"] == "trailing_stop"
+    closed = TradeRepository(session).closed()
+    assert closed[0].exit_reason == "trailing_stop"
+    assert closed[0].net_pnl is not None and closed[0].net_pnl > 0  # profit protected
+
+
+def test_orders_and_fills_are_persisted(session: Session, make_scan: MakeScan) -> None:
+    from momentum.persistence.repositories.orders import OrderRepository
+
+    engine = build_engine(exit_config=ExitConfig(use_stop=True))
+    engine.run_day(
+        session,
+        scan=make_scan([STRONG]),
+        marks={"STRONG": 100.0},
+        as_of=dt.date(2026, 1, 5),
+        regime=RegimeState.BULLISH,
+    )
+    orders = OrderRepository(session)
+    entry = orders.by_order_id("paper-20260105:STRONG")
+    assert entry is not None and entry.status == "filled"
+    assert len(orders.fills_for(entry.order_id)) == 1
+
+    trade = TradeRepository(session).open_for_symbol("STRONG")
+    assert trade is not None and trade.initial_stop is not None
+    engine.run_day(
+        session,
+        scan=make_scan([]),
+        marks={"STRONG": trade.initial_stop - 1.0},
+        as_of=dt.date(2026, 1, 6),
+        regime=RegimeState.BULLISH,
+    )
+    exit_record = orders.by_order_id("paper-20260106:exit:STRONG")
+    assert exit_record is not None and exit_record.status == "filled"
+    assert exit_record.filled_quantity == trade.quantity
+
+
 def test_weak_candidate_not_opened(session: Session, make_scan: MakeScan) -> None:
     engine = build_engine()
     report = engine.run_day(

@@ -20,6 +20,7 @@ from momentum.orchestration.exits import (
     ExitManager,
     ExitSignal,
     evaluate_exit,
+    trailing_stop,
 )
 from momentum.orchestration.pipeline import (
     DailyPaperPipeline,
@@ -41,5 +42,6 @@ __all__ = [
     "ExitManager",
     "ExitSignal",
     "evaluate_exit",
+    "trailing_stop",
     "reconstruct_portfolio",
 ]

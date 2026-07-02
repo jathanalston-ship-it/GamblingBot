@@ -798,6 +798,10 @@ export interface TrackedTrade {
   realized_r: number | null;
   realized_pnl: number | null;
   realized_at: string | null;
+  last_price?: number | null;
+  unrealized_r?: number | null;
+  unrealized_pnl?: number | null;
+  distance_to_stop_pct?: number | null;
 }
 
 export interface TradeEvaluation {

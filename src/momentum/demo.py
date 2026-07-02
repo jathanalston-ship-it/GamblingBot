@@ -35,7 +35,9 @@ from momentum.persistence.models.run import Run
 from momentum.persistence.models.scan_result import ScanResult
 from momentum.persistence.models.setup_lifecycle import SetupLifecycle
 from momentum.persistence.models.signal import Signal
+from momentum.persistence.models.tracked_trade import TrackedTrade
 from momentum.persistence.models.trade import Trade
+from momentum.persistence.models.trade_evaluation import TradeEvaluation
 from momentum.persistence.models.watchlist_entry import WatchlistEntryRow
 from momentum.persistence.models.watchlist_performance import WatchlistPerformance
 from momentum.persistence.repositories.watchlist_entries import WatchlistRepository
@@ -105,6 +107,8 @@ def reset(session: Session) -> None:
     session.execute(delete(WatchlistEntryRow).where(WatchlistEntryRow.run_id == DEMO_TAG))
     session.execute(delete(WatchlistPerformance).where(WatchlistPerformance.run_id == DEMO_TAG))
     session.execute(delete(SetupLifecycle).where(SetupLifecycle.run_id == DEMO_TAG))
+    session.execute(delete(TradeEvaluation).where(TradeEvaluation.run_id == DEMO_TAG))
+    session.execute(delete(TrackedTrade).where(TrackedTrade.run_id == DEMO_TAG))
     session.flush()
 
 
@@ -549,6 +553,7 @@ def seed_all(session: Session, *, progress: ProgressFn | None = None) -> dict[st
     session.flush()
     n_wperf = seed_watchlist_performance(session, rng)
     n_life = seed_lifecycles(session)
+    n_tracked_evals = seed_tracked_trades(session, rng)
 
     _report(progress, 1.0, "done")
     return {
@@ -564,6 +569,8 @@ def seed_all(session: Session, *, progress: ProgressFn | None = None) -> dict[st
         "watchlist_entries": n_watch,
         "watchlist_performance": n_wperf,
         "setup_lifecycles": n_life,
+        "tracked_trades": 4,
+        "trade_evaluations": n_tracked_evals,
         "runs": 1,
     }
 
@@ -640,6 +647,109 @@ def seed_lifecycles(session: Session) -> int:
                 model_version=DEMO_TAG,
             )
     return len(SYMBOLS)
+
+
+def seed_tracked_trades(session: Session, rng: np.random.Generator) -> int:
+    """A few tracked trades with full evaluation histories for the Trades screen.
+
+    Three open trades (improving / stable / deteriorating theses) and one closed
+    with a realized outcome, each with a daily evaluation trail so the health
+    battery, Time-Machine slider and thesis journal all demo.
+    """
+    now = dt.datetime.now(tz=UTC)
+    specs = [
+        # symbol, entry, stop, base conviction, per-day conviction drift, status
+        ("NVDA", 470.0, 442.0, 84.0, +1.2, "open"),
+        ("AAPL", 187.0, 179.0, 72.0, -0.4, "open"),
+        ("TSLA", 242.0, 228.0, 66.0, -2.6, "open"),
+        ("MSFT", 402.0, 386.0, 78.0, +0.8, "closed"),
+    ]
+    n_evals = 0
+    for symbol, entry, stop, conviction, drift, status in specs:
+        sector = next(sec for sym, sec in SYMBOLS if sym == symbol)
+        opened = now - dt.timedelta(days=9)
+        trade = TrackedTrade(
+            trade_uid=f"demo-{symbol.lower()}",
+            run_id=DEMO_TAG,
+            symbol=symbol,
+            recommended_at=opened,
+            instrument="shares",
+            quantity=int(10_000 / entry),
+            entry_price=entry,
+            stop_price=stop,
+            targets=[{"r": r, "price": round(entry + r * (entry - stop), 2)} for r in (1, 2, 3)],
+            conviction_score=conviction,
+            conviction_band="HIGH" if conviction >= 75 else "MEDIUM",
+            regime="bullish",
+            sector=sector,
+            thesis=f"{symbol} breakout above the 50-day base on {sector} leadership.",
+            entry_atr=round(entry * 0.02, 2),
+            sector_rs=0.85,
+            momentum_score=conviction,
+            status=status,
+        )
+        session.add(trade)
+        session.flush()
+
+        price = entry
+        for day in range(1, 8):
+            when = opened + dt.timedelta(days=day)
+            current = max(5.0, min(98.0, conviction + drift * day + float(rng.normal(0, 1.0))))
+            delta = current - conviction
+            price = round(price * (1.0 + drift / 400.0 + float(rng.normal(0.001, 0.006))), 2)
+            strength = max(5.0, min(98.0, current + float(rng.normal(0, 2.0))))
+            health = (
+                "Strong"
+                if strength >= 75
+                else "Stable"
+                if strength >= 55
+                else "Weakening"
+                if strength >= 35
+                else "Broken"
+            )
+            action = "Hold" if strength >= 55 else "Raise Stop" if strength >= 35 else "Exit"
+            trend = "up" if drift > 0 else "down" if drift < -1 else "flat"
+            session.add(
+                TradeEvaluation(
+                    trade_uid=trade.trade_uid,
+                    run_id=DEMO_TAG,
+                    symbol=symbol,
+                    evaluated_at=when,
+                    current_conviction=round(current, 1),
+                    conviction_delta=round(delta, 1),
+                    momentum_trend=trend,
+                    rs_trend=trend,
+                    volume_trend="flat",
+                    atr_expansion=round(1.0 + abs(drift) / 20.0, 2),
+                    regime_at_entry="bullish",
+                    regime_now="bullish",
+                    regime_changed=False,
+                    sector_delta=round(drift / 100.0, 3),
+                    analog_delta=0.0,
+                    thesis_strength=round(strength, 1),
+                    thesis_stability=round(max(10.0, 90.0 - abs(drift) * 8.0), 1),
+                    health=health,
+                    health_score=round(strength, 1),
+                    action=action,
+                    reasons=[f"conviction {current:.0f} ({delta:+.0f} vs entry)"],
+                    price=price,
+                    model_version=DEMO_TAG,
+                )
+            )
+            n_evals += 1
+            trade.current_thesis_strength = round(strength, 1)
+            trade.current_health_score = round(strength, 1)
+            trade.trade_health = health
+            trade.last_evaluated_at = when
+
+        if status == "closed":
+            trade.closed_at = now - dt.timedelta(days=1)
+            trade.close_reason = "target reached"
+            trade.realized_r = 2.4
+            trade.realized_pnl = round(2.4 * (entry - stop) * (trade.quantity or 0), 2)
+            trade.realized_at = trade.closed_at
+    session.flush()
+    return n_evals
 
 
 def seed_watchlists(session: Session, as_of: dt.date, rng: np.random.Generator) -> int:

@@ -254,13 +254,13 @@ def load_user_env() -> None:
         os.environ.setdefault(key, value)
 
 
-def build_provider() -> MarketDataProvider:
-    """Construct the configured market-data provider.
+def build_provider(name: str | None = None) -> MarketDataProvider:
+    """Construct the configured market-data provider (or an explicit ``name``).
 
     Alpaca/Polygon read their keys from the environment at construction; if the
     keys are missing the provider raises a clear auth error on first use.
     """
-    provider = read_provider()
+    provider = (name or read_provider()).lower()
     if provider == "alpaca":
         from momentum.data.providers.alpaca import AlpacaProvider
 

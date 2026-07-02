@@ -730,13 +730,32 @@ async function createWindow(): Promise<void> {
 }
 
 // Single-instance: a second launch focuses the existing window instead of
-// starting a second backend.
-if (!app.requestSingleInstanceLock()) {
-  // Another instance holds the lock — focusing it is handled by the primary via
-  // "second-instance"; this one exits without starting a second backend.
-  trace.enter("single-instance-lock", "another instance owns the lock — exiting");
-  app.quit();
-} else {
+// starting a second backend. A relaunch can race the previous instance's
+// graceful shutdown (will-quit waits up to SHUTDOWN_TIMEOUT_MS + 2s for the
+// backend tree), so a held lock gets a bounded grace-retry before we give up —
+// otherwise "restart" during a slow teardown silently launches nothing.
+const LOCK_RETRY_ATTEMPTS = 12;
+const LOCK_RETRY_DELAY_MS = 750; // 12 × 750ms ≈ 9s — covers the shutdown window
+
+async function acquireSingleInstanceLock(): Promise<boolean> {
+  if (app.requestSingleInstanceLock()) return true;
+  for (let attempt = 1; attempt <= LOCK_RETRY_ATTEMPTS; attempt++) {
+    trace.enter(
+      "single-instance-lock",
+      `held by another instance — retry ${attempt}/${LOCK_RETRY_ATTEMPTS}`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, LOCK_RETRY_DELAY_MS));
+    // Electron resets its process singleton on a failed request, so a fresh
+    // call re-attempts the lock rather than returning a cached false.
+    if (app.requestSingleInstanceLock()) {
+      trace.enter("single-instance-lock", `acquired after ${attempt} retries`);
+      return true;
+    }
+  }
+  return false;
+}
+
+function runPrimaryInstance(): void {
   trace.enter("single-instance-lock", "acquired");
   app.on("second-instance", () => {
     if (win) {
@@ -840,6 +859,17 @@ if (!app.requestSingleInstanceLock()) {
     )
     .catch((err: unknown) => fatalStartupError(err));
 }
+
+void acquireSingleInstanceLock().then((locked) => {
+  if (locked) {
+    runPrimaryInstance();
+  } else {
+    // Another instance genuinely owns the lock (not just a slow teardown) —
+    // it was asked to focus via "second-instance"; exit without a 2nd backend.
+    trace.enter("single-instance-lock", "another instance owns the lock — exiting");
+    app.quit();
+  }
+});
 
 // All windows closed -> quit the app (drives the graceful shutdown below).
 app.on("window-all-closed", () => {

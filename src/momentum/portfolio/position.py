@@ -57,17 +57,20 @@ class Position:
         entry_fees: float = 0.0,
         sector: str | None = None,
         opened_ts: dt.datetime | None = None,
+        initial_quantity: int | None = None,
     ) -> Position:
         """Rebuild an open position from persisted state (crash recovery).
 
         Mirrors the state a single opening fill would have produced: realised P&L
         carries the entry fees, and the mark is set to ``last_price``.
+        ``initial_quantity`` restores the original entry size when the position
+        has already been partially scaled out (defaults to ``quantity``).
         """
         pos = cls(symbol=symbol, sector=sector)
         pos.side = side
         pos.quantity = quantity
         pos.avg_price = avg_price
-        pos.initial_quantity = quantity
+        pos.initial_quantity = initial_quantity if initial_quantity is not None else quantity
         pos.initial_stop = initial_stop
         pos.stop = stop if stop is not None else initial_stop
         pos.fees_paid = entry_fees

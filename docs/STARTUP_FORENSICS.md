@@ -89,8 +89,11 @@ no exit code the user sees), **P** = *packaged-build-only* (cannot reproduce in
 - **S** — a **previous instance still shutting down** keeps the lock. The lifecycle
   changes made shutdown *slower* (`will-quit` defers quit and waits up to 5 s + 2 s
   for the backend tree to die). If launch N is still tearing down when launch N+1
-  starts, N+1 sees the lock held and **silently quits** — "no window, no process".
-  Now logged as `single-instance-lock: another instance owns the lock — exiting`.
+  starts, N+1 sees the lock held. **Fixed with a grace-retry**: a held lock is
+  retried 12 × 750 ms (~9 s, covering the shutdown window) before giving up; each
+  attempt is traced (`held by another instance — retry k/12`, then
+  `acquired after k retries`). Only after all retries fail is it treated as a
+  genuine second instance (logged `another instance owns the lock — exiting`).
 
 ### `app-ready` / `free-port`
 - **F/P** — `freePort()` binds `0.0.0.0`?, no — it binds loopback; a locked-down

@@ -58,11 +58,18 @@ class Trade(IntPKMixin, TimestampMixin, Base):
     exit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Average exit fill price (NULL while open).
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
-    # Share quantity (absolute).
+    # Share quantity currently open (reduced by partial scale-outs).
     initial_stop: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Initial protective stop at entry.
+    current_stop: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Latest protective stop (trailing stops ratchet it; NULL = never moved).
     initial_risk: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Dollar value of 1R at entry = quantity * (entry - initial_stop).
+    scaled_out_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Shares already sold via partial scale-outs (original size = quantity + this).
+    scaled_out_pnl: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    # Realised P&L banked by scale-outs, net of their fill fees (folded into
+    # gross/net P&L at final close; `fees` covers only entry + final exit).
 
     # --- outcome ------------------------------------------------------------
     r_multiple: Mapped[float | None] = mapped_column(Float, nullable=True)

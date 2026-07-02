@@ -69,6 +69,35 @@ class TradeJournal:
         self.repository.session.flush()
         return trade
 
+    def scale_out(self, trade: Trade, exit_fill: Fill) -> Trade:
+        """Bank a partial exit: reduce the open quantity, accumulate its P&L.
+
+        The scaled-out P&L is stored net of the fill's own fees and folded into
+        the final numbers by :meth:`close_trade`. The trade stays ``open``.
+        """
+        if trade.status == "closed":
+            raise ValueError(f"cannot scale out of closed trade {trade.symbol}")
+        if exit_fill.shares >= trade.quantity:
+            raise ValueError(
+                f"scale-out of {exit_fill.shares} would close the position of "
+                f"{trade.quantity} — use close_trade for a full exit"
+            )
+
+        direction_sign = 1 if trade.direction == "long" else -1
+        pnl = direction_sign * (exit_fill.price - trade.entry_price) * exit_fill.shares
+        trade.quantity -= exit_fill.shares
+        trade.scaled_out_quantity = (trade.scaled_out_quantity or 0) + exit_fill.shares
+        trade.scaled_out_pnl = (trade.scaled_out_pnl or 0.0) + pnl - exit_fill.fees
+
+        self.repository.session.flush()
+        return trade
+
+    def update_stop(self, trade: Trade, stop: float) -> Trade:
+        """Persist a moved protective stop (trailing stops survive restarts)."""
+        trade.current_stop = stop
+        self.repository.session.flush()
+        return trade
+
     def close_trade(self, trade: Trade, exit_fill: Fill, *, exit_reason: str) -> Trade:
         """Close an open trade from the exit fill, computing P&L, R and holding."""
         if trade.status == "closed":
@@ -76,14 +105,17 @@ class TradeJournal:
         if exit_fill.shares != trade.quantity:
             raise ValueError(
                 f"exit fill of {exit_fill.shares} does not match open quantity "
-                f"{trade.quantity} (partial exits are not yet supported)"
+                f"{trade.quantity} (partial exits go through scale_out)"
             )
 
         direction_sign = 1 if trade.direction == "long" else -1
-        gross_pnl = direction_sign * (exit_fill.price - trade.entry_price) * trade.quantity
+        banked = trade.scaled_out_pnl or 0.0  # already net of scale-out fill fees
+        gross_pnl = direction_sign * (exit_fill.price - trade.entry_price) * trade.quantity + banked
         total_fees = (trade.fees or 0.0) + exit_fill.fees
         net_pnl = gross_pnl - total_fees
-        notional = trade.entry_price * trade.quantity
+        # Return is measured on the original entry notional, scale-outs included.
+        original_quantity = trade.quantity + (trade.scaled_out_quantity or 0)
+        notional = trade.entry_price * original_quantity
 
         trade.exit_ts = exit_fill.ts
         trade.exit_price = exit_fill.price

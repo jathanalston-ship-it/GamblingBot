@@ -9,6 +9,7 @@ import type {
 import { ActionButton } from "../components/ActionButton";
 import { Card } from "../components/Card";
 import { CloseTradeButton, TradeActions } from "../components/TradeActions";
+import { PriceChart } from "../components/PriceChart";
 import { ErrorBox, Loading, PageTitle } from "../components/Page";
 import { Stat } from "../components/Stat";
 import { useApi } from "../hooks/useApi";
@@ -199,6 +200,27 @@ function TradeDetail({ trade, onChanged }: { trade: TrackedTrade; onChanged?: ()
               <span>Regime {trade.regime ?? "—"}</span>
               <span>Sector {trade.sector ?? "—"}</span>
               <span>Opened {date(trade.recommended_at)}</span>
+              {trade.status === "open" && trade.last_price != null ? (
+                <>
+                  <span title="last scan-known price — not a realtime quote">
+                    Last {num(trade.last_price)}
+                  </span>
+                  <span
+                    className={
+                      (trade.unrealized_r ?? 0) >= 0 ? "text-emerald-400" : "text-bear"
+                    }
+                  >
+                    Unrealized {trade.unrealized_r != null ? `${signed(trade.unrealized_r, 2)}R` : "—"}
+                    {trade.unrealized_pnl != null ? ` (${signed(trade.unrealized_pnl, 0)})` : ""}
+                  </span>
+                  <span>
+                    To stop{" "}
+                    {trade.distance_to_stop_pct != null
+                      ? `${num(trade.distance_to_stop_pct * 100, 1)}%`
+                      : "—"}
+                  </span>
+                </>
+              ) : null}
               {trade.status === "closed" ? (
                 <>
                   <span>Closed {date(trade.closed_at)}</span>
@@ -285,6 +307,23 @@ function TradeDetail({ trade, onChanged }: { trade: TrackedTrade; onChanged?: ()
             )}
           </div>
         </div>
+      </Card>
+
+      <Card title={`${trade.symbol} — price vs plan (bars are real; last price is scan-fresh)`}>
+        <PriceChart
+          symbol={trade.symbol}
+          overlays={[
+            { label: "entry", price: trade.entry_price, kind: "entry" },
+            { label: "stop", price: trade.stop_price, kind: "stop" },
+            ...(trade.targets ?? [])
+              .filter((t) => typeof t["price"] === "number")
+              .map((t, i) => ({
+                label: String(t["label"] ?? `T${i + 1}`),
+                price: Number(t["price"]),
+                kind: "target" as const,
+              })),
+          ]}
+        />
       </Card>
 
       {current ? <ExplanationPanel evaluation={current} /> : null}

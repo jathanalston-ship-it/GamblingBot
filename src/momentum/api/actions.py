@@ -10,6 +10,7 @@ long-running ones in background jobs.
 from __future__ import annotations
 
 import datetime as dt
+import logging
 import os
 import time
 from collections.abc import Mapping, Sequence
@@ -41,6 +42,7 @@ from momentum.persistence.models.market_regime import MarketRegime
 from momentum.persistence.models.optimization_result import OptimizationResult
 from momentum.persistence.models.scan_metadata import ScanMetadata
 from momentum.persistence.models.scan_rejection import ScanRejection
+from momentum.persistence.models.signal import Signal
 from momentum.persistence.repositories.audit_log import AuditLogRepository
 from momentum.persistence.repositories.optimization_results import OptimizationResultRepository
 from momentum.persistence.repositories.runs import RunRepository
@@ -63,6 +65,9 @@ _REGIME_TO_CONVICTION: dict[RegimeState, str] = {
     RegimeState.NEUTRAL: "neutral",
     RegimeState.BEARISH: "bear",
 }
+
+
+_log = logging.getLogger(__name__)
 
 
 def _today() -> dt.date:
@@ -454,6 +459,30 @@ def run_scan(
         ]
         ScanRejectionRepository(session).replace_for(run_id, rejection_rows)
 
+        # One entry signal per ranked candidate (source="scan") — replace per
+        # run so intraday re-scans stay idempotent. Signal Eval + manual takes
+        # link to these (previously only paper sessions emitted signals).
+        session.execute(delete(Signal).where(Signal.run_id == run_id, Signal.source == "scan"))
+        signal_rows = [
+            Signal(
+                run_id=run_id,
+                source="scan",
+                strategy="momentum_breakout",
+                symbol=c.symbol,
+                ts=ts,
+                session_date=as_of,
+                signal_type="entry",
+                direction="long",
+                strength=(c.momentum_score / 100.0 if c.momentum_score is not None else None),
+                momentum_score=c.momentum_score,
+                reference_price=c.price,
+                atr=c.atr,
+                status="generated",
+            )
+            for c in candidates
+        ]
+        session.add_all(signal_rows)
+
         # A stale re-run must also clear any prior conviction for this run.
         session.execute(delete(ConvictionScore).where(ConvictionScore.run_id == run_id))
         session.add_all(conviction_rows)
@@ -482,6 +511,31 @@ def run_scan(
 
         # Market-data provenance: one row per symbol fetched (LIVE), stamped with run_id.
         session.add_all(MarketDataProvenance(run_id=run_id, **entry) for entry in fetch_log)
+
+        from momentum.core.enums import AuditEvent
+        from momentum.persistence.audit import AuditLogger, AuditRecord
+
+        AuditLogger(AuditLogRepository(session)).record(
+            AuditRecord(
+                event=AuditEvent.SIGNAL_GENERATED,
+                summary=(
+                    f"scan {run_id}: {len(candidates)} candidates, "
+                    f"{len(conviction_rows)} conviction scores"
+                    + (" (STALE — conviction skipped)" if stale else "")
+                ),
+                ts=ts,
+                run_id=run_id,
+                entity_type="scan",
+                entity_id=run_id,
+                payload={
+                    "universe": universe_size,
+                    "symbols_scanned": len(bars),
+                    "candidates": len(candidates),
+                    "stale": stale,
+                    "provider": provider_name,
+                },
+            )
+        )
 
         runs.complete(run, finished_at=dt.datetime.now(tz=dt.UTC))
         session.commit()
@@ -665,6 +719,36 @@ class BreakoutStrategy:
         return intents
 
 
+def _backtest_detail(result: Any) -> dict[str, Any]:
+    """Equity curve + per-trade detail for the Backtesting screen (pure).
+
+    The equity curve is downsampled to <= 250 points (endpoints preserved) and
+    the trade list capped at the 200 most recent, so the JSON stays small.
+    """
+    curve = result.equity_curve
+    step = max(1, -(-len(curve) // 250))  # ceil division → at most ~250 points
+    sampled = list(curve.items())[::step]
+    if len(curve) and curve.index[-1] != sampled[-1][0]:
+        sampled.append((curve.index[-1], curve.iloc[-1]))
+    equity_points = [
+        {"ts": ts.date().isoformat(), "equity": round(float(equity), 2)} for ts, equity in sampled
+    ]
+    trades = sorted(result.trades, key=lambda t: t.exit_date or dt.date.min)[-200:]
+    trade_rows = [
+        {
+            "symbol": t.symbol,
+            "entry_date": t.entry_date.isoformat() if t.entry_date else None,
+            "exit_date": t.exit_date.isoformat() if t.exit_date else None,
+            "pnl": round(t.pnl, 2),
+            "r_multiple": round(t.r_multiple, 3),
+            "holding_days": t.holding_days,
+            "exit_reason": t.exit_reason,
+        }
+        for t in trades
+    ]
+    return {"equity_curve": equity_points, "trades": trade_rows}
+
+
 def run_backtest(
     *,
     provider: MarketDataProvider,
@@ -718,11 +802,28 @@ def run_backtest(
             num_trades=summary["num_trades"],
             rank=1,
             is_selected=True,
+            details=_backtest_detail(result),
         )
         with session_factory() as session:
             OptimizationResultRepository(session).save(row)
             session.commit()
         summary["persisted"] = True
+
+    # Best-effort HTML tearsheet beside the user data (must never fail the run).
+    try:
+        from momentum.api.user_settings import _user_dir
+        from momentum.reporting import generate_report
+
+        path = generate_report(
+            result.equity_curve,
+            result.trades,
+            run_id=run_id,
+            output_dir=_user_dir() / "reports",
+            extra_meta={"symbols": len(bars), "lookback": lookback},
+        )
+        summary["tearsheet"] = str(path)
+    except Exception:  # noqa: BLE001 — reporting is auxiliary to the backtest
+        _log.warning("tearsheet generation failed for %s", run_id, exc_info=True)
 
     progress(1.0, "done")
     return summary

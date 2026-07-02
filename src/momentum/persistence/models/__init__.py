@@ -18,11 +18,13 @@ from momentum.persistence.models.audit_log import AuditLog
 from momentum.persistence.models.base import Base, IntPKMixin, TimestampMixin
 from momentum.persistence.models.candidate_analog import CandidateAnalog
 from momentum.persistence.models.conviction_score import ConvictionScore
+from momentum.persistence.models.fill import FillRecord
 from momentum.persistence.models.instrument_selection import InstrumentSelection
 from momentum.persistence.models.market_regime import MarketRegime
 from momentum.persistence.models.market_data_provenance import MarketDataProvenance
 from momentum.persistence.models.opportunity_classification import OpportunityClassification
 from momentum.persistence.models.optimization_result import OptimizationResult
+from momentum.persistence.models.order import OrderRecord
 from momentum.persistence.models.portfolio_snapshot import PortfolioSnapshot
 from momentum.persistence.models.position_size import PositionSize
 from momentum.persistence.models.research_report import ResearchReport
@@ -78,4 +80,6 @@ __all__ = [
     "Alert",
     "Activity",
     "ScanStat",
+    "OrderRecord",
+    "FillRecord",
 ]

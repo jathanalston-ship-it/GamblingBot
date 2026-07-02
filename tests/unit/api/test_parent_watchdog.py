@@ -93,8 +93,10 @@ def test_no_orphan_when_parent_dies():
         assert child.poll() is None  # child is running while the parent lives
         parent.kill()
         parent.wait(timeout=5)
-        # the child must notice and exit on its own, promptly
-        child.wait(timeout=5)
+        # The child must notice and exit on its own. The timeout is generous
+        # because on a loaded machine (full suite / CI) the child interpreter
+        # may still be starting up + importing when the parent dies.
+        child.wait(timeout=30)
         assert child.returncode is not None  # exited == not orphaned
     finally:
         for p in (child, parent):

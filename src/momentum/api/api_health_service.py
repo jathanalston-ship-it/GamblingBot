@@ -38,6 +38,9 @@ _DEFAULT_PARAMS: dict[str, str | int] = {
     "b": 2,
 }
 _SELF_PATH = "/health/routes"
+# GET routes with external side effects (live provider pulls) — probing them
+# would issue a real network request and grade the app on vendor availability.
+_EXTERNAL_FETCH_PATHS = {"/bars/{symbol}"}
 
 
 def _fill(path: str) -> str:
@@ -106,6 +109,17 @@ async def audit_routes(app: FastAPI, *, timeout: float = 15.0) -> ApiHealthRepor
                         classification="SKIPPED",
                         http_status=None,
                         detail="mutating route — not probed",
+                    )
+                )
+                continue
+            if path in _EXTERNAL_FETCH_PATHS:
+                results.append(
+                    RouteHealthOut(
+                        method="GET",
+                        path=path,
+                        classification="SKIPPED",
+                        http_status=None,
+                        detail="live market-data fetch — not probed",
                     )
                 )
                 continue
