@@ -12,6 +12,14 @@ export function apiBaseUrl(): string {
   );
 }
 
+/* Mutation listeners — the SWR cache subscribes so any successful write
+   invalidates cached reads (registered from useApi to avoid an import cycle). */
+type MutationListener = () => void;
+const mutationListeners: MutationListener[] = [];
+export function onApiMutation(listener: MutationListener): void {
+  mutationListeners.push(listener);
+}
+
 export async function apiGet<T>(path: string): Promise<T> {
   const res = await fetch(`${apiBaseUrl()}${path}`);
   if (!res.ok) {
@@ -36,6 +44,7 @@ async function apiWrite<T>(method: "POST" | "PUT", path: string, body?: unknown)
     }
     throw new Error(detail);
   }
+  for (const listener of mutationListeners) listener();
   return (await res.json()) as T;
 }
 

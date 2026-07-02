@@ -59,6 +59,10 @@ auto_close_on_stop: true
 auto_take_profit: true
 target_scale_out_fraction: 0.3333333333333333
 
+# Raise the working stop to breakeven once open profit reaches
+# raise_stop_gain_r (the "Raise Stop" advice, executed; tightens only).
+auto_raise_stop_to_breakeven: true
+
 # Prior evaluations feeding thesis stability.
 history_limit: 20
 

@@ -8,7 +8,11 @@ targets, with which targets have already been hit) and the freshest price,
    Risk is honoured first, always.
 2. **Final target** — price at/above the last target → close the remainder.
 3. **Intermediate target** — price at/above an unhit earlier target → scale out
-   a configured fraction of the ORIGINAL position (fires once per target).
+   the plan's fraction of the ORIGINAL position for that target (fires once per
+   target; falls back to ``target_scale_out_fraction`` for legacy rows).
+4. **Breakeven stop raise** — once the trade shows ``raise_stop_gain_r`` of open
+   profit and the working stop is still below entry, the stop ratchets to
+   breakeven — the "Raise Stop" advice, executed. Risk-reducing only.
 
 Every decision carries a plain-language, data-only ``analysis`` — the "how and
 why" report — built from the numbers that triggered it (no speculation). The
@@ -27,6 +31,7 @@ from momentum.trade_lifecycle.types import ThesisEvaluation
 STOP_LOSS = "stop_loss"
 TAKE_PROFIT_SCALE = "take_profit_scale"
 TAKE_PROFIT_FINAL = "take_profit_final"
+RAISE_STOP = "raise_stop"
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +41,7 @@ class TargetState:
     price: float
     r: float | None = None
     hit: bool = False
+    fraction: float | None = None  # the plan's scale-out fraction for this target
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +60,10 @@ class ManagementDecision:
     @property
     def closes_position(self) -> bool:
         return self.kind in (STOP_LOSS, TAKE_PROFIT_FINAL)
+
+    @property
+    def adjusts_stop(self) -> bool:
+        return self.kind == RAISE_STOP
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -80,11 +90,13 @@ def targets_from_records(records: Any) -> tuple[TargetState, ...]:
         if not isinstance(price, (int, float)) or price <= 0:
             continue
         r = item.get("r", item.get("r_multiple"))  # trade plans persist "r_multiple"
+        frac = item.get("scale_out_pct")
         out.append(
             TargetState(
                 price=float(price),
                 r=float(r) if isinstance(r, (int, float)) else None,
                 hit=bool(item.get("hit", False)),
+                fraction=(float(frac) if isinstance(frac, (int, float)) and 0 < frac < 1 else None),
             )
         )
     return tuple(out)
@@ -112,8 +124,15 @@ def decide_management(
     evaluation: ThesisEvaluation | None,
     days_held: float,
     config: TradeLifecycleConfig,
+    current_stop: float | None = None,
 ) -> ManagementDecision | None:
-    """The one action (or none) warranted at ``price``. Long-only, like the platform."""
+    """The one action (or none) warranted at ``price``. Long-only, like the platform.
+
+    ``current_stop`` is the working stop when it has been raised (execution
+    state on the linked paper trade); breach is judged against the tighter of
+    the two, while R is always measured against the ORIGINAL entry/stop risk.
+    """
+    working_stop = max(stop_price, current_stop) if current_stop is not None else stop_price
     r_now = _r_at(price, entry_price, stop_price)
     context = _context(evaluation, days_held)
     evidence: dict[str, Any] = {
@@ -125,14 +144,17 @@ def decide_management(
         "days_held": round(days_held, 1),
     }
 
-    # 1. Protective stop — risk first, regardless of any target.
-    if config.auto_close_on_stop and price <= stop_price:
-        reason = f"stop loss: {symbol} traded {price:.2f}, at/through the stop {stop_price:.2f}"
+    # 1. Protective stop — risk first, regardless of any target. A raised
+    #    (breakeven) stop protects banked gains the same way.
+    if config.auto_close_on_stop and price <= working_stop:
+        raised = working_stop > stop_price
+        reason = f"stop loss: {symbol} traded {price:.2f}, at/through the stop {working_stop:.2f}"
         analysis = (
             f"{symbol} closed on its protective stop. Price reached {price:.2f}, at or "
-            f"through the stop at {stop_price:.2f} set against the {entry_price:.2f} entry "
-            f"({_fmt_r(r_now)} at the close). The stop is the trade's pre-committed maximum "
-            f"loss; honouring it caps the downside at roughly the planned risk.{context}"
+            f"through the {'raised (breakeven) ' if raised else ''}stop at {working_stop:.2f} "
+            f"set against the {entry_price:.2f} entry ({_fmt_r(r_now)} at the close). The stop "
+            f"is the trade's pre-committed maximum loss; honouring it caps the downside at "
+            f"roughly the planned risk.{context}"
         )
         return ManagementDecision(
             kind=STOP_LOSS,
@@ -142,11 +164,68 @@ def decide_management(
             target_index=None,
             reason=reason,
             analysis=analysis,
-            evidence=evidence,
+            evidence={**evidence, "working_stop": round(working_stop, 4)},
         )
 
-    if not config.auto_take_profit or not targets:
-        return None
+    take_profit = config.auto_take_profit and bool(targets)
+
+    if take_profit:
+        decision = _target_decision(
+            symbol=symbol,
+            entry_price=entry_price,
+            price=price,
+            r_now=r_now,
+            targets=targets,
+            context=context,
+            evidence=evidence,
+            config=config,
+        )
+        if decision is not None:
+            return decision
+
+    # 4. Breakeven ratchet — "Raise Stop" advice, executed. Only ever tightens.
+    if (
+        config.auto_raise_stop_to_breakeven
+        and r_now is not None
+        and r_now >= config.raise_stop_gain_r
+        and working_stop < entry_price
+    ):
+        reason = (
+            f"stop raised to breakeven: {symbol} shows {_fmt_r(r_now)} open profit "
+            f"(threshold {config.raise_stop_gain_r:.1f}R)"
+        )
+        analysis = (
+            f"{symbol} reached {_fmt_r(r_now)} of open profit, past the "
+            f"{config.raise_stop_gain_r:.1f}R threshold, while the working stop "
+            f"({working_stop:.2f}) was still below the {entry_price:.2f} entry. The stop was "
+            f"raised to breakeven so the trade can no longer turn into a loss — risk is "
+            f"reduced without capping the upside.{context}"
+        )
+        return ManagementDecision(
+            kind=RAISE_STOP,
+            price=entry_price,  # the new stop level
+            fraction=0.0,
+            exit_reason="",
+            target_index=None,
+            reason=reason,
+            analysis=analysis,
+            evidence={**evidence, "working_stop": round(working_stop, 4)},
+        )
+
+    return None
+
+
+def _target_decision(
+    *,
+    symbol: str,
+    entry_price: float,
+    price: float,
+    r_now: float | None,
+    targets: tuple[TargetState, ...],
+    context: str,
+    evidence: dict[str, Any],
+    config: TradeLifecycleConfig,
+) -> ManagementDecision | None:
 
     # 2. Final target — the plan is complete: close what remains.
     final_index = len(targets) - 1
@@ -173,11 +252,14 @@ def decide_management(
             evidence={**evidence, "target_price": round(final.price, 4)},
         )
 
-    # 3. First unhit intermediate target — bank a slice, let the rest run.
+    # 3. First unhit intermediate target — bank the PLAN'S slice for that
+    #    target, let the rest run (config fraction only for legacy rows).
     for index, target in enumerate(targets[:final_index]):
         if target.hit or price < target.price:
             continue
-        fraction = config.target_scale_out_fraction
+        fraction = (
+            target.fraction if target.fraction is not None else config.target_scale_out_fraction
+        )
         reason = (
             f"partial take profit: {symbol} reached target {index + 1} "
             f"at {target.price:.2f} (traded {price:.2f})"

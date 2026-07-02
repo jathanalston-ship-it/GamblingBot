@@ -9,7 +9,7 @@ import { LivePulse } from "../components/LivePulse";
 import { ErrorBox, Loading, PageTitle } from "../components/Page";
 import { Stat } from "../components/Stat";
 import { useApi } from "../hooks/useApi";
-import { date, money, num, pct, signed } from "../lib/format";
+import { date, dateTime, money, num, pct, signed } from "../lib/format";
 import { useWorkspace } from "../state/workspace";
 
 export default function CommandCenter() {
@@ -37,7 +37,13 @@ export default function CommandCenter() {
     <div className="space-y-5 p-5">
       <PageTitle
         title="Market Command Center"
-        subtitle={data.as_of ? `as of ${date(data.as_of)}` : "the day at a glance"}
+        subtitle={
+          data.updated_at
+            ? `updated ${dateTime(data.updated_at)}${data.as_of ? ` · data through ${date(data.as_of)}` : ""}`
+            : data.as_of
+              ? `data through ${date(data.as_of)}`
+              : "the day at a glance"
+        }
       >
         <div className="flex items-center gap-3">
           {error ? <span className="text-xs text-bear">refresh failed</span> : null}

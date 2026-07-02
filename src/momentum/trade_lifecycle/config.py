@@ -111,6 +111,10 @@ class TradeLifecycleConfig(BaseModel):
     auto_take_profit: bool = True
     target_scale_out_fraction: float = Field(1.0 / 3.0, gt=0, lt=1)
 
+    # Raise the working stop to breakeven once open profit reaches
+    # raise_stop_gain_r — the "Raise Stop" advice, executed (tightens only).
+    auto_raise_stop_to_breakeven: bool = True
+
     # How many prior evaluations feed thesis stability.
     history_limit: int = Field(20, ge=2)
 

@@ -248,6 +248,7 @@ export interface CommandPerformance {
 export interface CommandCenter {
   run_id: string | null;
   as_of: string | null;
+  updated_at: string | null;
   regime: Regime | null;
   daily: WatchlistEntry[];
   weekly: WatchlistEntry[];

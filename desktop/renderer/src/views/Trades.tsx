@@ -455,6 +455,7 @@ interface ManagementReport {
 
 const MANAGEMENT_KIND: Record<string, { label: string; tone: string }> = {
   stop_loss: { label: "STOP LOSS", tone: "bg-red-500/20 text-red-300" },
+  raise_stop: { label: "STOP → BREAKEVEN", tone: "bg-sky-500/20 text-sky-300" },
   take_profit_scale: { label: "PARTIAL TAKE PROFIT", tone: "bg-emerald-500/20 text-emerald-300" },
   take_profit_final: { label: "FINAL TARGET", tone: "bg-emerald-500/20 text-emerald-300" },
 };

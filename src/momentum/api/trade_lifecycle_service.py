@@ -252,7 +252,7 @@ def reevaluate_open_trades(
     evals = TradeEvaluationRepository(session)
     open_trades = repo.open_trades()
     if not open_trades:
-        return {"evaluated": 0, "skipped": 0, "closed": 0, "scaled_out": 0}
+        return {"evaluated": 0, "skipped": 0, "closed": 0, "scaled_out": 0, "stops_raised": 0}
 
     engine = ThesisReevaluationEngine(cfg)
     conviction_engine = ConvictionEngine()
@@ -270,7 +270,7 @@ def reevaluate_open_trades(
     # Analog cohorts repeat across trades — compute once per (sector, regime).
     analog_cache: dict[tuple[str | None, str | None], tuple[float | None, int]] = {}
 
-    evaluated = skipped = closed = scaled_out = 0
+    evaluated = skipped = closed = scaled_out = stops_raised = 0
     for trade in open_trades:
         symbol = trade.symbol
         frame = bars.get(symbol) if bars is not None else None
@@ -356,10 +356,18 @@ def reevaluate_open_trades(
         )
         if managed is not None and managed.closes_position:
             closed += 1
+        elif managed is not None and managed.adjusts_stop:
+            stops_raised += 1
         elif managed is not None:
             scaled_out += 1
     session.commit()
-    return {"evaluated": evaluated, "skipped": skipped, "closed": closed, "scaled_out": scaled_out}
+    return {
+        "evaluated": evaluated,
+        "skipped": skipped,
+        "closed": closed,
+        "scaled_out": scaled_out,
+        "stops_raised": stops_raised,
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -396,9 +404,12 @@ def _apply_management(
         evaluation=evaluation,
         days_held=days_held,
         config=config,
+        current_stop=_working_stop(session, trade),
     )
     if decision is None:
         return None
+    if decision.adjusts_stop and trade.journal_trade_id is None:
+        return None  # nothing executed — an untracked recommendation keeps advice-only stops
 
     decision = _execute_on_journal(session, trade, decision, ts=ts)
     _mark_target_hit(trade, decision.target_index)
@@ -410,6 +421,16 @@ def _apply_management(
     _record_management_event(session, trade, decision, run_id=run_id, ts=ts)
     session.flush()
     return decision
+
+
+def _working_stop(session: Session, trade: TrackedTrade) -> float | None:
+    """The raised stop on the linked paper trade, if any (execution state)."""
+    if trade.journal_trade_id is None:
+        return None
+    journal_trade = session.get(Trade, trade.journal_trade_id)
+    if journal_trade is None or journal_trade.status == "closed":
+        return None
+    return journal_trade.current_stop
 
 
 def _execute_on_journal(
@@ -434,6 +455,11 @@ def _execute_on_journal(
         return decision
 
     journal = TradeJournal(TradeRepository(session))
+
+    if decision.adjusts_stop:
+        journal.update_stop(journal_trade, decision.price)  # price IS the new stop
+        return decision
+
     tag = "stop" if decision.kind == "stop_loss" else f"t{(decision.target_index or 0) + 1}"
 
     if not decision.closes_position:
@@ -526,18 +552,23 @@ def _record_management_event(
         f"managed:{trade.symbol}:{trade.trade_uid[:8]}:{decision.kind}:{decision.target_index}"
     )[:160]
     if not AlertRepository(session).existing_keys([dedupe_key]):
-        title = (
-            f"{trade.symbol} stop loss — position closed"
-            if decision.kind == "stop_loss"
-            else f"{trade.symbol} take profit — "
-            + ("position closed" if decision.closes_position else "partial scale-out")
-        )
+        if decision.kind == "stop_loss":
+            title = f"{trade.symbol} stop loss — position closed"
+            severity = "critical"
+        elif decision.adjusts_stop:
+            title = f"{trade.symbol} stop raised to breakeven"
+            severity = "info"
+        else:
+            title = f"{trade.symbol} take profit — " + (
+                "position closed" if decision.closes_position else "partial scale-out"
+            )
+            severity = "warning"
         session.add(
             Alert(
                 ts=ts,
                 run_id=run_id,
                 symbol=trade.symbol,
-                severity="critical" if decision.kind == "stop_loss" else "warning",
+                severity=severity,
                 kind="trade_managed",
                 title=title[:120],
                 description=decision.analysis[:400],

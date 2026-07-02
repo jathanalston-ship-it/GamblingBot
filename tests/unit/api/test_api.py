@@ -144,6 +144,9 @@ def test_command_center_aggregate(client, session_factory):
     assert body["equity"] is not None
     # strict-JSON safe even with one-sided performance
     assert "Infinity" not in client.get("/command-center", params={"run_id": "bt1"}).text
+    # updated_at (the pull instant) is distinct from as_of (the bar date):
+    # it's None here (no scan metadata seeded) but the field must exist.
+    assert "updated_at" in body
 
 
 def test_command_center_falls_back_when_run_is_missing(client):

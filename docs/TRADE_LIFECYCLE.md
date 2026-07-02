@@ -112,11 +112,20 @@ trade's evaluation, the pure decision engine (`trade_lifecycle/auto_manage.py`,
    disabled; gate: `auto_close_on_stop`).
 2. **Final target** — price at/above the plan's last target → the remainder is
    closed (the plan's objectives are met).
-3. **Intermediate target** — price at/above an unhit earlier target → a
-   configured fraction of the ORIGINAL position is scaled out
-   (`target_scale_out_fraction`, default ⅓) and the rest keeps running — the
+3. **Intermediate target** — price at/above an unhit earlier target → the
+   **plan's own scale-out fraction for that target** (`scale_out_pct` on the
+   persisted targets; `target_scale_out_fraction` only as a legacy fallback)
+   of the ORIGINAL position is sold and the rest keeps running — the
    positive-skew objective. Each target fires **once** (`hit` is persisted on
    the trade's targets JSON). Gate: `auto_take_profit`.
+4. **Breakeven stop ratchet** — once open profit reaches `raise_stop_gain_r`
+   (the same threshold that drives the "Raise Stop" *advice*) and the working
+   stop is still below entry, the stop is raised to breakeven on the linked
+   paper trade (`trades.current_stop`; tightens only, never loosens). From
+   then on a pullback through ENTRY closes the trade — banked gains can no
+   longer become a loss. Recommendation-only rows (never taken) keep
+   advice-only stops. Gate: `auto_raise_stop_to_breakeven`. Emits an
+   info-level `trade_managed` alert (no OS notification noise).
 
 Execution is real: the linked paper (journal) trade is closed
 (`TradeJournal.close_trade`, exit reason `stop`/`target`) or partially reduced

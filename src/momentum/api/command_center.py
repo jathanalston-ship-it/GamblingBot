@@ -190,6 +190,24 @@ _EMPTY_PORTFOLIO: tuple[float | None, float | None, float | None] = (None, None,
 _EMPTY_TRIGGERED: list[LifecycleOut] = []
 
 
+def _latest_refresh(session: Session) -> str | None:
+    """When the data was last pulled (an instant, not a bar date).
+
+    The ``as_of`` calendar date is the newest *bar* date — honest, but it reads
+    as "a day behind" whenever today's daily bar doesn't exist yet (pre-open,
+    or the last scan ran yesterday). The pull timestamp is what "fresh as of"
+    actually means to the user.
+    """
+    from momentum.persistence.models.scan_metadata import ScanMetadata
+
+    row = session.scalars(
+        select(ScanMetadata).order_by(ScanMetadata.pull_timestamp.desc()).limit(1)
+    ).first()
+    if row is not None and row.pull_timestamp is not None:
+        return str(row.pull_timestamp.isoformat())
+    return None
+
+
 def command_center(session: Session, *, run_id: str | None = None) -> CommandCenterOut:
     """One aggregate. Every section is independently guarded — it never 500s."""
     run_id = _safe(session, "run_id", lambda: _effective_run_id(session, run_id), None)
@@ -220,9 +238,11 @@ def command_center(session: Session, *, run_id: str | None = None) -> CommandCen
     )
 
     as_of = wl_as_of or (regime.as_of if regime is not None else None)
+    updated_at = _safe(session, "updated_at", lambda: _latest_refresh(session), None)
     return CommandCenterOut(
         run_id=run_id,
         as_of=as_of,
+        updated_at=updated_at,
         regime=regime,
         daily=daily,
         weekly=weekly,

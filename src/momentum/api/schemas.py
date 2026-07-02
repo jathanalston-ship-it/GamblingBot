@@ -435,7 +435,8 @@ class CommandCenterOut(BaseModel):
     """The Market Command Center: one aggregate for the landing page."""
 
     run_id: str | None
-    as_of: dt.date | None
+    as_of: dt.date | None  # newest BAR date (calendar) — data coverage
+    updated_at: str | None = None  # when data was last pulled (UTC instant)
     regime: RegimeOut | None
     daily: list[WatchlistEntryOut]
     weekly: list[WatchlistEntryOut]

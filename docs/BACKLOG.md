@@ -54,6 +54,34 @@ remains below is blocked on external data/services or a platform decision.*
   and `portfolio/{allocator,rebalancer}.py` stay documented stubs until the
   live-broker decision above unlocks them.
 
+## Roadmap — top usability/functionality steps (2026-07 assessment)
+
+Ranked; each is independently shippable. 1–2 are the highest-leverage.
+
+1. **Intraday bars for management** — manage stops/targets on 5–15m bars during
+   market hours instead of the daily bar's last print (needs an intraday
+   provider call; the daemon cadence already supports it).
+2. **Broker paper-API integration (Alpaca paper)** — replace the internal
+   simulator with real paper fills/quotes; the `Broker` protocol + orders/fills
+   tables are the seam.
+3. **Onboarding + first-run tour** — guided "pick provider → pick universe →
+   run first scan → take first trade" flow for non-technical users.
+4. **Position-size override at take time** — Take dialog with shares/risk
+   editing (today it takes the plan's suggested size or a URL param).
+5. **Walk-forward backtesting + benchmark overlay** — OOS folds
+   (`backtest/walk_forward.py` stub) and SPY-indexed equity comparison.
+6. **Earnings/ex-div awareness** — corporate-actions feed; flag "earnings in
+   N days" on plans and optionally block entries just before reports.
+7. **Portfolio-level correlation guard in management** — the risk engine
+   checks correlation at entry; management could also warn when open trades
+   crowd one sector/theme.
+8. **Alert center + notification preferences** — mute rules, severity
+   thresholds, per-kind toggles; today notifications are all-or-nothing.
+9. **Multi-account/profile support** — separate paper books (e.g. aggressive
+   vs conservative configs) with per-book analytics.
+10. **PyInstaller onedir build** — faster cold start + fewer AV issues on
+    Windows (already backlogged; needs a Windows iteration).
+
 ## Conventions for this file
 
 One line per item: what + where + why deferred. Keep it short; delete done items.
