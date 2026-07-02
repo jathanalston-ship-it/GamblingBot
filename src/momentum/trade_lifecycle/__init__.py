@@ -7,6 +7,12 @@ a regrade of its thesis) and appends an immutable evaluation record.
 
 from __future__ import annotations
 
+from momentum.trade_lifecycle.auto_manage import (
+    ManagementDecision,
+    TargetState,
+    decide_management,
+    targets_from_records,
+)
 from momentum.trade_lifecycle.config import (
     HealthWeights,
     ThesisWeights,
@@ -60,11 +66,15 @@ __all__ = [
     "TradeSpec",
     "TradeStatus",
     "Trend",
+    "ManagementDecision",
+    "TargetState",
     "advice_summary",
     "build_explanation",
     "compute_health",
+    "decide_management",
     "default_config",
     "features_from_bars",
     "grade_advice",
     "overall_accuracy",
+    "targets_from_records",
 ]

@@ -610,6 +610,23 @@ trading platform for US equities. Python 3.12, strictly typed. See
   presence only; guarded by `desktop/scripts/no-secret-exposure.test.cjs`). See
   `docs/SECRETS.md`.
 
+- **Automatic trade management + OS notifications** — every scan (and so every
+  daemon cycle while the market is open) **manages** open tracked trades, not
+  just grades them: the pure `trade_lifecycle/auto_manage.py` engine fires
+  stop-loss (full close; risk first), final-target close, or one-shot partial
+  scale-outs at intermediate targets (`auto_take_profit`,
+  `target_scale_out_fraction`; targets carry a persisted `hit` flag). Execution
+  is real — the linked paper trade is closed/reduced via the journal, so
+  realized R lands and advice becomes gradable. Every action ships a data-only
+  "how and why" report persisted on the evaluation row + a deduped
+  `trade_managed` **alert** (→ Command Center + **OS notification** via
+  `useAlertNotifications` in the AppShell) + activity + audit event; `GET
+  /trade-lifecycle/{uid}/management-report` assembles the story (Trades →
+  System management card). run_scan hardening: the lifecycle step runs on every
+  fresh scan **even with zero candidates**, and bars are pulled for **held
+  symbols outside the universe/prefilter** — positions are never unwatched.
+  See `docs/TRADE_LIFECYCLE.md` § Automatic trade management.
+
 - **Backlog sweep (2026-07)** — everything offline-implementable in
   `docs/BACKLOG.md` was built: scan-emitted entry **signals** + scan
   **audit-logging**; manual takes link `entry_signal_id`; tracked trades carry

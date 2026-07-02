@@ -96,6 +96,26 @@ def _count(factory: sessionmaker[Session], model: Any) -> int:
         return int(s.scalar(select(func.count()).select_from(model)) or 0)
 
 
+def _pulse_alerts(factory: sessionmaker[Session]) -> int:
+    """Alerts derived from scan deltas — excludes trade-management alerts, which
+    the lifecycle service writes directly (outside the pulse counters)."""
+    with factory() as s:
+        return int(
+            s.scalar(select(func.count()).select_from(Alert).where(Alert.kind != "trade_managed"))
+            or 0
+        )
+
+
+def _pulse_activities(factory: sessionmaker[Session]) -> int:
+    with factory() as s:
+        return int(
+            s.scalar(
+                select(func.count()).select_from(Activity).where(Activity.category != "management")
+            )
+            or 0
+        )
+
+
 # --------------------------------------------------------------------------- #
 # snapshots + deltas + alerts + activities + stats via run_scan
 # --------------------------------------------------------------------------- #
@@ -130,7 +150,7 @@ def test_second_scan_generates_deltas_alerts_activities(
 
     assert second["deltas_generated"] > 0
     assert _count(factory, ScanDelta) == second["deltas_generated"]
-    assert _count(factory, Activity) == second["activities_generated"]
+    assert _pulse_activities(factory) == second["activities_generated"]
     with factory() as s:
         deltas = list(s.scalars(select(ScanDelta)))
         assert all(d.direction in ("UPGRADE", "DOWNGRADE") for d in deltas)
@@ -152,17 +172,22 @@ def test_alerts_never_duplicate(factory: sessionmaker[Session]) -> None:
     provider = StubProvider()
     first = _scan(factory, provider)
     # the first scan may legitimately alert from its own snapshot (stop/target)
-    assert _count(factory, Alert) == first["alerts_generated"]
+    assert _pulse_alerts(factory) == first["alerts_generated"]
 
     provider.bump = 0.15
     second = _scan(factory, provider)
-    alerts_after_change = _count(factory, Alert)
+    alerts_after_change = _pulse_alerts(factory)
     assert alerts_after_change == first["alerts_generated"] + second["alerts_generated"]
     assert second["alerts_generated"] > 0  # a 15% jump must alert on something
 
     third = _scan(factory, provider)  # same data again — same transitions, no new alerts
     assert third["alerts_generated"] == 0
-    assert _count(factory, Alert) == alerts_after_change
+    assert _pulse_alerts(factory) == alerts_after_change
+    # Management alerts (written by the lifecycle service) also never duplicate:
+    # a rescan at the same prices must not re-fire an already-hit target/stop.
+    managed_after_second = _count(factory, Alert) - alerts_after_change
+    third_total = _count(factory, Alert)
+    assert third_total - alerts_after_change == managed_after_second
 
 
 def test_snapshots_are_immutable(factory: sessionmaker[Session]) -> None:

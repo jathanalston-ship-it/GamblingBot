@@ -12,6 +12,7 @@ from momentum.api.schemas import (
     AdviceReportOut,
     JournalEntryOut,
     ManagementAnalyticsOut,
+    ManagementReportOut,
     TrackedTradeOut,
     TradeEvaluationOut,
     TradeLifecycleSummaryOut,
@@ -89,3 +90,15 @@ def journal(trade_uid: str, session: Session = Depends(get_session)) -> list[Jou
     if not entries:
         raise HTTPException(status_code=404, detail=f"no tracked trade {trade_uid!r}")
     return entries
+
+
+@router.get("/{trade_uid}/management-report", response_model=ManagementReportOut)
+def management_report(
+    trade_uid: str, session: Session = Depends(get_session)
+) -> ManagementReportOut:
+    """How and why the system managed this trade: every automatic stop-loss /
+    take-profit action with its data-only analysis, plus the realized outcome."""
+    report = trade_lifecycle_service.management_report(session, trade_uid)
+    if report is None:
+        raise HTTPException(status_code=404, detail=f"no tracked trade {trade_uid!r}")
+    return report

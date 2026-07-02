@@ -33,6 +33,8 @@ from momentum.api.schemas import (
     AdviceReportOut,
     JournalEntryOut,
     ManagementAnalyticsOut,
+    ManagementEventOut,
+    ManagementReportOut,
     TrackedTradeOut,
     TradeEvaluationOut,
     TradeLifecycleSummaryOut,
@@ -50,14 +52,18 @@ from momentum.persistence.repositories.tracked_trades import TrackedTradeReposit
 from momentum.persistence.repositories.trade_evaluations import TradeEvaluationRepository
 from momentum.trade_lifecycle import (
     EvaluationInputs,
+    ManagementDecision,
     MarketFeatures,
     PriorSnapshot,
+    ThesisEvaluation,
     ThesisReevaluationEngine,
     TradeAction,
     TradeLifecycleConfig,
     TradeSpec,
+    decide_management,
     default_config,
     features_from_bars,
+    targets_from_records,
 )
 from momentum.trade_lifecycle import management
 from momentum.trade_lifecycle.outcomes import (
@@ -246,7 +252,7 @@ def reevaluate_open_trades(
     evals = TradeEvaluationRepository(session)
     open_trades = repo.open_trades()
     if not open_trades:
-        return {"evaluated": 0, "skipped": 0, "closed": 0}
+        return {"evaluated": 0, "skipped": 0, "closed": 0, "scaled_out": 0}
 
     engine = ThesisReevaluationEngine(cfg)
     conviction_engine = ConvictionEngine()
@@ -264,7 +270,7 @@ def reevaluate_open_trades(
     # Analog cohorts repeat across trades — compute once per (sector, regime).
     analog_cache: dict[tuple[str | None, str | None], tuple[float | None, int]] = {}
 
-    evaluated = skipped = closed = 0
+    evaluated = skipped = closed = scaled_out = 0
     for trade in open_trades:
         symbol = trade.symbol
         frame = bars.get(symbol) if bars is not None else None
@@ -332,20 +338,229 @@ def reevaluate_open_trades(
             prior_strengths=evals.recent_strengths(trade.trade_uid, limit=cfg.history_limit),
         )
         evaluation = engine.evaluate(inputs)
-        evals.append(
+        eval_row = evals.append(
             trade.trade_uid, evaluation, run_id=run_id, ts=ts, model_version=cfg.model_version
         )
         repo.apply_evaluation(trade, evaluation, ts=ts)
         evaluated += 1
-        if evaluation.stop_breached and cfg.auto_close_on_stop:
-            repo.close(
-                trade,
-                ts=ts,
-                reason=evaluation.reasons[0] if evaluation.reasons else "stop breached",
-            )
+        managed = _apply_management(
+            session,
+            repo,
+            trade,
+            evaluation=evaluation,
+            eval_row=eval_row,
+            days_held=days_held,
+            run_id=run_id,
+            ts=ts,
+            config=cfg,
+        )
+        if managed is not None and managed.closes_position:
             closed += 1
+        elif managed is not None:
+            scaled_out += 1
     session.commit()
-    return {"evaluated": evaluated, "skipped": skipped, "closed": closed}
+    return {"evaluated": evaluated, "skipped": skipped, "closed": closed, "scaled_out": scaled_out}
+
+
+# --------------------------------------------------------------------------- #
+# Automatic trade management (stop-loss / take-profit execution + report)
+# --------------------------------------------------------------------------- #
+def _apply_management(
+    session: Session,
+    repo: TrackedTradeRepository,
+    trade: TrackedTrade,
+    *,
+    evaluation: ThesisEvaluation,
+    eval_row: TradeEvaluation,
+    days_held: float,
+    run_id: str | None,
+    ts: dt.datetime,
+    config: TradeLifecycleConfig,
+) -> ManagementDecision | None:
+    """Act on the freshest price: stop-loss / take-profit per the trade's plan.
+
+    Executes the decision against the linked paper (journal) trade — full close
+    on stop or final target, partial scale-out at intermediate targets — marks
+    the fired target as hit (never re-fires), closes the tracked trade when the
+    position is done, and persists the how-and-why report as part of this
+    evaluation plus an alert, an activity-feed entry and an audit event.
+    """
+    if trade.run_id == "demo":
+        return None  # showcase rows are never traded against live prices
+    decision = decide_management(
+        symbol=trade.symbol,
+        entry_price=trade.entry_price,
+        stop_price=trade.stop_price,
+        price=evaluation.price,
+        targets=targets_from_records(trade.targets),
+        evaluation=evaluation,
+        days_held=days_held,
+        config=config,
+    )
+    if decision is None:
+        return None
+
+    decision = _execute_on_journal(session, trade, decision, ts=ts)
+    _mark_target_hit(trade, decision.target_index)
+    if decision.closes_position:
+        repo.close(trade, ts=ts, reason=decision.reason)
+
+    # The report rides on this evaluation row (the trade's immutable history).
+    eval_row.explanation = {**(eval_row.explanation or {}), "management": decision.to_dict()}
+    _record_management_event(session, trade, decision, run_id=run_id, ts=ts)
+    session.flush()
+    return decision
+
+
+def _execute_on_journal(
+    session: Session, trade: TrackedTrade, decision: ManagementDecision, *, ts: dt.datetime
+) -> ManagementDecision:
+    """Apply the decision to the linked paper trade (no-op when never taken).
+
+    A scale-out whose slice would equal the remaining shares is promoted to a
+    full close (the position can't stay open with zero shares).
+    """
+    from dataclasses import replace
+
+    from momentum.core.enums import Side
+    from momentum.execution.order import Fill
+    from momentum.persistence.repositories.trades import TradeRepository
+    from momentum.portfolio.journal import TradeJournal
+
+    if trade.journal_trade_id is None:
+        return decision
+    journal_trade = session.get(Trade, trade.journal_trade_id)
+    if journal_trade is None or journal_trade.status == "closed":
+        return decision
+
+    journal = TradeJournal(TradeRepository(session))
+    tag = "stop" if decision.kind == "stop_loss" else f"t{(decision.target_index or 0) + 1}"
+
+    if not decision.closes_position:
+        original = journal_trade.quantity + (journal_trade.scaled_out_quantity or 0)
+        shares = int(original * decision.fraction)
+        if shares >= journal_trade.quantity:
+            # Remainder too small to scale — take the whole position off.
+            decision = replace(
+                decision,
+                kind="take_profit_final",
+                fraction=1.0,
+                exit_reason="target",
+                reason=decision.reason + " (remainder closed — too small to scale)",
+            )
+        elif shares < 1:
+            return decision  # 1-share position: nothing to peel off, keep riding
+        else:
+            journal.scale_out(
+                journal_trade,
+                Fill(
+                    order_id=f"auto-{trade.trade_uid[:8]}-{tag}",
+                    symbol=trade.symbol,
+                    side=Side.SHORT,
+                    shares=shares,
+                    price=decision.price,
+                    fees=0.0,
+                    ts=ts,
+                ),
+            )
+            return decision
+
+    journal.close_trade(
+        journal_trade,
+        Fill(
+            order_id=f"auto-{trade.trade_uid[:8]}-{tag}",
+            symbol=trade.symbol,
+            side=Side.SHORT,
+            shares=journal_trade.quantity,
+            price=decision.price,
+            fees=0.0,
+            ts=ts,
+        ),
+        exit_reason=decision.exit_reason,
+    )
+    return decision
+
+
+def _mark_target_hit(trade: TrackedTrade, target_index: int | None) -> None:
+    """Persist which target fired so it can never fire twice (reassigns the JSON)."""
+    if target_index is None or not isinstance(trade.targets, list):
+        return
+    updated: list[dict[str, Any]] = []
+    for i, item in enumerate(trade.targets):
+        record = dict(item) if isinstance(item, dict) else {}
+        if i == target_index:
+            record["hit"] = True
+        updated.append(record)
+    trade.targets = updated
+
+
+def _record_management_event(
+    session: Session,
+    trade: TrackedTrade,
+    decision: ManagementDecision,
+    *,
+    run_id: str | None,
+    ts: dt.datetime,
+) -> None:
+    """Notify: alert (deduped) + activity-feed entry + audit event."""
+    from momentum.core.enums import AuditEvent
+    from momentum.persistence.audit import AuditLogger, AuditRecord
+    from momentum.persistence.models.activity import Activity
+    from momentum.persistence.models.alert import Alert
+    from momentum.persistence.repositories.audit_log import AuditLogRepository
+    from momentum.persistence.repositories.pulse import AlertRepository
+
+    payload = decision.to_dict()
+    session.add(
+        Activity(
+            ts=ts,
+            run_id=run_id,
+            symbol=trade.symbol,
+            category="management",
+            text=decision.reason[:300],
+            payload=payload,
+        )
+    )
+
+    dedupe_key = (
+        f"managed:{trade.symbol}:{trade.trade_uid[:8]}:{decision.kind}:{decision.target_index}"
+    )[:160]
+    if not AlertRepository(session).existing_keys([dedupe_key]):
+        title = (
+            f"{trade.symbol} stop loss — position closed"
+            if decision.kind == "stop_loss"
+            else f"{trade.symbol} take profit — "
+            + ("position closed" if decision.closes_position else "partial scale-out")
+        )
+        session.add(
+            Alert(
+                ts=ts,
+                run_id=run_id,
+                symbol=trade.symbol,
+                severity="critical" if decision.kind == "stop_loss" else "warning",
+                kind="trade_managed",
+                title=title[:120],
+                description=decision.analysis[:400],
+                dedupe_key=dedupe_key,
+            )
+        )
+
+    AuditLogger(AuditLogRepository(session)).record(
+        AuditRecord(
+            event=(
+                AuditEvent.POSITION_CLOSED
+                if decision.closes_position
+                else AuditEvent.RISK_ADJUSTMENT
+            ),
+            summary=decision.reason[:255],
+            ts=ts,
+            run_id=run_id,
+            symbol=trade.symbol,
+            entity_type="tracked_trade",
+            entity_id=trade.trade_uid,
+            payload=payload,
+        )
+    )
 
 
 def run_for_scan(
@@ -617,6 +832,83 @@ def trade_journal(session: Session, trade_uid: str) -> list[JournalEntryOut]:
             )
         )
     return entries
+
+
+def management_report(session: Session, trade_uid: str) -> ManagementReportOut | None:
+    """How and why the system managed this trade: every automatic action, its
+    data-only analysis, and the realized outcome."""
+    trade = TrackedTradeRepository(session).get_by_uid(trade_uid)
+    if trade is None:
+        return None
+
+    events: list[ManagementEventOut] = []
+    history = list(reversed(TradeEvaluationRepository(session).for_trade(trade_uid)))
+    for ev in history:
+        managed = (ev.explanation or {}).get("management") if ev.explanation else None
+        if not isinstance(managed, dict):
+            continue
+        events.append(
+            ManagementEventOut(
+                at=ev.evaluated_at.isoformat() if ev.evaluated_at else None,
+                kind=str(managed.get("kind", "unknown")),
+                price=managed.get("price"),
+                fraction=managed.get("fraction"),
+                target_index=managed.get("target_index"),
+                reason=str(managed.get("reason", "")),
+                analysis=str(managed.get("analysis", "")),
+                evidence=(
+                    managed.get("evidence") if isinstance(managed.get("evidence"), dict) else {}
+                ),
+                health_at_decision=ev.health_score,
+                conviction_at_decision=ev.current_conviction,
+            )
+        )
+
+    return ManagementReportOut(
+        trade_uid=trade.trade_uid,
+        symbol=trade.symbol,
+        status=trade.status,
+        entry_price=trade.entry_price,
+        stop_price=trade.stop_price,
+        targets=[t for t in (trade.targets or []) if isinstance(t, dict)],
+        recommended_at=trade.recommended_at.isoformat() if trade.recommended_at else None,
+        closed_at=trade.closed_at.isoformat() if trade.closed_at else None,
+        close_reason=trade.close_reason,
+        realized_r=trade.realized_r,
+        realized_pnl=trade.realized_pnl,
+        events=events,
+        summary=_management_summary(trade, events),
+    )
+
+
+def _management_summary(trade: TrackedTrade, events: list[ManagementEventOut]) -> str:
+    """One plain-language paragraph wrapping up the management story (data-only)."""
+    if not events:
+        if trade.status == "open":
+            return (
+                f"{trade.symbol} is open and being monitored on every scan. No management "
+                f"rule has fired yet: price has stayed above the {trade.stop_price:.2f} stop "
+                f"and below the first unhit target."
+            )
+        return (
+            f"{trade.symbol} closed without an automatic management action "
+            f"({trade.close_reason or 'no reason recorded'})."
+        )
+    scale_outs = sum(1 for e in events if e.kind == "take_profit_scale")
+    parts = [f"The system took {len(events)} automatic action(s) on {trade.symbol}"]
+    if scale_outs:
+        parts.append(f"{scale_outs} partial take-profit scale-out(s)")
+    final = events[-1]
+    if final.kind == "stop_loss":
+        parts.append(f"and closed the position on its protective stop at {final.price:.2f}")
+    elif final.kind == "take_profit_final":
+        parts.append(f"and closed the position at the final target ({final.price:.2f})")
+    sentence = ", including ".join([parts[0], ", ".join(parts[1:])]) if parts[1:] else parts[0]
+    if trade.realized_r is not None:
+        sentence += f". Realized outcome: {trade.realized_r:+.2f}R"
+        if trade.realized_pnl is not None:
+            sentence += f" ({trade.realized_pnl:+,.2f} net)"
+    return sentence + "."
 
 
 # --------------------------------------------------------------------------- #

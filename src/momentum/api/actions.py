@@ -389,6 +389,24 @@ def run_scan(
     if kept and len(kept) < pulled_count:
         bars = {symbol: bars[symbol] for symbol in kept}
 
+    # 1a2. Never lose sight of a held symbol: open tracked trades are managed on
+    #      every scan, so fresh bars are pulled for them even when the symbol is
+    #      outside the selected universe or trimmed by the liquidity prefilter.
+    from momentum.persistence.repositories.tracked_trades import TrackedTradeRepository
+
+    with session_factory() as session:
+        held_symbols = [
+            t.symbol for t in TrackedTradeRepository(session).open_trades() if t.run_id != "demo"
+        ]
+    held_missing = [s for s in held_symbols if s not in bars]
+    held_bars = (
+        pull_bars(
+            provider, held_missing, end=_today(), lookback_days=lookback_days, recorder=_record
+        )
+        if held_missing
+        else {}
+    )
+
     # 1b. Verify freshness: newest bar vs the pull time, measured in trading
     #     sessions by default (weekend/holiday-old daily bars are still fresh).
     pull_timestamp = dt.datetime.now(tz=dt.UTC)
@@ -556,8 +574,9 @@ def run_scan(
     trades_auto_closed = 0
     trades_linked = 0
     trades_realized = 0
+    trades_scaled_out = 0
     if not stale and conviction_rows:
-        from momentum.api import scan_artifacts, trade_lifecycle_service, watchlist_service
+        from momentum.api import scan_artifacts, watchlist_service
 
         progress(0.93, "deriving trade plans + analogs")
         with session_factory() as session:
@@ -570,20 +589,28 @@ def run_scan(
             ws = watchlist_service.generate_watchlists(session, run_id=run_id, as_of=as_of)
             watchlists_generated = sum(len(h.entries) for h in ws.horizons)
 
-        # 11. Trade lifecycle: every recommendation becomes a tracked trade, and
-        #     every OPEN tracked trade is reevaluated against this scan's own
-        #     fresh bars (thesis regrade — not a rescan). Append-only history.
-        progress(0.98, "reevaluating open trades")
+    # 11. Trade lifecycle: every recommendation becomes a tracked trade, every
+    #     OPEN tracked trade is reevaluated against this scan's own fresh bars
+    #     (thesis regrade — not a rescan; append-only history), and stop-loss /
+    #     take-profit management executes against the linked paper trade. This
+    #     runs on EVERY fresh scan — a scan with zero candidates must still
+    #     manage the trades already held.
+    if not stale:
+        from momentum.api import trade_lifecycle_service
+
+        progress(0.98, "reevaluating + managing open trades")
         with session_factory() as session:
             lc = trade_lifecycle_service.run_for_scan(
-                session, run_id=run_id, ts=ts, bars=bars, benchmark=spy
+                session, run_id=run_id, ts=ts, bars={**bars, **held_bars}, benchmark=spy
             )
             tracked_trades_created = lc["created"]
             trades_reevaluated = lc["evaluated"]
             trades_auto_closed = lc["closed"]
+            trades_scaled_out = lc["scaled_out"]
             trades_linked = lc["linked"]
             trades_realized = lc["realized"]
 
+    if not stale and conviction_rows:
         # 11b. Setup lifecycles: derive each candidate's Building→…→Completed
         #      state from this scan's evidence (previously only paper sessions
         #      refreshed these — the Lifecycle screen stayed empty for scans).
@@ -675,6 +702,7 @@ def run_scan(
         "tracked_trades_created": tracked_trades_created,
         "trades_reevaluated": trades_reevaluated,
         "trades_auto_closed": trades_auto_closed,
+        "trades_scaled_out": trades_scaled_out,
         "trades_linked": trades_linked,
         "trades_realized": trades_realized,
         "lifecycles_refreshed": lifecycles_refreshed,

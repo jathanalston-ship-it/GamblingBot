@@ -1043,6 +1043,39 @@ class AdviceReportOut(BaseModel):
     recent_grades: list[AdviceGradeOut]
 
 
+class ManagementEventOut(BaseModel):
+    """One automatic management action taken on a tracked trade."""
+
+    at: str | None
+    kind: str  # stop_loss | take_profit_scale | take_profit_final
+    price: float | None
+    fraction: float | None  # of the original position (1.0 = full close)
+    target_index: int | None
+    reason: str
+    analysis: str  # the data-only "how and why" report
+    evidence: dict[str, Any]
+    health_at_decision: float | None
+    conviction_at_decision: float | None
+
+
+class ManagementReportOut(BaseModel):
+    """How and why the system managed one tracked trade, end to end."""
+
+    trade_uid: str
+    symbol: str
+    status: str
+    entry_price: float
+    stop_price: float
+    targets: list[dict[str, Any]]
+    recommended_at: str | None
+    closed_at: str | None
+    close_reason: str | None
+    realized_r: float | None
+    realized_pnl: float | None
+    events: list[ManagementEventOut]
+    summary: str  # one-paragraph plain-language wrap-up
+
+
 class JournalEntryOut(BaseModel):
     """One entry in a trade's thesis journal (opened → evaluations → exited)."""
 

@@ -105,6 +105,12 @@ class TradeLifecycleConfig(BaseModel):
     # Close the tracked trade automatically when price breaches the stop.
     auto_close_on_stop: bool = True
 
+    # Take profits automatically when price reaches the plan's targets: scale
+    # out a fraction of the ORIGINAL position at each intermediate target and
+    # close the remainder at the final one.
+    auto_take_profit: bool = True
+    target_scale_out_fraction: float = Field(1.0 / 3.0, gt=0, lt=1)
+
     # How many prior evaluations feed thesis stability.
     history_limit: int = Field(20, ge=2)
 

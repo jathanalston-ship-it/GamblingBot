@@ -53,6 +53,12 @@ scale_in_conviction_gain: 5.0
 # Close the tracked trade automatically when price breaches the stop.
 auto_close_on_stop: true
 
+# Take profits automatically when price reaches the plan's targets: scale out
+# a fraction of the ORIGINAL position at each intermediate target and close
+# the remainder at the final one.
+auto_take_profit: true
+target_scale_out_fraction: 0.3333333333333333
+
 # Prior evaluations feeding thesis stability.
 history_limit: 20
 

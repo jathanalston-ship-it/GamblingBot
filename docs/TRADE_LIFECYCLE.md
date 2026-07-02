@@ -101,6 +101,50 @@ strengthening / weakening*, *Momentum slowing*, *Still on thesis* — plus the
 evaluation's narrative) → **Exited** (close reason + realized R). Derived on
 demand from the immutable rows; nothing is ever replaced.
 
+## Automatic trade management (stop-loss / take-profit execution)
+
+Every scan doesn't just *grade* open trades — it **manages** them. After each
+trade's evaluation, the pure decision engine (`trade_lifecycle/auto_manage.py`,
+`decide_management`) checks the freshest price against the trade's plan:
+
+1. **Stop loss** — price at/through the protective stop → the full position is
+   closed. Risk is honoured first, always (fires even with take-profit
+   disabled; gate: `auto_close_on_stop`).
+2. **Final target** — price at/above the plan's last target → the remainder is
+   closed (the plan's objectives are met).
+3. **Intermediate target** — price at/above an unhit earlier target → a
+   configured fraction of the ORIGINAL position is scaled out
+   (`target_scale_out_fraction`, default ⅓) and the rest keeps running — the
+   positive-skew objective. Each target fires **once** (`hit` is persisted on
+   the trade's targets JSON). Gate: `auto_take_profit`.
+
+Execution is real: the linked paper (journal) trade is closed
+(`TradeJournal.close_trade`, exit reason `stop`/`target`) or partially reduced
+(`TradeJournal.scale_out`), so the realized R/P&L lands on the tracked trade
+and every piece of advice becomes gradable. A scale-out slice that would equal
+the remaining shares is promoted to a full close; a 1-share position never
+scales. Trades tagged `demo` are never managed.
+
+Every action ships a **data-only "how and why" report** (the rule that fired,
+entry/stop/price, R at the decision, thesis health/conviction at that moment),
+persisted four ways:
+
+- on the evaluation row (`explanation.management` — part of the immutable history),
+- a **critical/warning alert** (`kind=trade_managed`, deduped per trade+event —
+  surfaced in the Command Center and as an **OS notification**),
+- an **activity-feed** entry (`category=management`),
+- an **audit event** (`position_closed` / `risk_adjustment`).
+
+`GET /trade-lifecycle/{uid}/management-report` assembles the full story (every
+event + analysis + realized outcome + a plain-language summary); the Trades
+detail shows it as the **System management** card.
+
+Coverage guarantees (proven in `tests/unit/api/test_trade_management.py`):
+management runs on **every fresh scan, even one with zero candidates**, and
+bars are pulled for **every held symbol** even when it is outside the selected
+universe or trimmed by the liquidity prefilter — an open position is never
+unwatched. A stale scan manages nothing (never act on old prices).
+
 ## Management analytics
 
 `GET /trade-lifecycle/management-analytics` grades the **management logic

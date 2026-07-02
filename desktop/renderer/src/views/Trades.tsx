@@ -328,6 +328,8 @@ function TradeDetail({ trade, onChanged }: { trade: TrackedTrade; onChanged?: ()
 
       {current ? <ExplanationPanel evaluation={current} /> : null}
 
+      <ManagementReportCard tradeUid={trade.trade_uid} />
+
       <Card title="Thesis journal — the trade's story (append-only)">
         {journal.loading ? (
           <Loading />
@@ -358,6 +360,90 @@ function TradeDetail({ trade, onChanged }: { trade: TrackedTrade; onChanged?: ()
         )}
       </Card>
     </div>
+  );
+}
+
+interface ManagementEvent {
+  at: string | null;
+  kind: string;
+  price: number | null;
+  fraction: number | null;
+  target_index: number | null;
+  reason: string;
+  analysis: string;
+  evidence: Record<string, unknown>;
+  health_at_decision: number | null;
+  conviction_at_decision: number | null;
+}
+
+interface ManagementReport {
+  trade_uid: string;
+  symbol: string;
+  status: string;
+  targets: Record<string, unknown>[];
+  close_reason: string | null;
+  realized_r: number | null;
+  realized_pnl: number | null;
+  events: ManagementEvent[];
+  summary: string;
+}
+
+const MANAGEMENT_KIND: Record<string, { label: string; tone: string }> = {
+  stop_loss: { label: "STOP LOSS", tone: "bg-red-500/20 text-red-300" },
+  take_profit_scale: { label: "PARTIAL TAKE PROFIT", tone: "bg-emerald-500/20 text-emerald-300" },
+  take_profit_final: { label: "FINAL TARGET", tone: "bg-emerald-500/20 text-emerald-300" },
+};
+
+/** How and why the system managed this trade — the automatic TP/SL record. */
+function ManagementReportCard({ tradeUid }: { tradeUid: string }) {
+  const report = useApi<ManagementReport>(`/trade-lifecycle/${tradeUid}/management-report`);
+  if (report.loading) return null;
+  if (report.error || !report.data) return null;
+  const r = report.data;
+  return (
+    <Card title="System management — how and why the trade was managed">
+      <p className="mb-3 text-sm text-slate-300">{r.summary}</p>
+      {r.events.length === 0 ? null : (
+        <ol className="space-y-3">
+          {r.events.map((e, i) => {
+            const kind = MANAGEMENT_KIND[e.kind] ?? {
+              label: e.kind,
+              tone: "bg-surface text-slate-300",
+            };
+            return (
+              <li key={i} className="rounded border border-surface-border/60 p-2.5">
+                <div className="mb-1 flex flex-wrap items-center gap-2 text-xs">
+                  <span className={`rounded px-1.5 py-0.5 font-medium ${kind.tone}`}>
+                    {kind.label}
+                  </span>
+                  <span className="text-slate-500">{date(e.at)}</span>
+                  {e.price != null ? (
+                    <span className="tabular-nums text-slate-400">@ {num(e.price)}</span>
+                  ) : null}
+                  {e.fraction != null && e.fraction < 1 ? (
+                    <span className="text-slate-400">{num(e.fraction * 100, 0)}% of position</span>
+                  ) : null}
+                  {e.health_at_decision != null ? (
+                    <span className={healthColor(e.health_at_decision)}>
+                      health {num(e.health_at_decision, 0)}
+                    </span>
+                  ) : null}
+                </div>
+                <p className="text-xs leading-relaxed text-slate-400">{e.analysis}</p>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+      {r.realized_r != null ? (
+        <p className="mt-3 text-xs">
+          <span className="text-slate-500">Realized outcome: </span>
+          <span className={r.realized_r >= 0 ? "text-emerald-400" : "text-bear"}>
+            {signed(r.realized_r, 2)}R{r.realized_pnl != null ? ` (${signed(r.realized_pnl, 0)})` : ""}
+          </span>
+        </p>
+      ) : null}
+    </Card>
   );
 }
 
