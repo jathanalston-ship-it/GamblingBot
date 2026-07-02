@@ -568,7 +568,7 @@ function Maintenance() {
 
 export default function Settings() {
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 p-5">
       <PageTitle title="Settings" subtitle="Data provider, API keys, maintenance and configuration" />
       <DataProviderPanel />
       <DataModePanel />

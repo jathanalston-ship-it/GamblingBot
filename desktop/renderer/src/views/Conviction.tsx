@@ -74,7 +74,7 @@ function Body({ symbol, runId }: { symbol: string; runId: string | null }) {
   const trend = [...(data ?? [])].sort((a, b) => a.as_of.localeCompare(b.as_of)).map((r) => r.score);
 
   return (
-    <div className="p-4">
+    <div className="p-5">
       <StaleBanner />
       <ProvenancePanel screen="conviction" />
       <div className="mb-3 flex items-baseline gap-3">

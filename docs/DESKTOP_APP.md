@@ -30,6 +30,24 @@ Nothing about the core platform changes — the desktop app is a **shell + UI ov
 the existing backend**. The strategy/risk/analytics engines are reused verbatim
 through the API.
 
+### Design system (2026-07 visual revamp)
+
+One dark trading-terminal system, defined entirely in
+`desktop/renderer/tailwind.config.ts` (semantic tokens — `surface-*`, `bull`,
+`bear`, `accent`, `chart-*`) and `src/index.css` (font stack, tabular numerals,
+thin scrollbars, focus rings, and the shared button voices `.btn-primary` /
+`.btn-ghost` / `.btn-quiet` / `.btn-danger`, plus `.field` and `.overline`).
+Chart **marks** use a CVD-validated palette (`chart.up #059669` / `chart.down
+#ef4444` / `chart.line #3b82f6` / `chart.warn #d97706` — six-checks validator,
+dark surface); **text** wears brighter text-grade tones (`bull #34d399`, `bear
+#f87171`). Navigation is a grouped icon sidebar (`StageRail.tsx`: Today /
+Research / Performance / System + a dev section) instead of the old 23-item
+flat list; the top bar (`ContextBar.tsx`) clusters brand → market context →
+account → run scope → ⌘K → PAPER badge. Shared primitives (`Card`, `Stat`,
+`PageTitle`, `Badge`, `DataTable`, `ActionButton`) carry the system so every
+view inherits it; page canvases are normalized to `p-5`. The 1–8 stage keys and
+`g`-prefixed shortcuts are unchanged.
+
 ## 2. Architecture
 
 Three processes, one machine, loopback-only:

@@ -24,9 +24,9 @@ export interface Overlay {
 }
 
 const OVERLAY_COLOR: Record<Overlay["kind"], string> = {
-  entry: "#3b82f6",
-  stop: "#ef4444",
-  target: "#22c55e",
+  entry: "#3b82f6", // chart.line
+  stop: "#ef4444", // chart.down
+  target: "#059669", // chart.up
 };
 
 /**
@@ -89,7 +89,7 @@ export function PriceChart({
                 x2={width - padR}
                 y1={y(price)}
                 y2={y(price)}
-                stroke="#1f2a3d"
+                stroke="#1c2739"
                 strokeWidth={1}
               />
               <text x={4} y={y(price) + 3} fontSize={9} fill="#64748b">
@@ -103,7 +103,7 @@ export function PriceChart({
         {bars.map((b, i) => {
           const cx = padL + i * step + step / 2;
           const up = b.close >= b.open;
-          const color = up ? "#22c55e" : "#ef4444";
+          const color = up ? "#059669" : "#ef4444"; // validated mark pair
           const top = y(Math.max(b.open, b.close));
           const bodyH = Math.max(1, Math.abs(y(b.open) - y(b.close)));
           return (

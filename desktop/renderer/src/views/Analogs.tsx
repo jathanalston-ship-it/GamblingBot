@@ -59,7 +59,7 @@ function Body({ symbol, runId }: { symbol: string; runId: string | null }) {
   const smallSample = data.sample_size < 20;
 
   return (
-    <div className="p-4">
+    <div className="p-5">
       <ProvenancePanel screen="analogs" />
       <div className="mb-4 flex items-center gap-3">
         <h1 className="text-lg font-semibold text-slate-100">Historical Analogs · {symbol}</h1>

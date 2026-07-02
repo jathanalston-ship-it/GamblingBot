@@ -47,7 +47,7 @@ export default function Portfolio() {
   const maxDrawdown = drawdowns.length ? Math.min(...drawdowns) : null;
 
   return (
-    <div>
+    <div className="p-5">
       <PageTitle title="Portfolio" subtitle="Equity curve, exposure and risk metrics" />
       <div className="space-y-5">
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3">

@@ -42,18 +42,14 @@ export function ActionButton({
 }) {
   const { job, running, start } = useAction(path, onDone);
 
-  const base =
-    variant === "primary"
-      ? "bg-accent text-white hover:bg-accent/90"
-      : "border border-surface-border text-slate-300 hover:bg-surface/60";
+  const base = variant === "primary" ? "btn-primary" : "btn-ghost";
 
   return (
     <span className="inline-flex items-center gap-2">
-      <button
-        onClick={() => void start(body)}
-        disabled={running}
-        className={`rounded px-3 py-1.5 text-sm ${base} disabled:opacity-50`}
-      >
+      <button onClick={() => void start(body)} disabled={running} className={base}>
+        {running ? (
+          <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+        ) : null}
         {running ? "Running…" : label}
       </button>
       {job && running ? (

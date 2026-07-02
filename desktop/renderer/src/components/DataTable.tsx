@@ -23,13 +23,13 @@ export function DataTable<T extends Record<string, unknown>>({
   }
   return (
     <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-sm">
+      <table className="w-full border-collapse text-[13px]">
         <thead>
-          <tr className="border-b border-surface-border text-left text-xs uppercase tracking-wide text-slate-400">
+          <tr className="border-b border-surface-border text-left text-[11px] uppercase tracking-wider text-slate-500">
             {columns.map((c) => (
               <th
                 key={c.key}
-                className={`px-3 py-2 font-medium ${c.align === "right" ? "text-right" : ""}`}
+                className={`px-3 py-2 font-semibold ${c.align === "right" ? "text-right" : ""}`}
               >
                 {c.header}
               </th>
@@ -38,11 +38,14 @@ export function DataTable<T extends Record<string, unknown>>({
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={i} className="border-b border-surface-border/50 hover:bg-surface/40">
+            <tr
+              key={i}
+              className="border-b border-surface-border/40 transition-colors last:border-0 hover:bg-surface-border/20"
+            >
               {columns.map((c) => (
                 <td
                   key={c.key}
-                  className={`px-3 py-2 ${c.align === "right" ? "text-right tabular-nums" : ""}`}
+                  className={`px-3 py-[7px] ${c.align === "right" ? "text-right tabular-nums" : ""}`}
                 >
                   {c.render ? c.render(row) : String(row[c.key] ?? "—")}
                 </td>

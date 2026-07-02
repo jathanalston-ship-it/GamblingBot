@@ -72,15 +72,15 @@ function EquityCurve({ points }: { points: EquityPoint[] }) {
           const value = min + span * f;
           return (
             <g key={f}>
-              <line x1={padL} x2={width - pad} y1={y(value)} y2={y(value)} stroke="#1f2a3d" strokeWidth={1} />
+              <line x1={padL} x2={width - pad} y1={y(value)} y2={y(value)} stroke="#1c2739" strokeWidth={1} />
               <text x={4} y={y(value) + 3} fontSize={9} fill="#64748b">
                 {num(value, 0)}
               </text>
             </g>
           );
         })}
-        <line x1={padL} x2={width - pad} y1={y(start.equity)} y2={y(start.equity)} stroke="#334155" strokeDasharray="4 4" strokeWidth={1} />
-        <path d={path} fill="none" stroke={up ? "#22c55e" : "#ef4444"} strokeWidth={1.6} />
+        <line x1={padL} x2={width - pad} y1={y(start.equity)} y2={y(start.equity)} stroke="#2a3850" strokeDasharray="4 4" strokeWidth={1} />
+        <path d={path} fill="none" stroke={up ? "#059669" : "#ef4444"} strokeWidth={1.6} />
       </svg>
       <div className="mt-1 flex justify-between text-[10px] text-slate-600">
         <span>{start.ts}</span>
@@ -195,7 +195,7 @@ export default function Backtesting() {
   ];
 
   return (
-    <div>
+    <div className="p-5">
       <PageTitle title="Backtesting" subtitle="Event-driven backtests & optimization results">
         <ActionButton label="Run backtest" path="/actions/backtest" onDone={() => reload()} />
       </PageTitle>

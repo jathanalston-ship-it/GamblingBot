@@ -108,7 +108,7 @@ export default function Developer() {
     });
 
   return (
-    <div className="space-y-4 p-6">
+    <div className="space-y-4 p-5">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-slate-100">Developer Panel</h1>
         <span className="text-xs text-slate-500">auto-refreshing · Development Mode</span>

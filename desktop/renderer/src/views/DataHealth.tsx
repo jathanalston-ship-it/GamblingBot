@@ -100,7 +100,7 @@ export default function DataHealth() {
   });
 
   return (
-    <div>
+    <div className="p-5">
       <PageTitle title="Data Health" subtitle="Is the data pipeline flowing?">
         <button
           onClick={reload}

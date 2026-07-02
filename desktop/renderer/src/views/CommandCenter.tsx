@@ -46,24 +46,22 @@ export default function CommandCenter() {
         </div>
       </PageTitle>
 
-      {/* live pulse: daemon, movers, alerts, activity, performance */}
-      <LivePulse />
-
       {/* top stats */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <Card title="Market Regime">
-          <div className="flex items-center gap-2">
+        <div className="rounded-card border border-surface-border bg-surface-raised px-4 py-3 shadow-card">
+          <div className="overline">Market Regime</div>
+          <div className="mt-1.5 flex items-center gap-2">
             {data.regime ? (
               <Badge tone={regimeTone(data.regime.regime)}>{data.regime.regime}</Badge>
             ) : (
               <span className="text-sm text-slate-500">no regime</span>
             )}
-            <span className="text-xs text-slate-500">
-              {adx != null ? `ADX ${num(Number(adx), 0)}` : ""}
-              {rv != null ? ` · RV ${pct(Number(rv), 0)}` : ""}
-            </span>
           </div>
-        </Card>
+          <div className="mt-1 text-[11px] text-slate-500">
+            {adx != null ? `ADX ${num(Number(adx), 0)}` : ""}
+            {rv != null ? ` · RV ${pct(Number(rv), 0)}` : ""}
+          </div>
+        </div>
         <Stat
           label="Portfolio Heat"
           value={data.portfolio_heat != null ? pct(data.portfolio_heat, 1) : "—"}
@@ -94,7 +92,7 @@ export default function CommandCenter() {
           {data.highest_conviction ? (
             <button
               onClick={() => go(data.highest_conviction!.symbol, "/conviction")}
-              className="flex w-full items-baseline gap-3 text-left hover:opacity-80"
+              className="group flex w-full items-baseline gap-3 text-left"
             >
               <span className="text-lg font-semibold text-slate-100">
                 {data.highest_conviction.symbol}
@@ -105,6 +103,9 @@ export default function CommandCenter() {
               <span className="text-xs uppercase text-slate-400">
                 {data.highest_conviction.band}
               </span>
+              <span className="ml-auto text-xs text-slate-600 transition-colors group-hover:text-accent">
+                conviction →
+              </span>
             </button>
           ) : (
             <Empty />
@@ -114,7 +115,7 @@ export default function CommandCenter() {
           {data.best_reward_risk ? (
             <button
               onClick={() => go(data.best_reward_risk!.symbol, "/tradeplan")}
-              className="flex w-full items-baseline gap-3 text-left hover:opacity-80"
+              className="group flex w-full items-baseline gap-3 text-left"
             >
               <span className="text-lg font-semibold text-slate-100">
                 {data.best_reward_risk.symbol}
@@ -124,6 +125,9 @@ export default function CommandCenter() {
               </span>
               <span className="text-xs text-slate-400">
                 {data.best_reward_risk.horizon_label}
+              </span>
+              <span className="ml-auto text-xs text-slate-600 transition-colors group-hover:text-accent">
+                plan →
               </span>
             </button>
           ) : (
@@ -151,6 +155,9 @@ export default function CommandCenter() {
         <OppCard title="Top 5 — This Week" entries={data.weekly} onPick={go} />
         <OppCard title="Top 5 — This Month" entries={data.monthly} onPick={go} />
       </div>
+
+      {/* live pulse: daemon, movers, alerts, activity, performance */}
+      <LivePulse />
 
       {/* changes + triggered */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -218,12 +225,22 @@ function OppCard({
         <Empty text="No watchlist yet." />
       ) : (
         <table className="w-full text-sm">
+          <thead>
+            <tr className="text-[10px] uppercase tracking-wider text-slate-600">
+              <th className="pb-1 text-left font-semibold">#</th>
+              <th className="pb-1 text-left font-semibold">Sym</th>
+              <th className="pb-1 text-right font-semibold">Conv</th>
+              <th className="pb-1 text-right font-semibold">R:R</th>
+              <th className="pb-1 pl-2 text-left font-semibold">Risk</th>
+            </tr>
+          </thead>
           <tbody className="tabular-nums">
             {entries.map((e) => (
               <tr
                 key={e.id}
                 onClick={() => onPick(e.symbol, "/tradeplan")}
-                className="cursor-pointer border-b border-surface-border/40 hover:bg-surface/40"
+                className="cursor-pointer border-b border-surface-border/40 transition-colors last:border-0 hover:bg-surface-border/20"
+                title="open trade plan"
               >
                 <td className="py-1.5 text-slate-500">{e.rank}</td>
                 <td className="py-1.5 font-medium text-slate-100">{e.symbol}</td>

@@ -62,14 +62,14 @@ export function TradeActions({
       <button
         disabled={busy != null}
         onClick={() => void run("/actions/take-trade", "take")}
-        className="rounded border border-bull/50 px-2.5 py-1 text-xs font-medium text-bull hover:bg-bull/10 disabled:opacity-50"
+        className="btn border border-bull/40 bg-bull/10 px-2.5 py-1 text-xs text-bull hover:bg-bull/20"
       >
         {busy === "take" ? "Taking…" : "Take paper trade"}
       </button>
       <button
         disabled={busy != null}
         onClick={() => void run("/actions/track-trade", "track")}
-        className="rounded border border-surface-border px-2.5 py-1 text-xs text-slate-300 hover:bg-surface disabled:opacity-50"
+        className="btn-quiet border border-surface-border px-2.5 py-1"
       >
         {busy === "track" ? "Tracking…" : "Track only"}
       </button>
@@ -119,7 +119,7 @@ export function CloseTradeButton({
       <button
         disabled={busy}
         onClick={() => void run()}
-        className="rounded border border-bear/50 px-2.5 py-1 text-xs font-medium text-bear hover:bg-bear/10 disabled:opacity-50"
+        className="btn-danger px-2.5 py-1 text-xs"
       >
         {busy ? "Closing…" : "Close paper trade"}
       </button>

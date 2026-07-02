@@ -117,7 +117,7 @@ export default function Analytics() {
   }));
 
   return (
-    <div>
+    <div className="p-5">
       <PageTitle title="Analytics" subtitle="Expectancy, profit factor and trend capture" />
       <div className="space-y-5">
         <Card title="Edge">
