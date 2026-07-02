@@ -496,6 +496,7 @@ def run_scan(
     watchlists_generated = 0
     trade_plans_persisted = 0
     analogs_persisted = 0
+    lifecycles_refreshed = 0
     tracked_trades_created = 0
     trades_reevaluated = 0
     trades_auto_closed = 0
@@ -528,6 +529,14 @@ def run_scan(
             trades_auto_closed = lc["closed"]
             trades_linked = lc["linked"]
             trades_realized = lc["realized"]
+
+        # 11b. Setup lifecycles: derive each candidate's Building→…→Completed
+        #      state from this scan's evidence (previously only paper sessions
+        #      refreshed these — the Lifecycle screen stayed empty for scans).
+        from momentum.api import lifecycle_service
+
+        with session_factory() as session:
+            lifecycles_refreshed = lifecycle_service.refresh_lifecycles(session, run_id=run_id)
 
     # 12. Market pulse: snapshot the scan, diff it against the previous snapshot
     #     (deltas → alerts → activity feed) and record its performance row.
@@ -614,6 +623,7 @@ def run_scan(
         "trades_auto_closed": trades_auto_closed,
         "trades_linked": trades_linked,
         "trades_realized": trades_realized,
+        "lifecycles_refreshed": lifecycles_refreshed,
         "snapshot_persisted": pulse_counts["snapshot"],
         "deltas_generated": pulse_counts["deltas"],
         "alerts_generated": pulse_counts["alerts"],

@@ -213,6 +213,64 @@ def start_refresh_lifecycles(request: Request, params: ActionParams | None = Non
     return JobOut(**_jobs(request).submit("refresh-lifecycles", fn).to_dict())
 
 
+class TradeActionParams(BaseModel):
+    """Manual trade actions (Take / Track / Close) — fast, synchronous."""
+
+    symbol: str | None = None
+    trade_uid: str | None = None
+    quantity: int | None = None
+    price: float | None = None
+
+
+@router.post("/take-trade")
+def take_trade(request: Request, params: TradeActionParams) -> dict[str, Any]:
+    """Take the trade on paper from its plan (opens + tracks + links)."""
+    import datetime as dt
+
+    from momentum.api import trade_lifecycle_service
+
+    if not params.symbol:
+        raise HTTPException(status_code=422, detail="symbol is required")
+    with _session_factory(request)() as session:
+        return trade_lifecycle_service.take_trade(
+            session, params.symbol, quantity=params.quantity, ts=dt.datetime.now(tz=dt.UTC)
+        )
+
+
+@router.post("/track-trade")
+def track_trade(request: Request, params: TradeActionParams) -> dict[str, Any]:
+    """Track a symbol's thesis without taking a position."""
+    import datetime as dt
+
+    from momentum.api import trade_lifecycle_service
+
+    if not params.symbol:
+        raise HTTPException(status_code=422, detail="symbol is required")
+    with _session_factory(request)() as session:
+        return trade_lifecycle_service.track_symbol(
+            session, params.symbol, ts=dt.datetime.now(tz=dt.UTC)
+        )
+
+
+@router.post("/close-trade")
+def close_trade(request: Request, params: TradeActionParams) -> dict[str, Any]:
+    """Close a taken paper trade at the last known (or given) price."""
+    import datetime as dt
+
+    from momentum.api import trade_lifecycle_service
+
+    if not params.symbol and not params.trade_uid:
+        raise HTTPException(status_code=422, detail="symbol or trade_uid is required")
+    with _session_factory(request)() as session:
+        return trade_lifecycle_service.close_manual_trade(
+            session,
+            trade_uid=params.trade_uid,
+            symbol=params.symbol,
+            price=params.price,
+            ts=dt.datetime.now(tz=dt.UTC),
+        )
+
+
 @router.post("/reevaluate-trades", response_model=JobOut, status_code=202)
 def start_reevaluate_trades(request: Request, params: ActionParams | None = None) -> JobOut:
     p = params or ActionParams()

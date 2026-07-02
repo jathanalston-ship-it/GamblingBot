@@ -186,6 +186,16 @@ automatically (migration `0023`: `tracked_trades.journal_trade_id` FK +
 - `GET /trade-lifecycle/management-analytics` — the management-quality metrics.
 - `POST /actions/reevaluate-trades` — manual reevaluation job (pulls fresh
   bars, then links/realizes).
+- `POST /actions/take-trade {symbol, quantity?}` — **Take paper trade**: opens
+  a journal trade from the symbol's plan (entry = latest scan price, stop +
+  size from the plan), ensures the thesis is tracked, and links the two — one
+  click connects research to the execution + learning half (reevaluation →
+  realized outcome → advice grades → analog history).
+- `POST /actions/track-trade {symbol}` — **Track only** (idempotent).
+- `POST /actions/close-trade {symbol|trade_uid, price?}` — closes the paper
+  trade at the last known (or given) price, realizing the outcome and grading
+  the advice. Buttons live on the Trade Plan view and the Trades detail panel
+  (open cards show a "● paper" marker once taken). Paper only — no live orders.
 
 Scan results (`run_scan`) now report `tracked_trades_created`,
 `trades_reevaluated`, `trades_auto_closed`, `trades_linked` and

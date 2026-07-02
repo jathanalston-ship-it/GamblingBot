@@ -8,6 +8,7 @@ import type {
 } from "../api/types";
 import { Card } from "../components/Card";
 import { ErrorBox, Loading, PageTitle } from "../components/Page";
+import { TradeActions } from "../components/TradeActions";
 import { Stat } from "../components/Stat";
 import { useApi } from "../hooks/useApi";
 import { money, num, pct } from "../lib/format";
@@ -49,8 +50,10 @@ function Body({ symbol, runId }: { symbol: string; runId: string | null }) {
       <ProvenancePanel screen="trade_plans" />
       <PageTitle
         title={`Trade Plan · ${data.symbol}`}
-        subtitle="Derived from ATR, support, analogs, volatility & regime — no order is placed"
-      />
+        subtitle="Derived from ATR, support, analogs, volatility & regime — paper only"
+      >
+        <TradeActions symbol={data.symbol} />
+      </PageTitle>
 
       {/* headline numbers */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">

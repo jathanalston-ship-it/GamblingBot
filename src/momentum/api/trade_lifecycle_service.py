@@ -665,3 +665,197 @@ def management_analytics(session: Session) -> ManagementAnalyticsOut:
         avg_stop_lowers=_round(management.mean([float(n) for n in lower_counts])),
         avg_health_before_exit=_round(management.mean(final_healths)),
     )
+
+
+# --------------------------------------------------------------------------- #
+# Manual trade actions — the "Take / Track / Close" buttons
+# --------------------------------------------------------------------------- #
+def _plan_for_symbol(session: Session, symbol: str) -> TradePlan | None:
+    """The symbol's most relevant persisted trade plan (active run first)."""
+    active = services.resolve_active_run_id(session)
+    stmt = select(TradePlan).where(TradePlan.symbol == symbol)
+    if active:
+        planned = session.scalars(stmt.where(TradePlan.run_id == active)).first()
+        if planned is not None:
+            return planned
+    return session.scalars(
+        stmt.order_by(TradePlan.as_of.desc(), TradePlan.id.desc()).limit(1)
+    ).first()
+
+
+def track_symbol(session: Session, symbol: str, *, ts: dt.datetime) -> dict[str, Any]:
+    """Explicitly track one symbol: a tracked trade from its latest research.
+
+    Idempotent — returns the existing OPEN tracked trade when there is one.
+    Commits.
+    """
+    sym = symbol.upper()
+    repo = TrackedTradeRepository(session)
+    existing = repo.open_for_symbol(sym)
+    if existing is not None:
+        return {"ok": True, "created": False, "trade_uid": existing.trade_uid, "symbol": sym}
+
+    plan = _plan_for_symbol(session, sym)
+    if plan is None:
+        return {
+            "ok": False,
+            "error": f"no trade plan exists for {sym} — run a scan that surfaces it first",
+        }
+    scan = _latest_scan_row(session, sym)
+    conviction = services.latest_conviction(session, sym, plan.run_id)
+    regime = services.latest_regime(session)
+    spec = TradeSpec(
+        symbol=sym,
+        recommended_at=ts,
+        run_id=plan.run_id,
+        instrument="shares",
+        quantity=plan.suggested_shares,
+        entry_price=plan.entry,
+        stop_price=plan.stop,
+        targets=_targets_of(plan),
+        conviction_score=conviction.score if conviction else None,
+        conviction_band=conviction.band if conviction else None,
+        regime=regime.regime if regime else None,
+        sector=scan.sector if scan else None,
+        thesis=conviction.explanation if conviction else None,
+        entry_atr=scan.atr if scan else None,
+        sector_rs=scan.sector_rs if scan else None,
+        momentum_score=scan.momentum_score if scan else None,
+        analog_expectancy_r=_analog_expectancy(
+            session,
+            sector=scan.sector if scan else None,
+            regime=regime.regime if regime else None,
+        ),
+    )
+    row = repo.create_from_spec(spec)
+    session.commit()
+    assert row is not None  # no OPEN row existed — creation cannot be skipped
+    return {"ok": True, "created": True, "trade_uid": row.trade_uid, "symbol": sym}
+
+
+def take_trade(
+    session: Session, symbol: str, *, quantity: int | None = None, ts: dt.datetime
+) -> dict[str, Any]:
+    """Take the trade on paper: open a journal trade from the symbol's plan.
+
+    Opens a ``trades`` row (the executed record), ensures the symbol is tracked,
+    and links the two — so reevaluations, realized outcomes and advice grading
+    all flow from this single click. Commits.
+    """
+    from momentum.persistence.repositories.trades import TradeRepository
+
+    sym = symbol.upper()
+    trades = TradeRepository(session)
+    if trades.open_for_symbol(sym) is not None:
+        return {"ok": False, "error": f"{sym} already has an open paper trade"}
+
+    plan = _plan_for_symbol(session, sym)
+    if plan is None:
+        return {
+            "ok": False,
+            "error": f"no trade plan exists for {sym} — run a scan that surfaces it first",
+        }
+    shares = quantity or plan.suggested_shares
+    if not shares or shares <= 0:
+        return {"ok": False, "error": f"no position size for {sym} — pass an explicit quantity"}
+
+    scan = _latest_scan_row(session, sym)
+    entry_price = scan.price if scan is not None and scan.price else plan.entry
+    regime = services.latest_regime(session)
+    risk_per_share = max(0.0, entry_price - plan.stop)
+    journal_trade = Trade(
+        run_id="manual",
+        symbol=sym,
+        direction="long",
+        entry_ts=ts,
+        entry_price=entry_price,
+        quantity=int(shares),
+        initial_stop=plan.stop,
+        initial_risk=risk_per_share * shares if risk_per_share > 0 else None,
+        fees=0.0,
+        status="open",
+        sector=scan.sector if scan else None,
+        regime_label=regime.regime if regime else None,
+        entry_reason="manual",
+        entry_relative_volume=scan.relative_volume if scan else None,
+    )
+    session.add(journal_trade)
+    session.flush()
+
+    tracked = track_symbol(session, sym, ts=ts)
+    link = link_journal_trades(session, ts=ts)
+    return {
+        "ok": True,
+        "symbol": sym,
+        "journal_trade_id": journal_trade.id,
+        "trade_uid": tracked.get("trade_uid"),
+        "shares": int(shares),
+        "entry_price": round(entry_price, 4),
+        "stop_price": round(plan.stop, 4),
+        "linked": link["linked"],
+    }
+
+
+def close_manual_trade(
+    session: Session,
+    *,
+    trade_uid: str | None = None,
+    symbol: str | None = None,
+    price: float | None = None,
+    ts: dt.datetime,
+) -> dict[str, Any]:
+    """Close a taken (paper) trade at the last known price — realizing its
+    outcome, which closes the tracked trade and grades every piece of advice
+    it received. Commits."""
+    from momentum.core.enums import Side
+    from momentum.execution.order import Fill
+    from momentum.persistence.repositories.trades import TradeRepository
+    from momentum.portfolio.journal import TradeJournal
+
+    repo = TrackedTradeRepository(session)
+    tracked = (
+        repo.get_by_uid(trade_uid)
+        if trade_uid
+        else (repo.open_for_symbol(symbol.upper()) if symbol else None)
+    )
+    if tracked is None:
+        return {"ok": False, "error": "no matching tracked trade"}
+    if tracked.journal_trade_id is None:
+        return {
+            "ok": False,
+            "error": f"{tracked.symbol} was tracked but never taken — nothing to close",
+        }
+    journal_trade = session.get(Trade, tracked.journal_trade_id)
+    if journal_trade is None or journal_trade.status == "closed":
+        return {"ok": False, "error": f"{tracked.symbol} has no open paper trade"}
+
+    if price is None:
+        latest = TradeEvaluationRepository(session).latest_for(tracked.trade_uid)
+        if latest is not None:
+            price = latest.price
+        else:
+            scan = _latest_scan_row(session, tracked.symbol)
+            price = scan.price if scan is not None else None
+    if price is None or price <= 0:
+        return {"ok": False, "error": "no known price — pass an explicit price"}
+
+    fill = Fill(
+        order_id=f"manual-{tracked.trade_uid[:8]}",
+        symbol=tracked.symbol,
+        side=Side.LONG,
+        shares=journal_trade.quantity,
+        price=float(price),
+        fees=0.0,
+        ts=ts,
+    )
+    TradeJournal(TradeRepository(session)).close_trade(journal_trade, fill, exit_reason="manual")
+    session.commit()
+    link_journal_trades(session, ts=ts)  # realize the outcome on the tracked trade
+    return {
+        "ok": True,
+        "symbol": tracked.symbol,
+        "trade_uid": tracked.trade_uid,
+        "exit_price": round(float(price), 4),
+        "realized_r": tracked.realized_r,
+        "realized_pnl": tracked.realized_pnl,
+    }

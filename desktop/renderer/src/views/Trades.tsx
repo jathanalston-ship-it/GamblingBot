@@ -8,6 +8,7 @@ import type {
 } from "../api/types";
 import { ActionButton } from "../components/ActionButton";
 import { Card } from "../components/Card";
+import { CloseTradeButton, TradeActions } from "../components/TradeActions";
 import { ErrorBox, Loading, PageTitle } from "../components/Page";
 import { Stat } from "../components/Stat";
 import { useApi } from "../hooks/useApi";
@@ -138,13 +139,18 @@ export default function Trades() {
                 {t.status === "closed" && t.realized_r != null
                   ? `realized ${signed(t.realized_r, 2)}R`
                   : `since ${date(t.recommended_at)}`}
+                {t.journal_trade_id != null ? (
+                  <span className="ml-1 text-accent" title="taken as a paper trade">
+                    ● paper
+                  </span>
+                ) : null}
               </div>
             </button>
           ))}
         </div>
       )}
 
-      {active ? <TradeDetail trade={active} /> : null}
+      {active ? <TradeDetail trade={active} onChanged={() => trades.reload()} /> : null}
 
       <ManagementPanel state={analytics} />
     </div>
@@ -166,7 +172,7 @@ function latestAction(t: TrackedTrade): string | null {
 /* --------------------------------------------------------------------- */
 /* Detail: thesis + time machine + health breakdown + explanation + journal */
 /* --------------------------------------------------------------------- */
-function TradeDetail({ trade }: { trade: TrackedTrade }) {
+function TradeDetail({ trade, onChanged }: { trade: TrackedTrade; onChanged?: () => void }) {
   const evals = useApi<TradeEvaluation[]>(`/trade-lifecycle/${trade.trade_uid}/evaluations`);
   const journal = useApi<JournalEntry[]>(`/trade-lifecycle/${trade.trade_uid}/journal`);
 
@@ -204,6 +210,15 @@ function TradeDetail({ trade }: { trade: TrackedTrade }) {
             </div>
             {trade.close_reason ? (
               <p className="text-xs text-slate-500">Close reason: {trade.close_reason}</p>
+            ) : null}
+            {trade.status === "open" ? (
+              <div className="pt-1">
+                {trade.journal_trade_id != null ? (
+                  <CloseTradeButton tradeUid={trade.trade_uid} onDone={onChanged} />
+                ) : (
+                  <TradeActions symbol={trade.symbol} onDone={onChanged} compact />
+                )}
+              </div>
             ) : null}
           </div>
 

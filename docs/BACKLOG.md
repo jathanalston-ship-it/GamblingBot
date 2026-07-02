@@ -51,6 +51,16 @@ they belong in a dedicated market-data slice with its own tests:
 - **Live broker adapter & a real scheduler/clock loop** — the `Scheduler` is a
   serial decision point triggered by the caller, not a timed daemon.
 
+## Pipeline audit findings (2026-07 full-linkage audit)
+
+- **Signals stay empty on scan-only flows** — `signals` rows (and the Signal
+  Eval screen) are produced only by paper sessions; scans don't emit Signal
+  records. Wire scan-triggered entry signals if Signal Eval should populate
+  without paper sessions.
+- **Audit log silent for scans** — `audit_log` records only orchestration/paper
+  events; scans/deltas/alerts aren't audit-logged. Extend AuditLogger into
+  run_scan if scan-level auditability is wanted.
+
 ## Trade lifecycle — deferred follow-ups
 
 - **Options instrument at creation** — `instrument` is `"shares"`; wire the
