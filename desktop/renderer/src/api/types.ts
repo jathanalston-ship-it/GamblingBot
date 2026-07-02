@@ -880,6 +880,24 @@ export interface AdviceGrade {
   verdict: string;
 }
 
+export interface AdviceActionStats {
+  action: string;
+  n: number;
+  correct: number;
+  incorrect: number;
+  unclear: number;
+  accuracy: number | null;
+  avg_remaining_r: number | null;
+}
+
+export interface AdviceReport {
+  trades_realized: number;
+  evaluations_graded: number;
+  overall_accuracy: number | null;
+  by_action: AdviceActionStats[];
+  recent_grades: AdviceGrade[];
+}
+
 export interface ManagementAnalytics {
   trades_tracked: number;
   avg_conviction_decay: number | null;

@@ -210,3 +210,30 @@ def test_thousands_of_trades_query_correctly(session: Session) -> None:
     assert trades.counts_by_status() == {"open": 1500}
     page = trades.list_trades(status="open", limit=50, offset=100)
     assert len(page) == 50
+
+
+# --------------------------------------------------------------------------- #
+# demo isolation: showcase rows never mix with live trading
+# --------------------------------------------------------------------------- #
+def test_demo_rows_are_invisible_to_live_write_paths(session: Session) -> None:
+    """A demo showcase trade must never claim a real journal trade, block a
+    real recommendation for its symbol, or be reevaluated/managed live."""
+    trades = TrackedTradeRepository(session)
+    demo = trades.create_from_spec(_spec("AAPL", run_id="demo"))
+    assert demo is not None
+    session.commit()
+
+    # Live write paths don't see it...
+    assert trades.open_for_symbol("AAPL") is None
+    assert trades.open_trades() == []
+    assert trades.unlinked() == []
+
+    # ...so a live recommendation for the same symbol still creates a live trade.
+    live = trades.create_from_spec(_spec("AAPL", run_id="scan-20260701"))
+    assert live is not None and live.trade_uid != demo.trade_uid
+    assert [t.trade_uid for t in trades.open_trades()] == [live.trade_uid]
+    assert [t.trade_uid for t in trades.unlinked()] == [live.trade_uid]
+
+    # Display/listing queries still include the demo row (screens must demo).
+    listed = trades.list_trades(status="open")
+    assert {t.trade_uid for t in listed} == {demo.trade_uid, live.trade_uid}

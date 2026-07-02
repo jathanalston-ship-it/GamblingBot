@@ -1,5 +1,6 @@
-"""Point-in-time universe membership snapshots (anti-survivorship-bias).
+"""Universe membership table.
 
-Architecture scaffold only — interface contract described below; NO implementation yet.
-See docs/ARCHITECTURE.md for the full module catalog and diagrams.
+Superseded: built-in universes ship as config seeds
+(``config/universes.example.yaml``) and user universes persist in
+``user_universes`` (:mod:`momentum.persistence.models.user_universe`).
 """

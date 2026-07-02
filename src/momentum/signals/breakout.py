@@ -1,5 +1,6 @@
-"""Breakout detection: N-day/Donchian high breakouts, volatility contraction, volume confirmation.
+"""Breakout signal generation.
 
-Architecture scaffold only — interface contract described below; NO implementation yet.
-See docs/ARCHITECTURE.md for the full module catalog and diagrams.
+Superseded: breakout detection is part of the momentum scanner
+(:mod:`momentum.universe.screener`); entry ``signals`` rows are emitted by
+every scan (``api/actions.run_scan``) and by the paper pipeline.
 """

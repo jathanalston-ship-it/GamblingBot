@@ -1,5 +1,6 @@
-"""Daily OHLCV bars (raw + adjusted), unique per (instrument, date).
+"""OHLCV bars table.
 
-Architecture scaffold only — interface contract described below; NO implementation yet.
-See docs/ARCHITECTURE.md for the full module catalog and diagrams.
+By design, bars are not stored in SQLite: the bar store is one
+snappy-parquet file per symbol+timeframe (:mod:`momentum.data.cache`), which
+is both smaller and faster for columnar reads.
 """

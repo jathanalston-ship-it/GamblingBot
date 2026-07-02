@@ -123,7 +123,14 @@ Execution is real: the linked paper (journal) trade is closed
 (`TradeJournal.scale_out`), so the realized R/P&L lands on the tracked trade
 and every piece of advice becomes gradable. A scale-out slice that would equal
 the remaining shares is promoted to a full close; a 1-share position never
-scales. Trades tagged `demo` are never managed.
+scales.
+
+**Demo isolation:** `run_id="demo"` showcase rows are invisible to every live
+write path (`TrackedTradeRepository.open_trades` / `open_for_symbol` /
+`unlinked` / `linked_unrealized` exclude them) — a demo trade can never claim a
+real journal trade, block a real recommendation for its symbol, or be
+reevaluated/managed against live prices. Listing/read queries still include
+demo rows so the screens demo.
 
 Every action ships a **data-only "how and why" report** (the rule that fired,
 entry/stop/price, R at the decision, thesis health/conviction at that moment),

@@ -1,5 +1,6 @@
-"""Composes breakout + momentum + regime into Signal objects with full feature context.
+"""Signal generation orchestrator.
 
-Architecture scaffold only — interface contract described below; NO implementation yet.
-See docs/ARCHITECTURE.md for the full module catalog and diagrams.
+Superseded: scans emit entry signals directly (``api/actions.run_scan``) and
+the daily paper pipeline journals its own signals — a separate generator
+layer was never needed.
 """

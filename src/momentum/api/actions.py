@@ -395,9 +395,7 @@ def run_scan(
     from momentum.persistence.repositories.tracked_trades import TrackedTradeRepository
 
     with session_factory() as session:
-        held_symbols = [
-            t.symbol for t in TrackedTradeRepository(session).open_trades() if t.run_id != "demo"
-        ]
+        held_symbols = [t.symbol for t in TrackedTradeRepository(session).open_trades()]
     held_missing = [s for s in held_symbols if s not in bars]
     held_bars = (
         pull_bars(

@@ -23,7 +23,5 @@ Sub-packages:
   api           FastAPI service layer.
   orchestration Pipeline wiring and scheduling.
   cli           Command-line entry points.
-
-Architecture scaffold only — interface contract described below; NO implementation yet.
 See docs/ARCHITECTURE.md for the full module catalog and diagrams.
 """

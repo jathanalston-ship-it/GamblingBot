@@ -3,6 +3,12 @@
 Creation is idempotent per open symbol: a recommendation for a symbol that
 already has an OPEN tracked trade does not create a duplicate. The original
 thesis columns are never updated — only the current-state cache is.
+
+The **live write paths** (creation guards, reevaluation, journal linking,
+snapshots) exclude ``run_id="demo"`` showcase rows: a demo trade must never
+claim a real journal trade, block a real recommendation for the same symbol,
+or be graded/managed against live prices. Read/listing queries still include
+demo rows so the screens demo (production mode filters them globally anyway).
 """
 
 from __future__ import annotations
@@ -15,6 +21,8 @@ from sqlalchemy import func, select
 from momentum.persistence.models.tracked_trade import TrackedTrade
 from momentum.persistence.repositories.base import Repository
 from momentum.trade_lifecycle.types import ThesisEvaluation, TradeSpec, TradeStatus
+
+DEMO_RUN_ID = "demo"
 
 
 class TrackedTradeRepository(Repository[TrackedTrade]):
@@ -32,13 +40,18 @@ class TrackedTradeRepository(Repository[TrackedTrade]):
             select(TrackedTrade).where(
                 TrackedTrade.status == TradeStatus.OPEN.value,
                 TrackedTrade.symbol == symbol.upper(),
+                TrackedTrade.run_id.is_distinct_from(DEMO_RUN_ID),
             )
         ).first()
 
     def open_trades(self) -> list[TrackedTrade]:
+        """Open LIVE trades — the set that is reevaluated and managed."""
         stmt = (
             select(TrackedTrade)
-            .where(TrackedTrade.status == TradeStatus.OPEN.value)
+            .where(
+                TrackedTrade.status == TradeStatus.OPEN.value,
+                TrackedTrade.run_id.is_distinct_from(DEMO_RUN_ID),
+            )
             .order_by(TrackedTrade.symbol)
         )
         return list(self.session.scalars(stmt).all())
@@ -104,10 +117,13 @@ class TrackedTradeRepository(Repository[TrackedTrade]):
         return row
 
     def unlinked(self) -> list[TrackedTrade]:
-        """Tracked trades with no journal link yet (candidates for matching)."""
+        """LIVE tracked trades with no journal link yet (candidates for matching)."""
         stmt = (
             select(TrackedTrade)
-            .where(TrackedTrade.journal_trade_id.is_(None))
+            .where(
+                TrackedTrade.journal_trade_id.is_(None),
+                TrackedTrade.run_id.is_distinct_from(DEMO_RUN_ID),
+            )
             .order_by(TrackedTrade.recommended_at)
         )
         return list(self.session.scalars(stmt).all())
@@ -117,6 +133,7 @@ class TrackedTradeRepository(Repository[TrackedTrade]):
         stmt = select(TrackedTrade).where(
             TrackedTrade.journal_trade_id.is_not(None),
             TrackedTrade.realized_at.is_(None),
+            TrackedTrade.run_id.is_distinct_from(DEMO_RUN_ID),
         )
         return list(self.session.scalars(stmt).all())
 

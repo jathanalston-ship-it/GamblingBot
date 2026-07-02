@@ -28,6 +28,7 @@ export default function Scan({ shortlist = false }: { shortlist?: boolean }) {
   const [passedOnly, setPassedOnly] = useState(shortlist);
   const [sector, setSector] = useState<string>("all");
   const [scanStats, setScanStats] = useState<Record<string, unknown> | null>(null);
+  const [showRejections, setShowRejections] = useState(false);
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "rank", dir: 1 });
   const navigate = useNavigate();
 
@@ -184,8 +185,16 @@ export default function Scan({ shortlist = false }: { shortlist?: boolean }) {
               label="duration"
               value={`${Math.round(Number(scanStats.duration_ms ?? 0))} ms`}
             />
+            <button
+              onClick={() => setShowRejections((v) => !v)}
+              className="ml-auto rounded border border-surface-border px-2 py-0.5 text-slate-400 hover:text-slate-200"
+            >
+              {showRejections ? "Hide rejections" : "Why were symbols rejected?"}
+            </button>
           </div>
         ) : null}
+
+        {showRejections ? <RejectionsPanel runId={runId} /> : null}
 
         <div className="min-h-0 flex-1 overflow-auto">
           {loading ? (
@@ -262,6 +271,44 @@ export default function Scan({ shortlist = false }: { shortlist?: boolean }) {
       </div>
 
       <Inspector symbol={symbol} />
+    </div>
+  );
+}
+
+interface Rejection {
+  run_id: string | null;
+  symbol: string;
+  as_of: string;
+  reason: string;
+}
+
+/** Why each scanned symbol failed the gate — explains the scanned→passed drop. */
+function RejectionsPanel({ runId }: { runId: string | null }) {
+  const { data, error, loading } = useApi<Rejection[]>(
+    `/universe/rejections${runId ? `?run_id=${runId}` : ""}`,
+  );
+  return (
+    <div className="max-h-56 overflow-auto border-b border-surface-border bg-surface-raised/30 px-3 py-2">
+      {loading ? (
+        <div className="text-xs text-slate-500">Loading rejections…</div>
+      ) : error ? (
+        <div className="text-xs text-bear">rejections unavailable: {error}</div>
+      ) : (data ?? []).length === 0 ? (
+        <div className="text-xs text-slate-500">
+          No rejections recorded for this scan — every scanned symbol passed the gate.
+        </div>
+      ) : (
+        <table className="w-full text-xs">
+          <tbody>
+            {(data ?? []).map((r, i) => (
+              <tr key={`${r.symbol}-${i}`} className="border-b border-surface-border/30">
+                <td className="w-20 py-1 pr-2 font-medium text-slate-300">{r.symbol}</td>
+                <td className="py-1 text-slate-500">{r.reason}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

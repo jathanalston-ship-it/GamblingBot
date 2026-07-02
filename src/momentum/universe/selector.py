@@ -1,5 +1,6 @@
-"""Build & snapshot the eligible universe AS OF a date; persists membership history.
+"""Universe selection.
 
-Architecture scaffold only — interface contract described below; NO implementation yet.
-See docs/ARCHITECTURE.md for the full module catalog and diagrams.
+Superseded: universe resolution lives in :mod:`momentum.universe.membership`
+(``select_universe``) and :mod:`momentum.universe.universes` (built-in +
+user-defined universes behind ``GET /universes``).
 """

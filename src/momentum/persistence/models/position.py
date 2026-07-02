@@ -1,5 +1,6 @@
-"""Open/closed position snapshots with stop level and P&L.
+"""Positions table.
 
-Architecture scaffold only — interface contract described below; NO implementation yet.
-See docs/ARCHITECTURE.md for the full module catalog and diagrams.
+By design, positions are never persisted as rows: the ``trades`` table is the
+single source of truth and live positions are reconstructed from it
+(:mod:`momentum.orchestration.recovery`, :mod:`momentum.portfolio.position`).
 """

@@ -1,5 +1,6 @@
-"""Bar data access: upsert, ranged reads, latest-as-of queries.
+"""Bar data access.
 
-Architecture scaffold only — interface contract described below; NO implementation yet.
-See docs/ARCHITECTURE.md for the full module catalog and diagrams.
+By design, bars live in the parquet cache (:class:`momentum.data.cache.BarCache`),
+not in SQLite — there is no bars repository. ``GET /bars/{symbol}`` serves the
+cache with a live-pull fallback (:mod:`momentum.api.routes.bars`).
 """

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 
 import type {
+  AdviceReport,
   JournalEntry,
   ManagementAnalytics,
   TrackedTrade,
@@ -154,7 +155,71 @@ export default function Trades() {
       {active ? <TradeDetail trade={active} onChanged={() => trades.reload()} /> : null}
 
       <ManagementPanel state={analytics} />
+      <AdviceReportCard />
     </div>
+  );
+}
+
+/** Hindsight accuracy of the reevaluation advice, judged by realized outcomes. */
+function AdviceReportCard() {
+  const report = useApi<AdviceReport>("/trade-lifecycle/advice-report");
+  const r = report.data;
+  return (
+    <Card title="Advice accuracy — graded against realized outcomes">
+      {report.loading ? (
+        <Loading />
+      ) : report.error ? (
+        <ErrorBox message={report.error} />
+      ) : !r || r.trades_realized === 0 ? (
+        <div className="py-6 text-center text-sm text-slate-500">
+          No realized outcomes yet — grades appear once a taken trade closes.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="grid grid-cols-3 gap-3">
+            <Stat label="Trades realized" value={String(r.trades_realized)} />
+            <Stat label="Evaluations graded" value={String(r.evaluations_graded)} />
+            <Stat
+              label="Overall accuracy"
+              value={r.overall_accuracy != null ? `${num(r.overall_accuracy * 100, 0)}%` : "—"}
+              hint="advice correct in hindsight"
+            />
+          </div>
+          <table className="w-full text-sm">
+            <thead className="text-xs uppercase tracking-wide text-slate-400">
+              <tr className="border-b border-surface-border text-left">
+                <th className="px-2 py-1.5 font-medium">Action</th>
+                <th className="px-2 py-1.5 text-right font-medium">n</th>
+                <th className="px-2 py-1.5 text-right font-medium">Correct</th>
+                <th className="px-2 py-1.5 text-right font-medium">Incorrect</th>
+                <th className="px-2 py-1.5 text-right font-medium">Accuracy</th>
+                <th className="px-2 py-1.5 text-right font-medium">Avg remaining R</th>
+              </tr>
+            </thead>
+            <tbody>
+              {r.by_action.map((row) => (
+                <tr key={row.action} className="border-b border-surface-border/40">
+                  <td className="px-2 py-1.5 text-slate-200">{row.action}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-slate-300">{row.n}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-emerald-400">
+                    {row.correct}
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-bear">
+                    {row.incorrect}
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-slate-300">
+                    {row.accuracy != null ? `${num(row.accuracy * 100, 0)}%` : "—"}
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-slate-400">
+                    {row.avg_remaining_r != null ? signed(row.avg_remaining_r, 2) : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
   );
 }
 

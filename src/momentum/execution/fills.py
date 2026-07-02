@@ -1,5 +1,6 @@
-"""Fill capture and normalization across brokers.
+"""Fill records.
 
-Architecture scaffold only — interface contract described below; NO implementation yet.
-See docs/ARCHITECTURE.md for the full module catalog and diagrams.
+Superseded: the immutable ``Fill`` value object lives in
+:mod:`momentum.execution.order`; persisted fills live in the ``fills`` table
+(:mod:`momentum.persistence.models.fill`, written by ``OrderRepository``).
 """
