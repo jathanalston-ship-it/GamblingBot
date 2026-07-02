@@ -1175,3 +1175,20 @@ class ScanStatOut(BaseModel):
     memory_mb: float | None
     cpu_percent: float | None
     degraded: bool
+
+
+class ClockOut(BaseModel):
+    """The live clock: market time/status + countdowns (local time is client-side)."""
+
+    state: str
+    utc: str
+    market_time: str
+    market_tz: str
+    next_market_open: str
+    next_market_close: str
+    next_premarket: str
+    seconds_to_market_open: float
+    seconds_to_market_close: float
+    seconds_to_premarket: float
+    seconds_to_next_scan: float | None
+    daemon_running: bool

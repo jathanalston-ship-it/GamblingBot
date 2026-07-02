@@ -5,6 +5,7 @@ import { Card } from "../components/Card";
 import { ErrorBox, Loading, PageTitle } from "../components/Page";
 import { ProviderRequestsPanel } from "../components/ProviderRequestsPanel";
 import { useApi } from "../hooks/useApi";
+import { dateTime } from "../lib/format";
 
 interface HealthMetric {
   key: string;
@@ -131,7 +132,7 @@ export default function DataHealth() {
                 Data mode: <span className="text-slate-200">{data.data_mode}</span>
               </span>
               <span className="text-xs text-slate-500">
-                as of {new Date(data.generated_at).toLocaleString()}
+                as of {dateTime(data.generated_at)}
               </span>
             </div>
           </Card>

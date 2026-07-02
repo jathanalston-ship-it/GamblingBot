@@ -4,6 +4,7 @@ import type { CommandCenter as CC, WatchlistEntry } from "../api/types";
 import { Badge, regimeTone } from "../components/Badge";
 import { Card } from "../components/Card";
 import { Freshness } from "../components/Freshness";
+import { LiveClock } from "../components/LiveClock";
 import { LivePulse } from "../components/LivePulse";
 import { ErrorBox, Loading, PageTitle } from "../components/Page";
 import { Stat } from "../components/Stat";
@@ -40,6 +41,7 @@ export default function CommandCenter() {
       >
         <div className="flex items-center gap-3">
           {error ? <span className="text-xs text-bear">refresh failed</span> : null}
+          <LiveClock />
           <Freshness updatedAt={updatedAt} />
         </div>
       </PageTitle>

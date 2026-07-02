@@ -456,6 +456,20 @@ trading platform for US equities. Python 3.12, strictly typed. See
   feed, performance), `DeltaValue` flash animations (prev value + arrow always
   visible), and a **Timeline** view. See `docs/DAEMON.md`.
 
+- **Time policy + live clock** (`daemon/market_state.market_clock`, `GET
+  /daemon/clock`, `renderer/lib/format.ts`, `components/LiveClock.tsx`) — store
+  UTC, schedule in America/New_York, display in the OS timezone/locale (never
+  user-configured). Backend emits only unambiguous values (ISO with offsets +
+  countdown seconds); the renderer's `parseUtc` treats offset-less backend
+  strings as UTC (SQLite drops the offset) and all rendering goes through
+  Intl-based helpers (OS locale decides 12/24h + date layout; date-only values
+  never tz-shift). OS timezone changes are detected live (`useSystemTimezone`
+  → AppShell remount, no restart). LiveClock widget (Command Center header):
+  local + market time w/ derived EST/EDT, status, next scan/open/close/
+  premarket countdowns. **Audit gates** (`test_time_audit.py`): no naive
+  `now()`, no `utcnow()`, no hardcoded EST/EDT/US-Eastern literals, UTC
+  round-trip contract; DST-transition tests both directions. See `docs/TIME.md`.
+
 - **Trade-plan generation** (`src/momentum/tradeplan/`, `api/tradeplan_service.py`)
   — read-only, **no persistence**: derives entry / stop / three scale-out targets /
   reward:risk / expected hold / suggested size + portfolio risk for a candidate from

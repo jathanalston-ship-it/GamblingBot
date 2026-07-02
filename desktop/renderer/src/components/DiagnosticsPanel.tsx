@@ -3,6 +3,7 @@ import { useState } from "react";
 import { apiDelete } from "../api/client";
 import type { ErrorRecord, RecentErrors } from "../api/types";
 import { useApi } from "../hooks/useApi";
+import { dateTime } from "../lib/format";
 import { Card } from "./Card";
 import { ErrorBox, Loading } from "./Page";
 
@@ -71,7 +72,7 @@ export function DiagnosticsPanel() {
 
 function ErrorRow({ err }: { err: ErrorRecord }) {
   const [open, setOpen] = useState(false);
-  const when = new Date(err.ts).toLocaleString();
+  const when = dateTime(err.ts);
   const params = { ...err.path_params, ...err.query_params };
   const hasParams = Object.keys(params).length > 0;
 

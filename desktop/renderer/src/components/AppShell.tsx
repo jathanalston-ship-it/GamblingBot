@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Outlet } from "react-router-dom";
 
+import { useSystemTimezone } from "../hooks/useSystemTimezone";
+
 import { useGlobalKeys } from "../hooks/useGlobalKeys";
 import { UpdateStatusProvider } from "../state/updates";
 import { CommandPalette } from "./CommandPalette";
@@ -11,6 +13,9 @@ import { StageRail } from "./StageRail";
 import { StatusBar } from "./StatusBar";
 
 export function AppShell() {
+  // OS timezone changes remount the routed view: every timestamp re-renders live.
+  const tz = useSystemTimezone();
+
   const [palette, setPalette] = useState(false);
   const [shortcuts, setShortcuts] = useState(false);
 
@@ -26,7 +31,7 @@ export function AppShell() {
         <ContextBar onOpenPalette={() => setPalette(true)} />
         <div className="flex min-h-0 flex-1">
           <StageRail />
-          <main className="min-w-0 flex-1 overflow-auto">
+          <main key={tz} className="min-w-0 flex-1 overflow-auto">
             <Outlet />
           </main>
         </div>

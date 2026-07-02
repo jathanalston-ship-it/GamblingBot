@@ -9,7 +9,13 @@ from momentum.daemon.incremental import (
     Fingerprint,
     IncrementalCache,
 )
-from momentum.daemon.market_state import MarketState, interval_seconds, market_state
+from momentum.daemon.market_state import (
+    MarketClock,
+    MarketState,
+    interval_seconds,
+    market_clock,
+    market_state,
+)
 from momentum.daemon.worker import MarketDaemon
 
 __all__ = [
@@ -18,9 +24,11 @@ __all__ = [
     "DaemonConfig",
     "Fingerprint",
     "IncrementalCache",
+    "MarketClock",
     "MarketDaemon",
     "MarketState",
     "default_config",
     "interval_seconds",
+    "market_clock",
     "market_state",
 ]

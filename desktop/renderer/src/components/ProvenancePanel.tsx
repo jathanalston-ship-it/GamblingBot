@@ -1,4 +1,5 @@
 import { useApi } from "../hooks/useApi";
+import { dateTime } from "../lib/format";
 
 interface ScreenProvenance {
   rows: number | null;
@@ -17,9 +18,7 @@ interface Provenance {
 }
 
 function fmtTime(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString();
+  return dateTime(iso); // UTC → local timezone, OS locale (see lib/format)
 }
 
 function fmtAge(mins: number | null): string {

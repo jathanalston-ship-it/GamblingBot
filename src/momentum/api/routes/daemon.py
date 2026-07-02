@@ -13,7 +13,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
-from momentum.api.schemas import DaemonEventOut, DaemonStatusOut
+from momentum.api.schemas import ClockOut, DaemonEventOut, DaemonStatusOut
 
 router = APIRouter(prefix="/daemon", tags=["daemon"])
 
@@ -96,3 +96,29 @@ def scan_now(request: Request) -> DaemonStatusOut:
     """Manual scan / immediate refresh: run a full cycle as soon as possible."""
     _daemon(request).trigger_scan()
     return _status(request)
+
+
+@router.get("/clock", response_model=ClockOut)
+def clock(request: Request) -> ClockOut:
+    """Market time/status + countdowns for the live clock widget.
+
+    All values are unambiguous (ISO with offsets, seconds). The *local* clock is
+    rendered client-side — only the client knows the operating system's zone.
+    """
+    import datetime as dt
+
+    from momentum.daemon import market_clock
+
+    payload = market_clock(dt.datetime.now(tz=dt.UTC)).to_dict()
+    daemon = getattr(request.app.state, "market_daemon", None)
+    seconds_to_next_scan = None
+    running = False
+    if daemon is not None:
+        status_payload = daemon.status()
+        running = bool(status_payload.get("running"))
+        seconds_to_next_scan = status_payload.get("seconds_to_next_wake")
+    return ClockOut(
+        **payload,
+        seconds_to_next_scan=seconds_to_next_scan,
+        daemon_running=running,
+    )

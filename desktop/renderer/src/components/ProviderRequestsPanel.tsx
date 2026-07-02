@@ -1,5 +1,6 @@
 import { Card } from "./Card";
 import { useApi } from "../hooks/useApi";
+import { dateTime } from "../lib/format";
 
 interface ProviderRequest {
   symbol: string;
@@ -14,9 +15,7 @@ interface ProviderRequest {
 }
 
 function fmt(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString();
+  return dateTime(iso); // UTC → local timezone, OS locale (see lib/format)
 }
 
 /** The last N provider requests — every fetch is shown LIVE or CACHE, no hidden cache. */

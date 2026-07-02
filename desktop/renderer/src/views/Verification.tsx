@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { dateTime } from "../lib/format";
 
 import { apiPost } from "../api/client";
 import { Card } from "../components/Card";
@@ -34,9 +35,7 @@ interface VerifyResult {
 }
 
 function fmt(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString();
+  return dateTime(iso); // UTC → local timezone, OS locale (see lib/format)
 }
 
 function Row({ label, value }: { label: string; value: string | number }) {
