@@ -253,13 +253,17 @@ def take_trade(request: Request, params: TradeActionParams) -> dict[str, Any]:
     import datetime as dt
 
     from momentum.api import trade_lifecycle_service
+    from momentum.api.trading_mutex import TradingPipelineBusyError, exclusive
 
     if not params.symbol:
         raise HTTPException(status_code=422, detail="symbol is required")
-    with _session_factory(request)() as session:
-        return trade_lifecycle_service.take_trade(
-            session, params.symbol, quantity=params.quantity, ts=dt.datetime.now(tz=dt.UTC)
-        )
+    try:
+        with exclusive("take-trade"), _session_factory(request)() as session:
+            return trade_lifecycle_service.take_trade(
+                session, params.symbol, quantity=params.quantity, ts=dt.datetime.now(tz=dt.UTC)
+            )
+    except TradingPipelineBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/track-trade")
@@ -268,13 +272,17 @@ def track_trade(request: Request, params: TradeActionParams) -> dict[str, Any]:
     import datetime as dt
 
     from momentum.api import trade_lifecycle_service
+    from momentum.api.trading_mutex import TradingPipelineBusyError, exclusive
 
     if not params.symbol:
         raise HTTPException(status_code=422, detail="symbol is required")
-    with _session_factory(request)() as session:
-        return trade_lifecycle_service.track_symbol(
-            session, params.symbol, ts=dt.datetime.now(tz=dt.UTC)
-        )
+    try:
+        with exclusive("track-trade"), _session_factory(request)() as session:
+            return trade_lifecycle_service.track_symbol(
+                session, params.symbol, ts=dt.datetime.now(tz=dt.UTC)
+            )
+    except TradingPipelineBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/close-trade")
@@ -283,17 +291,21 @@ def close_trade(request: Request, params: TradeActionParams) -> dict[str, Any]:
     import datetime as dt
 
     from momentum.api import trade_lifecycle_service
+    from momentum.api.trading_mutex import TradingPipelineBusyError, exclusive
 
     if not params.symbol and not params.trade_uid:
         raise HTTPException(status_code=422, detail="symbol or trade_uid is required")
-    with _session_factory(request)() as session:
-        return trade_lifecycle_service.close_manual_trade(
-            session,
-            trade_uid=params.trade_uid,
-            symbol=params.symbol,
-            price=params.price,
-            ts=dt.datetime.now(tz=dt.UTC),
-        )
+    try:
+        with exclusive("close-trade"), _session_factory(request)() as session:
+            return trade_lifecycle_service.close_manual_trade(
+                session,
+                trade_uid=params.trade_uid,
+                symbol=params.symbol,
+                price=params.price,
+                ts=dt.datetime.now(tz=dt.UTC),
+            )
+    except TradingPipelineBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/reevaluate-trades", response_model=JobOut, status_code=202)

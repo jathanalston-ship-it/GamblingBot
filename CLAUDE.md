@@ -758,6 +758,19 @@ trading platform for US equities. Python 3.12, strictly typed. See
   health). Packaged app registers a login item while autopilot is ON. See
   `docs/AUTOMATION.md`.
 
+- **Trading mutex + safety audits** (`src/momentum/api/trading_mutex.py`,
+  `tests/unit/audit/`) — a process-wide, re-entrant, refuse-don't-queue mutex
+  serializes every mutating trading pipeline (scan / paper-session / seed-demo
+  / reevaluate / watchlists / lifecycles via `@serialized`; the synchronous
+  Take/Track/Close routes return HTTP 409 when busy). Same-thread re-entrancy
+  keeps autopilot-inside-scan deadlock-free; a busy daemon cycle records the
+  refusal and retries next tick. Born from the **Trading Safety Audit**
+  (`docs/TRADING_SAFETY_AUDIT.md`), which also fixed the venue-tick crash on
+  unaffordable WORKING orders (now a loud cancel) and the duplicate
+  `client_order_id` thread race (IntegrityError absorbed → winner returned).
+  The **Production Readiness Audit** evidence lives in
+  `docs/PRODUCTION_READINESS.md`.
+
 ## Philosophy (what we optimise for)
 
 Optimise for **expectancy, profit factor, average winner, largest winner, trend

@@ -21,6 +21,7 @@ from sqlalchemy import delete
 from sqlalchemy.orm import Session, sessionmaker
 
 from momentum.api.jobs import Progress
+from momentum.api.trading_mutex import serialized
 from momentum.backtest import BacktestConfig, BacktestEngine, OrderIntent
 from momentum.backtest.engine import StrategyContext
 from momentum.conviction.engine import ConvictionEngine
@@ -336,6 +337,7 @@ def _breadth_above_200dma(bars: Mapping[str, pd.DataFrame]) -> float | None:
     return above / total if total else None
 
 
+@serialized("scan")
 def run_scan(
     *,
     session_factory: sessionmaker[Session],
@@ -1061,6 +1063,7 @@ def walk_forward_backtest(
 # --------------------------------------------------------------------------- #
 # Paper Session
 # --------------------------------------------------------------------------- #
+@serialized("paper-session")
 def paper_session(
     *,
     session_factory: sessionmaker[Session],
@@ -1096,6 +1099,7 @@ def paper_session(
 # --------------------------------------------------------------------------- #
 # Load Sample Data (demo seed)
 # --------------------------------------------------------------------------- #
+@serialized("seed-demo")
 def seed_demo_data(
     *,
     session_factory: sessionmaker[Session],
@@ -1122,6 +1126,7 @@ def seed_demo_data(
     return {"seeded": True, **counts}
 
 
+@serialized("refresh-lifecycles")
 def refresh_lifecycles(
     *,
     session_factory: sessionmaker[Session],
@@ -1138,6 +1143,7 @@ def refresh_lifecycles(
     return {"updated": n}
 
 
+@serialized("reevaluate-trades")
 def reevaluate_trades(
     *,
     session_factory: sessionmaker[Session],
@@ -1183,6 +1189,7 @@ def reevaluate_trades(
     return {**counts, **link_counts, "symbols": len(symbols)}
 
 
+@serialized("generate-watchlists")
 def generate_watchlists(
     *,
     session_factory: sessionmaker[Session],

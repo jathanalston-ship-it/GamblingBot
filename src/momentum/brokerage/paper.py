@@ -32,6 +32,7 @@ import uuid
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from momentum.brokerage.accounts import (
@@ -156,10 +157,20 @@ class PaperBrokerage:
                 order.accept(ts=when)
                 order.work(ts=when)
 
-            row = self._persist_new_order(session, order)
-            if reason is None and ticket.bracket is not None and not ticket.bracket.is_empty:
-                self._create_bracket_children(session, order, ticket, ts=when)
-            session.commit()
+            try:
+                row = self._persist_new_order(session, order)
+                if reason is None and ticket.bracket is not None and not ticket.bracket.is_empty:
+                    self._create_bracket_children(session, order, ticket, ts=when)
+                session.commit()
+            except IntegrityError:
+                # Two threads raced the same client_order_id past the
+                # idempotency read: the unique index kept exactly one row —
+                # return it, so a duplicate submission can never double-order.
+                session.rollback()
+                winner = orders.by_order_id(ticket.client_order_id)
+                if winner is not None:
+                    return self._order_view(session, winner)
+                raise
             return self._order_view(session, row)
 
     def cancel_order(self, order_id: str, *, ts: dt.datetime | None = None) -> OrderView:
@@ -435,10 +446,12 @@ class PaperBrokerage:
         account = self._ensure_account(session, order.account_id)
 
         # Affordability at the real quote (entries validated with no reference).
+        # A WORKING order cannot legally be rejected any more — pull it with a
+        # cancel instead (rejecting here crashed the whole venue tick).
         if order.side is Side.LONG and order.filled_quantity == 0:
             cost = quote.ask * order.remaining_quantity * order.multiplier
             if cost > self._buying_power(account) and order.link.parent_order_id is None:
-                order.reject(f"insufficient buying power at execution: need ~{cost:,.0f}", ts=when)
+                order.cancel(f"insufficient buying power at execution: need ~{cost:,.0f}", ts=when)
                 self._sync_row(session, row, order)
                 return False
 
