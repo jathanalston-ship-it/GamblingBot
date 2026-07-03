@@ -221,6 +221,7 @@ class AuditEvent(str, Enum):
     BACKTEST_RUN = "backtest_run"
     RECONCILIATION = "reconciliation"
     SAFETY_GATE = "safety_gate"
+    USER_OVERRIDE = "user_override"
 
     @property
     def display(self) -> str:

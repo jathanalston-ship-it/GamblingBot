@@ -473,6 +473,8 @@ def _apply_management(
     """
     if trade.run_id == "demo":
         return None  # showcase rows are never traded against live prices
+    if trade.management_mode == "manual":
+        return None  # user owns execution — the bot evaluates and advises only
     decision = decide_management(
         symbol=trade.symbol,
         entry_price=trade.entry_price,
@@ -830,7 +832,10 @@ def _mark_to_market(session: Session, row: TrackedTrade) -> dict[str, Any]:
     risk = row.entry_price - row.stop_price
     unrealized_r = (price - row.entry_price) / risk if risk > 0 else None
     quantity = row.quantity or 0
+    reasons = latest.reasons if latest is not None else None
     return {
+        "latest_action": latest.action if latest is not None else None,
+        "latest_reason": (reasons[0] if reasons else None),
         "last_price": round(price, 4),
         "unrealized_r": round(unrealized_r, 3) if unrealized_r is not None else None,
         "unrealized_pnl": (round((price - row.entry_price) * quantity, 2) if quantity else None),

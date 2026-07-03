@@ -51,6 +51,12 @@ class TrackedTrade(IntPKMixin, TimestampMixin, Base):
     current_health_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     trade_health: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(8), nullable=False, default="open", index=True)
+    # Who executes management actions: "managed" = the bot acts on its own
+    # advice; "manual" = the bot evaluates and advises but NEVER acts — the
+    # user owns every execution. Toggled by user override, always audited.
+    management_mode: Mapped[str] = mapped_column(
+        String(8), nullable=False, default="managed", index=True
+    )
     last_evaluated_at: Mapped[dt.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -92,6 +98,7 @@ class TrackedTrade(IntPKMixin, TimestampMixin, Base):
             "current_health_score": self.current_health_score,
             "trade_health": self.trade_health,
             "status": self.status,
+            "management_mode": self.management_mode,
             "last_evaluated_at": (
                 self.last_evaluated_at.isoformat() if self.last_evaluated_at else None
             ),

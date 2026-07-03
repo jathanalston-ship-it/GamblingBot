@@ -956,6 +956,9 @@ class TrackedTradeOut(BaseModel):
     current_health_score: float | None
     trade_health: str | None
     status: str
+    management_mode: str = "managed"
+    latest_action: str | None = None
+    latest_reason: str | None = None
     last_evaluated_at: str | None
     closed_at: str | None
     close_reason: str | None

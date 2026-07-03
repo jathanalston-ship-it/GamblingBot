@@ -210,10 +210,15 @@ def test_corrupt_database_is_detected_not_trusted(tmp_path: Path) -> None:
     Base.metadata.create_all(engine)
     engine.dispose()
 
-    # Overwrite the middle of the file with garbage (torn write / bad sector).
+    # Overwrite every page after page 1 with garbage (torn write / bad sector).
+    # Page 1 (header + sqlite_master root) stays valid so the file still opens;
+    # every table's data pages are destroyed, so any read MUST hit corruption —
+    # deterministic regardless of how schema changes shift the page layout.
     raw = bytearray(db.read_bytes())
-    start = len(raw) // 2
-    raw[start : start + 512] = b"\xde\xad\xbe\xef" * 128
+    page = 4096
+    garbage = b"\xde\xad\xbe\xef" * (page // 4)
+    for start in range(page, len(raw), page):
+        raw[start : start + page] = garbage[: len(raw) - start]
     db.write_bytes(bytes(raw))
 
     from momentum.update.integrity import check_integrity

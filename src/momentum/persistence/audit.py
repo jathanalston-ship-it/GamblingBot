@@ -270,6 +270,27 @@ class AuditLogger:
             )
         )
 
+    def user_override(
+        self,
+        *,
+        summary: str,
+        symbol: str | None = None,
+        entity_id: str | None = None,
+        ts: dt.datetime | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> AuditLog:
+        return self.record(
+            AuditRecord(
+                event=AuditEvent.USER_OVERRIDE,
+                summary=summary,
+                ts=ts or _now(),
+                symbol=symbol,
+                entity_type="tracked_trade",
+                entity_id=entity_id,
+                payload=payload or {},
+            )
+        )
+
     def backtest_run(
         self,
         *,

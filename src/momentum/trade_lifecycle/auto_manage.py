@@ -134,7 +134,10 @@ def decide_management(
     state on the linked paper trade); breach is judged against the tighter of
     the two, while R is always measured against the ORIGINAL entry/stop risk.
     """
-    working_stop = max(stop_price, current_stop) if current_stop is not None else stop_price
+    # The working stop is the executed/user stop when one exists — EXACTLY.
+    # A user who deliberately lowers the stop is respected (the override is
+    # audited); R is still measured against the ORIGINAL entry/stop risk.
+    working_stop = current_stop if current_stop is not None else stop_price
     r_now = _r_at(price, entry_price, stop_price)
     context = _context(evaluation, days_held)
     evidence: dict[str, Any] = {

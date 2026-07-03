@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
+from sqlalchemy.orm import Session, sessionmaker
 
 from momentum.api import trade_lifecycle_service
 from momentum.api.dependencies import get_session
@@ -102,3 +105,33 @@ def management_report(
     if report is None:
         raise HTTPException(status_code=404, detail=f"no tracked trade {trade_uid!r}")
     return report
+
+
+class OverrideIn(BaseModel):
+    """A user override on a managed trade (always audited; bot adapts)."""
+
+    action: str  # move_stop | move_target | reduce | add | close | convert_manual | convert_managed
+    price: float | None = None
+    quantity: int | None = None
+
+
+@router.post("/{trade_uid}/override")
+def post_override(trade_uid: str, body: OverrideIn, request: Request) -> dict[str, Any]:
+    import datetime as dt
+
+    from momentum.api import override_service
+    from momentum.api.trading_mutex import TradingPipelineBusyError, exclusive
+
+    factory: sessionmaker[Session] = request.app.state.session_factory
+    try:
+        with exclusive("user-override"), factory() as session:
+            return override_service.apply_override(
+                session,
+                trade_uid,
+                action=body.action,
+                price=body.price,
+                quantity=body.quantity,
+                ts=dt.datetime.now(tz=dt.UTC),
+            )
+    except TradingPipelineBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc

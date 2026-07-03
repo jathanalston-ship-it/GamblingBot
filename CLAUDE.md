@@ -829,6 +829,31 @@ trading platform for US equities. Python 3.12, strictly typed. See
   Chromium (`scripts/ux-screenshots.cjs` → `docs/screenshots/`). See
   `docs/UX_RESPONSIVENESS_AUDIT.md`, `docs/UX_INTERACTION_AUDIT.md`.
 
+- **Auto Pilot Trading Command Center** (`api/{hud_service,verdict_service,
+  override_service}.py`, `autopilot_service.status`, `tradeplan/verdict.py`,
+  `tracked_trades.management_mode` + migration `0030`,
+  `desktop/.../views/CommandCenter.tsx` + `components/terminal/{TradeCard,
+  PlanModal}.tsx`) — the landing page as a trading terminal answering
+  market/bot/money/intervene in three seconds. `GET /command-center/hud` (one
+  aggregate: ET clock, **five health lights**, data/scan/portfolio timestamps,
+  full paper-account summary from journal + scan-fresh marks, market panel
+  from regime + bar cache), `GET /command-center/autopilot` (derived
+  STOPPED/PAUSED/SCANNING/WAITING/MANAGING/RUNNING/IDLE + plain-language
+  activity + next action), `GET /command-center/search`, and `GET
+  /tradeplan/{symbol}/verdict` — a pure BUY/WATCH/WAIT/AVOID rule ladder with
+  named reasons, a **next condition** (never a bare no) and a full decision
+  explainer, every field traced to stored rows (404 when unknown, never
+  invented). **User overrides** (`POST /trade-lifecycle/{uid}/override`:
+  move_stop/move_target/add/reduce/close/convert_manual/convert_managed) are
+  validated, mutex-serialized, audit-logged (`USER_OVERRIDE`) and applied to
+  the linked journal trade; the bot **respects the user stop exactly** (even
+  lowered: `auto_manage` uses `current_stop` verbatim) and `manual` mode is
+  advise-only (execution skipped) until converted back. UI: TradeCard grid
+  with the full control surface + WHY line, managed watchlist, alert center,
+  merged mission log; real-Chromium screenshots via
+  `desktop/scripts/command-center-screenshots.cjs`. See
+  `docs/AUTOPILOT_COMMAND_CENTER.md`.
+
 ## Philosophy (what we optimise for)
 
 Optimise for **expectancy, profit factor, average winner, largest winner, trend

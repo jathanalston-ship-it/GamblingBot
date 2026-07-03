@@ -149,3 +149,121 @@ def _announce_entry(
             payload={k: take.get(k) for k in ("shares", "entry_price", "stop_price", "trade_uid")},
         )
     )
+
+
+# --------------------------------------------------------------------------- #
+# Live bot status — "what is the bot doing RIGHT NOW?"
+# --------------------------------------------------------------------------- #
+_STATE_LABELS = {
+    "stopped": "STOPPED",
+    "paused": "PAUSED",
+    "scanning": "SCANNING",
+    "waiting": "WAITING",
+    "managing": "MANAGING",
+    "running": "RUNNING",
+    "idle": "IDLE",
+}
+
+
+def status(
+    session: Session,
+    *,
+    daemon: Any | None = None,
+    now: dt.datetime | None = None,
+) -> dict[str, Any]:
+    """Derive the bot's state + a plain-language activity line from live facts:
+    daemon thread state, the ET market clock, the open managed book, the last
+    completed cycle and the next scheduled wake. Nothing is invented — every
+    field traces to a live surface."""
+    from momentum.api import user_settings
+    from momentum.daemon.market_state import market_clock
+    from momentum.persistence.models.activity import Activity
+    from momentum.persistence.repositories.tracked_trades import TrackedTradeRepository
+
+    when = now or dt.datetime.now(tz=dt.UTC)
+    settings = user_settings.read_autopilot()
+    enabled = bool(settings["enabled"])
+    clock = market_clock(when)
+    d: dict[str, Any] = daemon.status() if daemon is not None and hasattr(daemon, "status") else {}
+
+    all_open = TrackedTradeRepository(session).open_trades()
+    # Positions = tracked trades with a linked journal trade (money at work);
+    # recommendation-only rows are watched, not managed.
+    open_trades = [t for t in all_open if t.journal_trade_id is not None]
+    managed = [t for t in open_trades if getattr(t, "management_mode", "managed") == "managed"]
+    manual = len(open_trades) - len(managed)
+
+    running = bool(d.get("running"))
+    paused = bool(d.get("paused"))
+    scanning_now = bool(d.get("scanning_now"))
+    seconds_to_next = d.get("seconds_to_next_wake")
+    market_state = str(d.get("market_state") or clock.state.value)
+    scanning_session = market_state in ("premarket", "regular", "after_hours")
+
+    if not running:
+        state, activity = "stopped", "Market daemon is not running — no scanning, no management."
+    elif paused:
+        state, activity = "paused", "Automation paused by user — resume from the Command Center."
+    elif scanning_now:
+        state = "scanning"
+        activity = "Scanning the universe — pulling fresh bars, ranking momentum, regrading theses…"
+    elif not scanning_session:
+        state = "waiting"
+        activity = (
+            f"Waiting for the next session (market is {market_state}) — "
+            "checking the schedule every few minutes."
+        )
+    elif managed:
+        state = "managing"
+        wait = f" Next scan in {int(seconds_to_next)}s." if seconds_to_next is not None else ""
+        activity = f"Managing {len(managed)} position{'s' if len(managed) != 1 else ''}.{wait}"
+    elif enabled:
+        state = "running"
+        wait = f" in {int(seconds_to_next)}s" if seconds_to_next is not None else ""
+        activity = f"Watching for setups — sleeping until the next scan{wait}."
+    else:
+        state = "idle"
+        activity = (
+            "Monitoring only — Auto Pilot is OFF. Scans, advice and alerts continue; "
+            "no entries are taken."
+        )
+
+    last_activity = session.scalars(select(Activity).order_by(Activity.ts.desc()).limit(1)).first()
+    last_result = d.get("last_result") if isinstance(d.get("last_result"), dict) else None
+
+    next_label = (
+        "next scan" if scanning_session and running and not paused else "next market-state check"
+    )
+    return {
+        "state": state,
+        "state_label": _STATE_LABELS[state],
+        "enabled": enabled,
+        "activity": activity,
+        "market_state": market_state,
+        "open_positions": len(open_trades),
+        "managed_positions": len(managed),
+        "manual_positions": manual,
+        "last_scan_at": d.get("last_scan_at"),
+        "last_error": d.get("last_error"),
+        "last_cycle": (
+            {
+                "entered": (last_result or {}).get("autopilot_entries"),
+                "managed": (last_result or {}).get("trades_reevaluated"),
+                "closed": (last_result or {}).get("trades_auto_closed"),
+                "candidates": (last_result or {}).get("candidates"),
+            }
+            if last_result
+            else None
+        ),
+        "last_completed_action": (
+            {"at": last_activity.ts.isoformat(), "message": last_activity.text}
+            if last_activity is not None
+            else None
+        ),
+        "next_action": {
+            "label": next_label,
+            "seconds": seconds_to_next,
+            "at": d.get("next_wake_at"),
+        },
+        "generated_at": when.isoformat(),
+    }
