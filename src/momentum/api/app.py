@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from momentum.api.routes import (
     actions,
     analogs,
+    attribution,
     api_health,
     audit,
     backtests,
@@ -90,6 +91,7 @@ _ROUTERS = (
     opportunity,
     analogs,
     backtests,
+    attribution,
     performance,
     settings,
     update,

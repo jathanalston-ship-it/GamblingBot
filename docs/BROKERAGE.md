@@ -156,3 +156,29 @@ play / pause / step / jump via a slider over the timeline
 (`api/brokerage_replay_service.py`; `tests/unit/brokerage/test_replay.py`
 proves flat-before-entry, working-children-mid-session, OCO-cancel-at-end
 and read-only replay).
+
+## Performance attribution (Prompt 9)
+
+`analytics/dollar_attribution.py` (pure) attributes **every closed dollar**
+with no black boxes:
+
+- **Per-trade identity** — `net = opportunity − give_back − fees`, always
+  summing back to the net: *opportunity* is the move the scanner actually
+  found (MFE × initial risk), *give_back* is what trade management left on
+  the table. A negative opportunity was bad selection; a big give-back on a
+  big opportunity was bad management. Trades without MFE are counted
+  honestly as "opportunity unknown", never invented.
+- **Driver tables** — net dollars grouped by market regime, sector, entry
+  reason (scanner quality), exit reason (stop management), holding-period
+  bucket (timing) and instrument (options selection); each row shows n,
+  dollars and share of total.
+- **Sizing effect** — actual dollars vs the counterfactual where every trade
+  risked the account average (`r × avg_risk`): the difference is exactly
+  what position sizing added or cost.
+
+`GET /attribution` (`api/attribution_service.py` reads the closed-trade
+ledger; MFE is stored in R, so opportunity $ = mfe × initial_risk); the
+Analytics view's **Dollar Attribution** card renders the identity totals and
+every driver table. Tests: `tests/unit/analytics/test_dollar_attribution.py`
+(identity sums exactly, honest unknowns, driver grouping/shares, the sizing
+counterfactual, empty input).

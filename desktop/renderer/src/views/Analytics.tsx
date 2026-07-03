@@ -95,6 +95,104 @@ function AttrTable({ title, rows }: { title: string; rows: AttributionGroup[] })
   );
 }
 
+
+interface DollarDriverRow {
+  driver: string;
+  label: string;
+  num_trades: number;
+  net_pnl: number;
+  share_of_total: number | null;
+}
+
+interface DollarAttribution {
+  total_net_pnl: number;
+  total_fees: number;
+  total_opportunity: number;
+  total_give_back: number;
+  trades_with_opportunity: number;
+  sizing_effect: number | null;
+  drivers: DollarDriverRow[];
+}
+
+const DRIVER_LABEL: Record<string, string> = {
+  regime: "Market regime",
+  sector: "Sector selection",
+  entry_reason: "Scanner / entry",
+  exit_reason: "Stop & exit management",
+  holding_period: "Holding period",
+  instrument: "Instrument",
+};
+
+/** Every dollar attributed: identity totals + driver tables ($, not R). */
+function DollarAttributionPanel() {
+  const { data, error, loading } = useApi<DollarAttribution>("/attribution");
+  if (loading) return <Loading />;
+  if (error) return <ErrorBox message={error} />;
+  if (!data) return null;
+  const drivers = [...new Set(data.drivers.map((d) => d.driver))];
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <Stat
+          label="Net P&L"
+          value={
+            <span className={data.total_net_pnl >= 0 ? "text-bull" : "text-bear"}>
+              {num(data.total_net_pnl, 0)}
+            </span>
+          }
+        />
+        <Stat
+          label="Opportunity found"
+          value={num(data.total_opportunity, 0)}
+          hint={`across ${data.trades_with_opportunity} trades with MFE`}
+        />
+        <Stat
+          label="Given back"
+          value={num(data.total_give_back, 0)}
+          hint="opportunity management didn't capture"
+        />
+        <Stat
+          label="Sizing effect"
+          value={data.sizing_effect != null ? num(data.sizing_effect, 0) : "—"}
+          hint="vs risking the average on every trade"
+        />
+      </div>
+      {drivers.map((driver) => {
+        const rows = data.drivers.filter((d) => d.driver === driver);
+        return (
+          <div key={driver}>
+            <div className="mb-2 text-xs uppercase tracking-wide text-slate-400">
+              {DRIVER_LABEL[driver] ?? driver}
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-sm">
+                <tbody>
+                  {rows.map((r, i) => (
+                    <tr key={i} className="border-b border-surface-border/50">
+                      <td className="px-3 py-1.5">{r.label}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">
+                        {r.num_trades} trades
+                      </td>
+                      <td className="px-3 py-1.5 text-right tabular-nums">
+                        <span className={r.net_pnl >= 0 ? "text-bull" : "text-bear"}>
+                          ${num(r.net_pnl, 0)}
+                        </span>
+                      </td>
+                      <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">
+                        {r.share_of_total != null ? pct(r.share_of_total, 0) : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function Analytics() {
   const { runId } = useWorkspace();
   const ampRun = runId ? `&run_id=${runId}` : "";
@@ -183,6 +281,10 @@ export default function Analytics() {
           ) : (
             <div className="text-sm text-slate-500">No attribution data.</div>
           )}
+        </Card>
+
+        <Card title="Dollar Attribution">
+          <DollarAttributionPanel />
         </Card>
 
         <Card title="Behavior / diagnostics">
