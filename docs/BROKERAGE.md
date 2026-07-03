@@ -149,8 +149,11 @@ are never modified (the events tables refuse deletes).
 account-history row, downsampled ≤ 1000); `GET /brokerage/replay/state?ts=…`
 reconstructs the venue at that instant **from the immutable trail**: the
 newest account snapshot at-or-before `ts`, each order's status *at that
-moment* (its event trail replayed up to `ts`), the positions open then, and
-the fills to date. Nothing is recomputed, so the replay can never disagree
+moment* (its event trail replayed up to `ts`), and the positions **as they
+were then** — quantities, running weighted-average cost and realized P&L
+rebuilt from the fill trail (never the mutable current position rows, so a
+position later reduced or closed replays at its earlier size), priced at
+the last execution at-or-before `ts` (stated in the payload). Nothing is recomputed, so the replay can never disagree
 with what happened. The Brokerage view's **Portfolio Replay** card drives it:
 play / pause / step / jump via a slider over the timeline
 (`api/brokerage_replay_service.py`; `tests/unit/brokerage/test_replay.py`
@@ -200,6 +203,13 @@ is the confidence-weighted stance, and its record explains **agreement**
 (who backs it and why), **disagreement** (each dissenter named with their
 evidence — a neutral HOLD is not dissent), **confidence** and the deciding
 **evidence** in a plain-language narrative.
+
+All seven members receive real inputs: the Portfolio Manager reads the
+merged book (open journal trades + open venue positions) through the pure
+whole-book analysis and votes on this symbol's suggestion (falling back to
+book-wide warnings like sector crowding); the Options Engine votes from the
+options-eligibility recommendation when the setup has one. Members without
+data still abstain explicitly.
 
 Wiring: `take_trade` convenes an *entry* meeting (persisted even when the
 trade proceeds; a decisive committee **EXIT blocks the entry** and the

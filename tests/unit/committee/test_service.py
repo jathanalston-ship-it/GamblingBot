@@ -60,3 +60,42 @@ def test_committee_routes(factory: sessionmaker[Session]) -> None:
     detail = client.get(f"/committee/meetings/{uid}").json()
     assert detail["narrative"]
     assert client.get("/committee/meetings/nope").status_code == 404
+
+
+def test_portfolio_manager_member_sees_the_book(factory: sessionmaker[Session]) -> None:
+    """An oversized open position turns the PM's abstain into a REDUCE vote."""
+    import datetime as dt
+
+    from momentum.persistence.models import PortfolioSnapshot, Trade
+
+    with factory() as session:
+        session.add(
+            Trade(
+                run_id="manual",
+                symbol="HUGE",
+                direction="long",
+                status="open",
+                entry_ts=dt.datetime(2026, 6, 1, 15, tzinfo=dt.UTC),
+                entry_price=100.0,
+                quantity=400,  # $40k of a $100k book -> 40% single-name
+                initial_stop=95.0,
+                initial_risk=2000.0,
+            )
+        )
+        session.add(
+            PortfolioSnapshot(
+                run_id="manual",
+                as_of=dt.date(2026, 7, 1),
+                session_date=dt.date(2026, 7, 1),
+                equity=100_000.0,
+                cash=60_000.0,
+            )
+        )
+        session.commit()
+
+        decision = committee_service.convene_and_persist(session, "HUGE", context="manage")
+        session.commit()
+        pm = next(v for v in decision.votes if v.member == "Portfolio Manager")
+        assert pm.confidence > 0
+        assert pm.choice.value == "reduce"
+        assert "40%" in pm.justification

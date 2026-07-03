@@ -85,3 +85,33 @@ def test_replay_is_read_only(broker: PaperBrokerage, factory: sessionmaker[Sessi
     replay.state_at(factory, T1)
     replay.state_at(factory, T2)
     assert replay.timestamps(factory) == before  # replaying changed nothing
+
+
+def test_partial_reduce_replays_point_in_time_quantities(
+    broker: PaperBrokerage, factory: sessionmaker[Session]
+) -> None:
+    """A position later reduced must replay with its EARLIER size, not the
+    current row's — quantities and average cost come from the fill trail."""
+    broker.place_order(
+        OrderTicket(
+            client_order_id="buy100",
+            account_id="primary",
+            symbol="AAPL",
+            side=Side.LONG,
+            quantity=100,
+        ),
+        ts=NOW,
+    )
+    broker.process_tick({"AAPL": quote()}, ts=NOW)
+    broker.close_position("primary", "AAPL", quantity=40, ts=T1)
+    broker.process_tick({"AAPL": quote(last=104.0, ts=T1)}, ts=T1)
+
+    before = replay.state_at(factory, NOW + dt.timedelta(minutes=5))
+    assert before["positions"][0]["quantity"] == 100  # NOT the current 60
+    assert before["positions"][0]["realized_pnl"] == 0.0
+
+    after = replay.state_at(factory, T1 + dt.timedelta(minutes=1))
+    assert after["positions"][0]["quantity"] == 60
+    assert after["positions"][0]["realized_pnl"] > 0  # 40 sold above cost
+    assert after["positions"][0]["avg_cost"] == before["positions"][0]["avg_cost"]
+    assert "last execution" in after["positions"][0]["priced_at"]

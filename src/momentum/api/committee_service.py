@@ -100,12 +100,119 @@ def _regime_label(session: Session) -> str | None:
     return str(row.regime) if row is not None else None
 
 
+def _options_verdict(session: Session, symbol: str) -> str | None:
+    """The options-eligibility recommendation (best-effort; None = no data)."""
+    try:
+        from momentum.api import options_eligibility_service
+        from momentum.api.services import resolve_active_run_id
+
+        verdict = options_eligibility_service.options_eligibility(
+            session, symbol, resolve_active_run_id(session)
+        )
+    except Exception:  # noqa: BLE001 — advisory input, the member abstains
+        return None
+    return verdict.recommendation if verdict is not None else None
+
+
+def _portfolio_suggestion(
+    session: Session, symbol: str, regime: str | None
+) -> tuple[str | None, str | None]:
+    """The Portfolio Manager's book-level (action, reason) for ``symbol``.
+
+    Reads BOTH books — the journal's open trades and the brokerage venue's
+    open positions — into the pure whole-book analysis, then returns the
+    first suggestion naming this symbol. Best-effort: any failure means the
+    member simply has no book-level concern to raise.
+    """
+    try:
+        from momentum.api.portfolio_manager_service import _health_by_symbol
+        from momentum.brokerage.portfolio_manager import PositionFacts, analyze_portfolio
+        from momentum.persistence.models.broker import BrokerPosition
+        from momentum.persistence.models.portfolio_snapshot import PortfolioSnapshot
+        from momentum.persistence.models.trade import Trade
+
+        health = _health_by_symbol(session)
+        facts: list[PositionFacts] = []
+
+        for trade in session.scalars(select(Trade).where(Trade.status == "open")).all():
+            qty = max(int(trade.quantity) - int(trade.scaled_out_quantity or 0), 0)
+            if qty <= 0 or not trade.entry_price:
+                continue
+            stop = trade.current_stop if trade.current_stop is not None else trade.initial_stop
+            facts.append(
+                PositionFacts(
+                    symbol=trade.symbol,
+                    market_value=float(trade.entry_price) * qty,
+                    sector=trade.sector,
+                    stop_distance_value=(
+                        max(float(trade.entry_price) - float(stop), 0.0) * qty
+                        if stop is not None
+                        else None
+                    ),
+                    health=health.get(trade.symbol),
+                )
+            )
+
+        journal_symbols = {f.symbol for f in facts}
+        for position in session.scalars(
+            select(BrokerPosition).where(BrokerPosition.is_open.is_(True))
+        ).all():
+            if position.symbol in journal_symbols or position.quantity <= 0:
+                continue
+            price = position.last_price if position.last_price is not None else position.avg_cost
+            units = position.quantity * position.multiplier
+            facts.append(
+                PositionFacts(
+                    symbol=position.symbol,
+                    market_value=price * units,
+                    sector=None,
+                    stop_distance_value=(
+                        max(price - position.stop_price, 0.0) * units
+                        if position.stop_price is not None
+                        else None
+                    ),
+                    health=health.get(position.symbol),
+                )
+            )
+
+        if not facts:
+            return None, None
+        exposure = sum(f.market_value for f in facts)
+        snapshot = session.scalars(
+            select(PortfolioSnapshot).order_by(PortfolioSnapshot.as_of.desc()).limit(1)
+        ).first()
+        equity = (
+            float(snapshot.equity)
+            if snapshot is not None and snapshot.equity and snapshot.equity > 0
+            else exposure
+        )
+        analysis = analyze_portfolio(
+            equity=max(equity, exposure),
+            cash=max(equity - exposure, 0.0),
+            positions=facts,
+            regime=regime,
+        )
+        for suggestion in analysis.suggestions:
+            if suggestion.symbol == symbol:
+                return suggestion.action, suggestion.reason
+        # Book-wide (symbol-less) warnings still inform the member's vote.
+        for suggestion in analysis.suggestions:
+            if suggestion.symbol is None:
+                return suggestion.action, suggestion.reason
+        return None, None
+    except Exception:  # noqa: BLE001 — advisory input, the member abstains
+        _log.debug("portfolio suggestion failed for %s", symbol, exc_info=True)
+        return None, None
+
+
 def build_inputs(
     session: Session, symbol: str, *, context: str = "entry", ts: dt.datetime | None = None
 ) -> CommitteeInputs:
     sym = symbol.upper()
     momentum, conviction, band = _scan_facts(session, sym)
     health, action, strength = _thesis_facts(session, sym)
+    regime = _regime_label(session)
+    suggestion, reason = _portfolio_suggestion(session, sym, regime)
     return CommitteeInputs(
         symbol=sym,
         context=context,
@@ -117,10 +224,10 @@ def build_inputs(
         thesis_action=action,
         thesis_strength=strength,
         heat_headroom_pct=_heat_headroom(session),
-        portfolio_suggestion=None,  # joined at the route level when available
-        portfolio_reason=None,
-        regime=_regime_label(session),
-        options_verdict=None,  # advisory; wired when the eligibility engine ran
+        portfolio_suggestion=suggestion,
+        portfolio_reason=reason,
+        regime=regime,
+        options_verdict=_options_verdict(session, sym),
     )
 
 

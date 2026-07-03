@@ -22,7 +22,6 @@ from momentum.persistence.models.broker import (
     BrokerFill,
     BrokerOrderEvent,
     BrokerOrderRow,
-    BrokerPosition,
 )
 
 MAX_TIMESTAMPS = 1000
@@ -67,6 +66,80 @@ def _aware(value: dt.datetime) -> dt.datetime:
     return value if value.tzinfo is not None else value.replace(tzinfo=dt.UTC)
 
 
+def _positions_at(session: Session, account_id: str, ts: dt.datetime) -> list[dict[str, Any]]:
+    """Positions AS THEY WERE at ``ts``, rebuilt from the fill trail.
+
+    The ``broker_positions`` rows hold only the *current* state (quantity,
+    avg cost, marks), so a replay must not read them: a position later
+    reduced or closed would show its later shape. Fills are immutable, so
+    replaying them up to ``ts`` — buys advance a running weighted average
+    cost, sells reduce quantity and realize P&L — reproduces the exact
+    point-in-time book. Each position is priced at its **last execution**
+    at-or-before ``ts`` (stated in the payload; no later data leaks in).
+    """
+    fills = session.scalars(
+        select(BrokerFill)
+        .where(BrokerFill.account_id == account_id, BrokerFill.ts <= ts)
+        .order_by(BrokerFill.ts.asc(), BrokerFill.id.asc())
+    ).all()
+    if not fills:
+        return []
+    multipliers = {
+        row.order_id: row.multiplier
+        for row in session.scalars(
+            select(BrokerOrderRow).where(BrokerOrderRow.account_id == account_id)
+        ).all()
+    }
+
+    books: dict[str, dict[str, float]] = {}
+    for fill in fills:
+        book = books.setdefault(
+            fill.symbol,
+            {
+                "quantity": 0.0,
+                "avg_cost": 0.0,
+                "realized_pnl": 0.0,
+                "last_fill_price": 0.0,
+                "multiplier": float(multipliers.get(fill.order_id, 1)),
+            },
+        )
+        mult = float(multipliers.get(fill.order_id, book["multiplier"]))
+        book["multiplier"] = mult
+        book["last_fill_price"] = fill.price
+        if fill.side == "long":  # buy: advance the weighted average cost
+            total = book["quantity"] + fill.quantity
+            book["avg_cost"] = (
+                (book["avg_cost"] * book["quantity"] + fill.price * fill.quantity) / total
+                if total > 0
+                else fill.price
+            )
+            book["quantity"] = total
+        else:  # sell: reduce and realize against the average cost
+            closed = min(fill.quantity, book["quantity"])
+            book["realized_pnl"] += (fill.price - book["avg_cost"]) * closed * mult
+            book["quantity"] -= closed
+
+    out: list[dict[str, Any]] = []
+    for symbol, book in sorted(books.items()):
+        if book["quantity"] <= 0:
+            continue
+        units = book["quantity"] * book["multiplier"]
+        out.append(
+            {
+                "symbol": symbol,
+                "quantity": int(book["quantity"]),
+                "multiplier": int(book["multiplier"]),
+                "avg_cost": round(book["avg_cost"], 4),
+                "last_fill_price": round(book["last_fill_price"], 4),
+                "market_value": round(book["last_fill_price"] * units, 2),
+                "unrealized_pnl": round((book["last_fill_price"] - book["avg_cost"]) * units, 2),
+                "realized_pnl": round(book["realized_pnl"], 2),
+                "priced_at": "last execution at or before the replayed instant",
+            }
+        )
+    return out
+
+
 def state_at(
     session_factory: sessionmaker[Session],
     ts: dt.datetime,
@@ -85,15 +158,7 @@ def state_at(
             .limit(1)
         ).first()
 
-        position_rows = session.scalars(
-            select(BrokerPosition).where(
-                BrokerPosition.account_id == account_id,
-                BrokerPosition.opened_at <= ts,
-            )
-        ).all()
-        open_positions = [
-            p.to_dict() for p in position_rows if p.closed_at is None or _aware(p.closed_at) > ts
-        ]
+        open_positions = _positions_at(session, account_id, ts)
 
         order_rows = session.scalars(
             select(BrokerOrderRow)
