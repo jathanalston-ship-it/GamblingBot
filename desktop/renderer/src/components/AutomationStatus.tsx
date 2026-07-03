@@ -61,8 +61,23 @@ function dot(status: string): string {
  * Health grades and the crash-recovery banner ("Recovered after restart —
  * missed N scans — resuming").
  */
+interface CertificationLite {
+  status: "certified" | "in_progress" | "failing";
+  streak_days: number;
+  required_days: number;
+}
+
+interface ShadowLite {
+  enabled: boolean;
+  trading_days_observed: number;
+  window_trading_days: number;
+  window_complete: boolean;
+}
+
 export function AutomationStatus() {
   const autopilot = useApi<AutopilotSettings>("/settings/autopilot", { refreshMs: 60_000 });
+  const certification = useApi<CertificationLite>("/certification", { refreshMs: 300_000 });
+  const shadow = useApi<ShadowLite>("/shadow", { refreshMs: 300_000 });
   const daemon = useApi<DaemonStatus>("/daemon/status", { refreshMs: 15_000 });
   const health = useApi<AutomationHealth>("/automation/health", { refreshMs: 120_000 });
   const recovery = useApi<RecoveryOut>("/automation/recovery");
@@ -115,7 +130,7 @@ export function AutomationStatus() {
         </div>
       ) : null}
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
         <Stat
           label="Automation Status"
           value={
@@ -168,6 +183,52 @@ export function AutomationStatus() {
               ? new Date(daemon.data.next_wake_at).toLocaleTimeString()
               : undefined
           }
+        />
+        <Stat
+          label="Paper Certification"
+          value={
+            certification.data ? (
+              <span
+                className={
+                  certification.data.status === "certified"
+                    ? "text-bull"
+                    : certification.data.status === "failing"
+                      ? "text-bear"
+                      : "text-slate-300"
+                }
+              >
+                {certification.data.status === "certified"
+                  ? "CERTIFIED"
+                  : `day ${Math.min(
+                      certification.data.streak_days,
+                      certification.data.required_days,
+                    )} / ${certification.data.required_days}`}
+              </span>
+            ) : (
+              "—"
+            )
+          }
+          hint="30 consecutive clean days before live is a conversation"
+        />
+        <Stat
+          label="Shadow Window"
+          value={
+            shadow.data ? (
+              shadow.data.enabled ? (
+                <span className={shadow.data.window_complete ? "text-bull" : "text-slate-300"}>
+                  {`day ${Math.min(
+                    shadow.data.trading_days_observed,
+                    shadow.data.window_trading_days,
+                  )} / ${shadow.data.window_trading_days}`}
+                </span>
+              ) : (
+                <span className="text-slate-500">off</span>
+              )
+            ) : (
+              "—"
+            )
+          }
+          hint="60 trading days of generated-never-submitted orders"
         />
       </div>
 

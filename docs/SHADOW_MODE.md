@@ -49,6 +49,18 @@ evaluations, status.
 An empty ledger reports `None`s, never invented numbers.
 `GET /shadow/trades` serves the raw ledger.
 
+## Desktop
+
+- **Settings → Shadow Trading Mode** — the enable toggle (with a plain
+  explanation of what will and will not happen).
+- **System → Shadow Mode** — the proving-window screen: day N of 60
+  progress bar, orders generated vs orders submitted (always zero),
+  execution-accuracy and P&L stat grid, exits breakdown, missed
+  opportunities, and the full shadow ledger table.
+- **Command Center → automation strip** — both proving windows at a
+  glance: Paper Certification (day N of 30 / CERTIFIED / failing) and the
+  Shadow Window (day N of 60, or "off"), refreshed every 5 minutes.
+
 ## Tests
 
 `tests/unit/shadow/test_shadow.py` (6): spread-crossing fills,

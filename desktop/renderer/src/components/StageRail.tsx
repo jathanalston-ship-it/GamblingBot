@@ -55,6 +55,7 @@ const SECTIONS: { title: string; items: Item[] }[] = [
     items: [
       { to: "/data-health", label: "Data Health", icon: "pulse" },
       { to: "/certification", label: "Certification", icon: "shield" },
+      { to: "/shadow", label: "Shadow Mode", icon: "crosshair" },
       { to: "/settings", label: "Settings", icon: "gear" },
       { to: "/updates", label: "Updates", icon: "download" },
     ],

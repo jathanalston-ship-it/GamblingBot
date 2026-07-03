@@ -1042,12 +1042,57 @@ function Maintenance() {
   );
 }
 
+
+function ShadowPanel() {
+  const { data, error, loading, reload } = useApi<{ enabled: boolean }>("/shadow/settings");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  if (loading) return <Loading />;
+  if (error) return <ErrorBox message={error} />;
+  if (!data) return null;
+
+  const toggle = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await apiPut("/shadow/settings", { enabled: !data.enabled });
+      reload();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card title="Shadow Trading Mode">
+      <div className="space-y-3">
+        <p className="text-sm text-slate-400">
+          While enabled, every scan records the orders the strategy <em>would</em> place —
+          expected fills modeled with spread and slippage — and manages them to their stops
+          and targets, <strong>never submitting anything anywhere</strong>. The Shadow screen
+          grades 60 consecutive trading days of execution accuracy and expected P&amp;L
+          before live trading is even a conversation.
+        </p>
+        <label className="flex items-center gap-2 text-sm text-slate-200">
+          <input type="checkbox" checked={data.enabled} disabled={busy} onChange={toggle} />
+          Enable shadow mode (records a shadow ledger on every scan)
+        </label>
+        {err ? <p className="text-xs text-rose-400">{err}</p> : null}
+      </div>
+    </Card>
+  );
+}
+
+
 export default function Settings() {
   return (
     <div className="space-y-5 p-5">
       <PageTitle title="Settings" subtitle="Data provider, API keys, maintenance and configuration" />
       <DataProviderPanel />
       <AutopilotPanel />
+      <ShadowPanel />
       <DataModePanel />
       <ExecutionModePanel />
       <NotificationsPanel />

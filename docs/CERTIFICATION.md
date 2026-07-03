@@ -61,7 +61,8 @@ failures (provenance rows with an error).
 `GET /certification` — the full report (status, day N of 30, metrics,
 every requirement with measured/threshold/detail). Desktop:
 **System → Certification** (status badge, day progress bar, metric grid,
-requirement checklist).
+requirement checklist), plus a **Paper Certification** chip on the Command
+Center automation strip (day N of 30 at a glance).
 
 ## Tests
 
