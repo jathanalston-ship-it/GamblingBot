@@ -75,6 +75,10 @@ Remaining refinements (not blockers):
 - **Onedir on real Windows** — validated by the release pipeline's packaged
   launch gate; first Windows release after this change should watch the
   release-validation report.
+- **Test-isolation sweep for `tests/unit/api/test_scan_rejections.py`** —
+  failed once (2 tests) in one full-suite run during the 2026-07 production
+  readiness audit; passes in isolation and in repeat full runs. Find and pin
+  the cross-test state if it recurs.
 
 ## Conventions for this file
 

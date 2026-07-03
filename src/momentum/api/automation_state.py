@@ -26,6 +26,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -59,7 +60,12 @@ def _write(data: dict[str, Any]) -> None:
     try:
         path = _state_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, indent=2))
+        # Atomic replace: a power loss mid-write must never leave a torn file
+        # (a torn heartbeat would otherwise be unreadable after the restart —
+        # exactly when the recovery record matters most).
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(data, indent=2))
+        os.replace(tmp, path)
     except OSError:  # a failed heartbeat must never break a scan cycle
         _log.debug("automation state write failed", exc_info=True)
 

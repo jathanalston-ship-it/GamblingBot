@@ -75,6 +75,7 @@ metrics above.
 | **[docs/AUDIT_LOGGING.md](docs/AUDIT_LOGGING.md)** | Append-only audit log: immutable, twice-timestamped, queryable, crash-safe records of every material action (implemented). |
 | **[docs/E2E_VERIFICATION.md](docs/E2E_VERIFICATION.md)** | End-to-end verification: pass/fail checklist, automated tests, and the manual testing workflow for the full paper path. |
 | **[docs/PRODUCTION_READINESS_TESTS.md](docs/PRODUCTION_READINESS_TESTS.md)** | Production-readiness QA plan: startup/corruption/missing-data/scale/memory/crash-recovery tests (manual + automated + failure injection + load) and findings. |
+| **[docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md)** | Production Readiness Audit (2026-07): executed break-attempt suite, live end-to-end evidence, issues + fixes, known limitations, and the READY-for-paper verdict. |
 | **[.github/workflows/desktop.yml](.github/workflows/desktop.yml)** | Desktop CI: install → typecheck (fails on any TS error) → build → headless Electron startup validation, on every push/PR. |
 | **[.github/workflows/release.yml](.github/workflows/release.yml)** | Release CI/CD: on a `v*` tag, run the quality gate (ruff + mypy + tests + desktop build), build the Windows installer (`build_windows.ps1`), and publish a GitHub Release with `MomentumLab-Setup-*.exe` (+ auto-update metadata). |
 | **[docs/DESKTOP_AUDIT.md](docs/DESKTOP_AUDIT.md)** | Desktop app audit: launch/connectivity readiness, per-screen feature completeness (live vs demo vs placeholder), screenshot checklist, and a UAT plan. |
