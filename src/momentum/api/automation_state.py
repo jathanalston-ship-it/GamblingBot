@@ -148,6 +148,13 @@ def detect_recovery(*, now: dt.datetime | None = None) -> dict[str, Any] | None:
         "missed_scans": missed,
     }
     data["last_recovery"] = recovery
+    # Append-capped history so the certification window can count EVERY crash,
+    # not just the latest one.
+    history = data.get("recoveries")
+    if not isinstance(history, list):
+        history = []
+    history.append(recovery)
+    data["recoveries"] = history[-50:]
     data["last_heartbeat"] = when.isoformat()  # don't re-report the same gap
     _write(data)
     _log.warning(
@@ -162,6 +169,25 @@ def last_recovery() -> dict[str, Any] | None:
     """The most recent recovery record (None when there has never been one)."""
     record = _read().get("last_recovery")
     return dict(record) if isinstance(record, dict) else None
+
+
+def recoveries(*, since: dt.datetime | None = None) -> list[dict[str, Any]]:
+    """Every recorded crash recovery (optionally only those since ``since``)."""
+    raw = _read().get("recoveries")
+    records = [dict(r) for r in raw if isinstance(r, dict)] if isinstance(raw, list) else []
+    if since is None:
+        return records
+    out: list[dict[str, Any]] = []
+    for record in records:
+        try:
+            recovered = dt.datetime.fromisoformat(str(record.get("recovered_at")))
+            if recovered.tzinfo is None:
+                recovered = recovered.replace(tzinfo=dt.UTC)
+        except ValueError:
+            continue
+        if recovered >= since:
+            out.append(record)
+    return out
 
 
 def snapshot() -> dict[str, Any]:

@@ -16,6 +16,7 @@ const Backtesting = lazy(() => import("./views/Backtesting"));
 const Brokerage = lazy(() => import("./views/Brokerage"));
 const Conviction = lazy(() => import("./views/Conviction"));
 const DataHealth = lazy(() => import("./views/DataHealth"));
+const Certification = lazy(() => import("./views/Certification"));
 const Developer = lazy(() => import("./views/Developer"));
 const Lifecycle = lazy(() => import("./views/Lifecycle"));
 const Paper = lazy(() => import("./views/Paper"));
@@ -77,6 +78,7 @@ export default function App() {
             <Route path="signal-eval" element={<SignalEvaluation />} />
             <Route path="signal-audit" element={<SignalAudit />} />
             <Route path="data-health" element={<DataHealth />} />
+            <Route path="certification" element={<Certification />} />
             <Route path="verification" element={<Verification />} />
             <Route path="settings" element={<Settings />} />
             <Route path="updates" element={<Updates />} />

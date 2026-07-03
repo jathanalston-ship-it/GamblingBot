@@ -771,6 +771,19 @@ trading platform for US equities. Python 3.12, strictly typed. See
   The **Production Readiness Audit** evidence lives in
   `docs/PRODUCTION_READINESS.md`.
 
+- **Paper Trading Certification** (`src/momentum/certification/`,
+  `api/certification_service.py`, `GET /certification`, desktop
+  **Certification** view) — the gate before live trading: 30 consecutive
+  clean calendar days graded by a pure engine from existing surfaces
+  (`scan_stats` minute-coverage vs the ET schedule, `runs`, `trades`
+  duplicates, `alerts`, provenance errors, the `automation_state.json`
+  crash history — now append-capped via `recoveries()` — live
+  `integrity_check`, `MRP_PARENT_PID` watchdog). Streak-scoped gates
+  (crashes/missed scans/drift) reset the streak; stateful problems
+  (corruption/duplicates/memory/latency/no-watchdog) grade `failing`.
+  **Never certifies until every requirement passes.** No new tables. See
+  `docs/CERTIFICATION.md`.
+
 ## Philosophy (what we optimise for)
 
 Optimise for **expectancy, profit factor, average winner, largest winner, trend
