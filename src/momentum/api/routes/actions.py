@@ -33,8 +33,14 @@ router = APIRouter(prefix="/actions", tags=["actions"])
 class ActionParams(BaseModel):
     symbols: list[str] | None = None
     lookback_days: int = 400
-    starting_equity: float = 100_000.0
+    starting_equity: float | None = None  # None -> Settings account balance
     run_id: str | None = None
+
+
+def _account_balance() -> float:
+    from momentum.api import user_settings
+
+    return user_settings.read_account_balance()
 
 
 class ReplayRequest(BaseModel):
@@ -340,7 +346,7 @@ def start_paper_session(request: Request, params: ActionParams | None = None) ->
             provider=provider,
             symbols=symbols,
             lookback_days=p.lookback_days,
-            starting_equity=p.starting_equity,
+            starting_equity=p.starting_equity or _account_balance(),
             progress=progress,
         )
 

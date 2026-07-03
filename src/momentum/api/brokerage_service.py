@@ -24,7 +24,22 @@ _log = logging.getLogger(__name__)
 
 
 def build_brokerage(session_factory: sessionmaker[Session]) -> PaperBrokerage:
-    return PaperBrokerage(session_factory)
+    """The venue over the app's DB, with the user's starting balance applied.
+
+    The Settings account balance seeds NEW brokerage accounts (an account that
+    has already traded keeps its history — balances are never rewritten under
+    a live book; use Settings to update an untouched account).
+    """
+    from momentum.api import user_settings
+    from momentum.brokerage.config import default_config as brokerage_default_config
+
+    config = brokerage_default_config()
+    balance = user_settings.read_account_balance()
+    if balance != config.account.starting_cash:
+        config = config.model_copy(
+            update={"account": config.account.model_copy(update={"starting_cash": balance})}
+        )
+    return PaperBrokerage(session_factory, config=config)
 
 
 def quotes_for_symbols(

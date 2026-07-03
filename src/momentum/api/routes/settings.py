@@ -101,6 +101,70 @@ def put_execution_mode(body: ExecutionModeIn) -> dict[str, Any]:
     return {"mode": mode, "valid_modes": list(user_settings.VALID_EXECUTION_MODES)}
 
 
+class AutopilotIn(BaseModel):
+    enabled: bool | None = None
+    starting_balance: float | None = None
+    max_open_positions: int | None = None
+    max_entries_per_cycle: int | None = None
+    min_conviction_score: float | None = None
+    include_premarket: bool | None = None
+
+
+def _autopilot_out() -> dict[str, Any]:
+    return {
+        **user_settings.read_autopilot(),
+        "starting_balance": user_settings.read_account_balance(),
+    }
+
+
+@router.get("/autopilot")
+def get_autopilot() -> dict[str, Any]:
+    """Autopilot settings: auto-entry toggle, caps and the account balance."""
+    return _autopilot_out()
+
+
+@router.put("/autopilot")
+def put_autopilot(body: AutopilotIn, session: Session = Depends(get_session)) -> dict[str, Any]:
+    """Update autopilot settings + starting balance (partial; persists).
+
+    A changed balance re-seeds the brokerage account only while it is still
+    untouched (no fills) — a live book's history is never rewritten.
+    """
+    try:
+        if body.starting_balance is not None:
+            user_settings.write_account_balance(body.starting_balance)
+            _reseed_untouched_broker_account(session, body.starting_balance)
+        user_settings.write_autopilot(
+            enabled=body.enabled,
+            max_open_positions=body.max_open_positions,
+            max_entries_per_cycle=body.max_entries_per_cycle,
+            min_conviction_score=body.min_conviction_score,
+            include_premarket=body.include_premarket,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _autopilot_out()
+
+
+def _reseed_untouched_broker_account(session: Session, balance: float) -> None:
+    from sqlalchemy import func, select
+
+    from momentum.persistence.models.broker import BrokerAccount, BrokerFill
+
+    account = session.scalars(
+        select(BrokerAccount).where(BrokerAccount.account_id == "primary")
+    ).first()
+    if account is None:
+        return
+    fills = session.scalar(
+        select(func.count()).select_from(BrokerFill).where(BrokerFill.account_id == "primary")
+    )
+    if not fills:
+        account.starting_cash = balance
+        account.cash = balance
+        session.commit()
+
+
 class NotificationPrefsIn(BaseModel):
     enabled: bool | None = None
     min_severity: str | None = None

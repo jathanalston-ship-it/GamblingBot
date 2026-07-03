@@ -730,6 +730,19 @@ trading platform for US equities. Python 3.12, strictly typed. See
   `GET /committee/meetings`. Committee card on Trade Plan. See
   `docs/BROKERAGE.md` § Investment Committee.
 
+- **Autopilot** (`src/momentum/api/autopilot_service.py`,
+  `GET/PUT /settings/autopilot`, Settings → Account & Autopilot) — the
+  hands-off loop, **OFF by default**: when enabled, every fresh scan's final
+  step ranks the cycle's conviction scores and routes up to
+  `max_entries_per_cycle` new symbols (floor `min_conviction_score`, book cap
+  `max_open_positions`, held symbols never re-entered) through the exact
+  take-trade path (earnings gate, committee review — EXIT blocks, plan
+  sizing, journal/track/link). Entries only in the regular session
+  (premarket opt-in); every take raises a deduped `autopilot_entry` alert
+  (→ OS notification). The Settings **account starting balance**
+  (`account.starting_balance`, default 100k) feeds paper sessions and new
+  brokerage accounts. See `docs/AUTOPILOT.md`.
+
 ## Philosophy (what we optimise for)
 
 Optimise for **expectancy, profit factor, average winner, largest winner, trend

@@ -208,6 +208,99 @@ def write_execution_mode(mode: str) -> str:
     return mode
 
 
+# Account balance: the paper book's starting equity (paper sessions, autopilot
+# sizing context and new brokerage accounts all read it).
+DEFAULT_ACCOUNT_BALANCE = 100_000.0
+
+
+def read_account_balance() -> float:
+    section = _read_settings_yaml().get("account")
+    if isinstance(section, dict):
+        balance = section.get("starting_balance")
+        if isinstance(balance, (int, float)) and balance > 0:
+            return float(balance)
+    return DEFAULT_ACCOUNT_BALANCE
+
+
+def write_account_balance(balance: float) -> float:
+    if balance <= 0:
+        raise ValueError("starting balance must be positive")
+    data = _read_settings_yaml()
+    section = data.get("account")
+    if not isinstance(section, dict):
+        section = {}
+    section["starting_balance"] = float(balance)
+    data["account"] = section
+    path = _settings_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+    return float(balance)
+
+
+# Autopilot: the daemon takes committee-approved entries automatically.
+# OFF by default — turning it on is an explicit, persisted user decision.
+DEFAULT_AUTOPILOT: dict[str, object] = {
+    "enabled": False,
+    "max_open_positions": 8,
+    "max_entries_per_cycle": 2,
+    "min_conviction_score": 70.0,
+    "include_premarket": False,
+}
+
+
+def read_autopilot() -> dict[str, object]:
+    """Autopilot settings (defaults for anything unset/invalid)."""
+    section = _read_settings_yaml().get("autopilot")
+    out = dict(DEFAULT_AUTOPILOT)
+    if isinstance(section, dict):
+        if isinstance(section.get("enabled"), bool):
+            out["enabled"] = section["enabled"]
+        if isinstance(section.get("include_premarket"), bool):
+            out["include_premarket"] = section["include_premarket"]
+        for key in ("max_open_positions", "max_entries_per_cycle"):
+            value = section.get(key)
+            if isinstance(value, int) and value > 0:
+                out[key] = value
+        score = section.get("min_conviction_score")
+        if isinstance(score, (int, float)) and 0 <= score <= 100:
+            out["min_conviction_score"] = float(score)
+    return out
+
+
+def write_autopilot(
+    *,
+    enabled: bool | None = None,
+    max_open_positions: int | None = None,
+    max_entries_per_cycle: int | None = None,
+    min_conviction_score: float | None = None,
+    include_premarket: bool | None = None,
+) -> dict[str, object]:
+    """Persist autopilot settings (partial update)."""
+    current = read_autopilot()
+    if enabled is not None:
+        current["enabled"] = enabled
+    if include_premarket is not None:
+        current["include_premarket"] = include_premarket
+    if max_open_positions is not None:
+        if max_open_positions <= 0:
+            raise ValueError("max_open_positions must be positive")
+        current["max_open_positions"] = max_open_positions
+    if max_entries_per_cycle is not None:
+        if max_entries_per_cycle <= 0:
+            raise ValueError("max_entries_per_cycle must be positive")
+        current["max_entries_per_cycle"] = max_entries_per_cycle
+    if min_conviction_score is not None:
+        if not 0 <= min_conviction_score <= 100:
+            raise ValueError("min_conviction_score must be 0..100")
+        current["min_conviction_score"] = float(min_conviction_score)
+    data = _read_settings_yaml()
+    data["autopilot"] = current
+    path = _settings_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+    return current
+
+
 # Notification preferences (OS alerts raised by the desktop shell).
 VALID_ALERT_SEVERITIES: tuple[str, ...] = ("info", "warning", "critical")
 DEFAULT_MIN_SEVERITY = "warning"

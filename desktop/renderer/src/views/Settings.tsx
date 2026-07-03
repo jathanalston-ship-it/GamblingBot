@@ -228,6 +228,168 @@ function DataModePanel() {
   );
 }
 
+interface AutopilotSettings {
+  enabled: boolean;
+  starting_balance: number;
+  max_open_positions: number;
+  max_entries_per_cycle: number;
+  min_conviction_score: number;
+  include_premarket: boolean;
+}
+
+function AutopilotPanel() {
+  const { data, error, loading, reload } = useApi<AutopilotSettings>("/settings/autopilot");
+  const [balance, setBalance] = useState<string>("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  if (loading) return <Loading />;
+  if (error) return <ErrorBox message={error} />;
+  if (!data) return null;
+
+  const save = async (patch: Record<string, unknown>, ok: string) => {
+    setBusy(true);
+    setErr(null);
+    setMsg(null);
+    try {
+      await apiPut("/settings/autopilot", patch);
+      setMsg(ok);
+      reload();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggle = async () => {
+    if (
+      !data.enabled &&
+      !window.confirm(
+        "Turn Autopilot ON? While the app is open and the market is in session, the " +
+          "daemon will automatically open paper positions in the cycle's strongest " +
+          "committee-approved candidates (respecting your caps), and manage them to " +
+          "their stops and targets. Paper money only — no live brokerage is ever touched.",
+      )
+    )
+      return;
+    await save({ enabled: !data.enabled }, data.enabled ? "Autopilot off." : "Autopilot ON.");
+  };
+
+  const numField = (
+    key: "max_open_positions" | "max_entries_per_cycle" | "min_conviction_score",
+    label: string,
+    hint: string,
+  ) => (
+    <div>
+      <label className="mb-1 block text-xs uppercase tracking-wide text-slate-400">{label}</label>
+      <input
+        type="number"
+        defaultValue={data[key]}
+        disabled={busy}
+        onBlur={(e) => {
+          const v = Number(e.target.value);
+          if (Number.isFinite(v) && v !== data[key]) void save({ [key]: v }, "Saved.");
+        }}
+        className={`${inputClass} w-28`}
+      />
+      <div className="mt-1 text-[11px] text-slate-500">{hint}</div>
+    </div>
+  );
+
+  return (
+    <Card title="Account & Autopilot">
+      <div className="space-y-5">
+        <div className="max-w-sm">
+          <label className="mb-1 block text-xs uppercase tracking-wide text-slate-400">
+            Account starting balance
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              value={balance}
+              onChange={(e) => setBalance(e.target.value)}
+              placeholder={String(data.starting_balance)}
+              className={inputClass}
+            />
+            <button
+              disabled={busy || !Number(balance)}
+              onClick={() =>
+                void save(
+                  { starting_balance: Number(balance) },
+                  "Balance saved — used by paper sessions and new brokerage accounts.",
+                ).then(() => setBalance(""))
+              }
+              className="whitespace-nowrap rounded bg-accent px-3 py-2 text-sm text-white disabled:opacity-50"
+            >
+              Set balance
+            </button>
+          </div>
+          <div className="mt-1 text-[11px] text-slate-500">
+            Paper sessions and a fresh brokerage account start from this equity. An account that
+            has already traded keeps its history.
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            disabled={busy}
+            onClick={() => void toggle()}
+            className={`rounded px-4 py-2 text-sm font-medium disabled:opacity-50 ${
+              data.enabled
+                ? "bg-bull/20 text-bull border border-bull/40"
+                : "border border-surface-border text-slate-300 hover:bg-surface/60"
+            }`}
+          >
+            {data.enabled ? "Autopilot: ON" : "Autopilot: OFF"}
+          </button>
+          <span className="text-xs text-slate-500">
+            {data.enabled
+              ? "While the app is open, each market-hours scan takes the strongest committee-approved entries automatically and manages them to their stops and targets."
+              : "Entries stay manual (the Take button). Scanning and management of positions you take run automatically either way."}
+          </span>
+        </div>
+
+        {data.enabled ? (
+          <div className="grid gap-4 md:grid-cols-3">
+            {numField(
+              "max_open_positions",
+              "Max open positions",
+              "hard cap across the whole book",
+            )}
+            {numField(
+              "max_entries_per_cycle",
+              "Max entries per scan",
+              "restraint per 60-second cycle",
+            )}
+            {numField(
+              "min_conviction_score",
+              "Min conviction",
+              "0–100; 70 ≈ the HIGH band",
+            )}
+          </div>
+        ) : null}
+
+        {data.enabled ? (
+          <label className="flex items-center gap-2 text-sm text-slate-300">
+            <input
+              type="checkbox"
+              checked={data.include_premarket}
+              disabled={busy}
+              onChange={(e) => void save({ include_premarket: e.target.checked }, "Saved.")}
+            />
+            Allow premarket entries (default: premarket cycles scan &amp; manage, entries wait for
+            the 9:30 open)
+          </label>
+        ) : null}
+
+        {msg ? <div className="text-sm text-bull">{msg}</div> : null}
+        {err ? <div className="text-sm text-bear">{err}</div> : null}
+      </div>
+    </Card>
+  );
+}
+
 interface ExecutionModeSettings {
   mode: string;
   valid_modes: string[];
@@ -315,7 +477,13 @@ const SEVERITY_LABEL: Record<string, string> = {
 };
 
 // The alert kinds the daemon emits today (free-typed kinds still work via the API).
-const KNOWN_ALERT_KINDS = ["trade_managed", "conviction_change", "regime_change", "concentration"];
+const KNOWN_ALERT_KINDS = [
+  "trade_managed",
+  "autopilot_entry",
+  "conviction_change",
+  "regime_change",
+  "concentration",
+];
 
 function NotificationsPanel() {
   const { data, error, loading, reload } = useApi<NotificationPrefs>("/settings/notifications");
@@ -849,6 +1017,7 @@ export default function Settings() {
     <div className="space-y-5 p-5">
       <PageTitle title="Settings" subtitle="Data provider, API keys, maintenance and configuration" />
       <DataProviderPanel />
+      <AutopilotPanel />
       <DataModePanel />
       <ExecutionModePanel />
       <NotificationsPanel />
