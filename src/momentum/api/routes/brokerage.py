@@ -221,6 +221,108 @@ def get_fills(
     ]
 
 
+@router.get("/replay/timestamps")
+def replay_timestamps(request: Request, account_id: str = DEFAULT_ACCOUNT) -> list[dict[str, Any]]:
+    """Every replayable instant (account-history rows), oldest first."""
+    from momentum.api import brokerage_replay_service
+
+    return brokerage_replay_service.timestamps(_session_factory(request), account_id=account_id)
+
+
+@router.get("/replay/state")
+def replay_state(ts: str, request: Request, account_id: str = DEFAULT_ACCOUNT) -> dict[str, Any]:
+    """The venue's full state at ``ts`` (ISO), replayed from the immutable trail."""
+    import datetime as dt
+
+    from momentum.api import brokerage_replay_service
+
+    try:
+        when = dt.datetime.fromisoformat(ts)
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=dt.UTC)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"invalid timestamp: {ts}") from exc
+    return brokerage_replay_service.state_at(_session_factory(request), when, account_id=account_id)
+
+
+@router.get("/timeline")
+def timeline(
+    request: Request, account_id: str = DEFAULT_ACCOUNT, limit: int = 200
+) -> list[dict[str, Any]]:
+    """The venue's chronological story: account events + order transitions +
+    fills merged newest-first (the auto-management timeline)."""
+    capped = max(1, min(limit, 1000))
+    factory = _session_factory(request)
+    from sqlalchemy import select
+
+    from momentum.persistence.models.broker import (
+        BrokerAccountHistory,
+        BrokerFill,
+        BrokerOrderEvent,
+    )
+
+    entries: list[dict[str, Any]] = []
+    with factory() as session:
+        for row in session.scalars(
+            select(BrokerAccountHistory)
+            .where(BrokerAccountHistory.account_id == account_id)
+            .order_by(BrokerAccountHistory.ts.desc(), BrokerAccountHistory.id.desc())
+            .limit(capped)
+        ).all():
+            entries.append(
+                {
+                    "ts": row.ts.isoformat() if row.ts else None,
+                    "kind": "account",
+                    "title": row.event,
+                    "detail": row.detail,
+                    "equity": round(row.equity, 2),
+                }
+            )
+        for fill in session.scalars(
+            select(BrokerFill)
+            .where(BrokerFill.account_id == account_id)
+            .order_by(BrokerFill.ts.desc(), BrokerFill.id.desc())
+            .limit(capped)
+        ).all():
+            entries.append(
+                {
+                    "ts": fill.ts.isoformat() if fill.ts else None,
+                    "kind": "fill",
+                    "title": f"{fill.side} {fill.quantity} {fill.symbol} @ {fill.price:.2f}",
+                    "detail": {"order_id": fill.order_id, "reason": fill.reason},
+                    "equity": None,
+                }
+            )
+        from momentum.persistence.models.broker import BrokerOrderRow
+
+        order_ids = list(
+            session.scalars(
+                select(BrokerOrderRow.order_id)
+                .where(BrokerOrderRow.account_id == account_id)
+                .order_by(BrokerOrderRow.id.desc())
+                .limit(200)
+            ).all()
+        )
+        if order_ids:
+            for event in session.scalars(
+                select(BrokerOrderEvent)
+                .where(BrokerOrderEvent.order_id.in_(order_ids))
+                .order_by(BrokerOrderEvent.ts.desc(), BrokerOrderEvent.id.desc())
+                .limit(capped)
+            ).all():
+                entries.append(
+                    {
+                        "ts": event.ts.isoformat() if event.ts else None,
+                        "kind": "order",
+                        "title": f"{event.order_id}: {event.from_status} → {event.to_status}",
+                        "detail": {"reason": event.reason, "payload": event.payload},
+                        "equity": None,
+                    }
+                )
+    entries.sort(key=lambda e: e["ts"] or "", reverse=True)
+    return entries[:capped]
+
+
 @router.get("/portfolio-analysis")
 def portfolio_analysis(request: Request, account_id: str = DEFAULT_ACCOUNT) -> dict[str, Any]:
     """The Portfolio Manager's whole-book read: exposure, concentration,

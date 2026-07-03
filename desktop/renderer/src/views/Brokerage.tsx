@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { apiDelete, apiPost } from "../api/client";
+import { apiDelete, apiGet, apiPost } from "../api/client";
 import { Card } from "../components/Card";
 import type { Column } from "../components/DataTable";
 import { DataTable } from "../components/DataTable";
@@ -426,6 +426,138 @@ function AnalysisPanel({ analysis }: { analysis: Analysis }) {
   );
 }
 
+interface ReplayStamp {
+  ts: string;
+  event: string;
+  equity: number;
+}
+
+interface ReplayState {
+  ts: string;
+  account: { equity: number; cash: number; buying_power: number; daily_pnl: number } | null;
+  positions: { symbol: string; quantity: number; avg_cost: number; realized_pnl: number }[];
+  orders: { order_id: string; symbol: string; status: string }[];
+  fills: unknown[];
+}
+
+/** Portfolio time machine: play / pause / step / jump through every recorded
+ *  venue state — reconstructed from the immutable history, never recomputed. */
+function ReplayPanel() {
+  const { data: stamps } = useApi<ReplayStamp[]>("/brokerage/replay/timestamps");
+  const [index, setIndex] = useState<number | null>(null);
+  const [state, setState] = useState<ReplayState | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const timer = useRef<number | null>(null);
+
+  const count = stamps?.length ?? 0;
+  const current = index ?? (count > 0 ? count - 1 : 0);
+
+  useEffect(() => {
+    if (!stamps || count === 0) return;
+    const stamp = stamps[Math.min(current, count - 1)];
+    let cancelled = false;
+    apiGet<ReplayState>(`/brokerage/replay/state?ts=${encodeURIComponent(stamp.ts)}`)
+      .then((s) => {
+        if (!cancelled) setState(s);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [stamps, current, count]);
+
+  useEffect(() => {
+    if (!playing) {
+      if (timer.current !== null) window.clearInterval(timer.current);
+      return;
+    }
+    timer.current = window.setInterval(() => {
+      setIndex((i) => {
+        const next = (i ?? 0) + 1;
+        if (next >= count) {
+          setPlaying(false);
+          return count - 1;
+        }
+        return next;
+      });
+    }, 800);
+    return () => {
+      if (timer.current !== null) window.clearInterval(timer.current);
+    };
+  }, [playing, count]);
+
+  if (!stamps || count === 0) {
+    return <div className="text-xs text-slate-500">No history yet — trade something first.</div>;
+  }
+
+  const stamp = stamps[Math.min(current, count - 1)];
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => setPlaying((p) => !p)}
+          className="btn-ghost px-2.5 py-1 text-xs"
+          title={playing ? "Pause" : "Play"}
+        >
+          {playing ? "⏸ Pause" : "▶ Play"}
+        </button>
+        <button
+          onClick={() => setIndex(Math.max(current - 1, 0))}
+          className="btn-quiet px-2 py-1 text-xs"
+        >
+          ◀ Step
+        </button>
+        <button
+          onClick={() => setIndex(Math.min(current + 1, count - 1))}
+          className="btn-quiet px-2 py-1 text-xs"
+        >
+          Step ▶
+        </button>
+        <button onClick={() => setIndex(0)} className="btn-quiet px-2 py-1 text-xs">
+          ⇤ Start
+        </button>
+        <button onClick={() => setIndex(count - 1)} className="btn-quiet px-2 py-1 text-xs">
+          Now ⇥
+        </button>
+        <span className="text-xs text-slate-500">
+          {new Date(stamp.ts).toLocaleString()} · {stamp.event} · {current + 1}/{count}
+        </span>
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={count - 1}
+        value={current}
+        onChange={(e) => {
+          setPlaying(false);
+          setIndex(Number(e.target.value));
+        }}
+        className="w-full accent-[#4f8ef7]"
+      />
+      {state?.account ? (
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <Stat label="Equity (then)" value={money(state.account.equity)} />
+          <Stat label="Cash (then)" value={money(state.account.cash)} />
+          <Stat label="Buying Power (then)" value={money(state.account.buying_power)} />
+          <Stat
+            label="Open / Orders"
+            value={`${state.positions.length} / ${state.orders.filter((o) => ["working", "partially_filled", "accepted", "submitted"].includes(o.status)).length}`}
+            hint={`${state.fills.length} fills to date`}
+          />
+        </div>
+      ) : null}
+      {state && state.positions.length > 0 ? (
+        <div className="text-xs text-slate-400">
+          Held then:{" "}
+          {state.positions
+            .map((p) => `${p.symbol} ×${p.quantity} @ ${num(p.avg_cost, 2)}`)
+            .join(" · ")}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function Brokerage() {
   const account = useApi<Account>("/brokerage/account");
   const positions = useApi<Position[]>("/brokerage/positions");
@@ -570,6 +702,10 @@ export default function Brokerage() {
         ) : analysis.data ? (
           <AnalysisPanel analysis={analysis.data} />
         ) : null}
+      </Card>
+
+      <Card title="Portfolio Replay">
+        <ReplayPanel />
       </Card>
     </div>
   );

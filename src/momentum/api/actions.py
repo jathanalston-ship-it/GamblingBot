@@ -619,6 +619,7 @@ def run_scan(
     trades_linked = 0
     trades_realized = 0
     trades_scaled_out = 0
+    brokerage_tick: dict[str, Any] = {"filled": 0, "expired": 0, "quotes": 0}
     if not stale and conviction_rows:
         from momentum.api import scan_artifacts, watchlist_service
 
@@ -658,6 +659,20 @@ def run_scan(
             trades_scaled_out = lc["scaled_out"]
             trades_linked = lc["linked"]
             trades_realized = lc["realized"]
+
+        # 11a-2. Advance the brokerage venue on the same data: resting orders
+        #        (stops / limits / trailing stops / brackets) trigger and fill
+        #        against this scan's freshest prices — the venue is managed on
+        #        every completed scan, exactly like the tracked trades.
+        try:
+            from momentum.api import brokerage_service
+
+            brokerage_tick = brokerage_service.tick(
+                session_factory, provider=provider, extra_prices=intraday_prices, ts=ts
+            )
+        except Exception:  # noqa: BLE001 — the venue must never fail a scan
+            _log.warning("brokerage tick failed for %s", run_id, exc_info=True)
+            brokerage_tick = {"filled": 0, "expired": 0, "quotes": 0}
 
     if not stale and conviction_rows:
         # 11b. Setup lifecycles: derive each candidate's Building→…→Completed
@@ -754,6 +769,8 @@ def run_scan(
         "trades_scaled_out": trades_scaled_out,
         "trades_linked": trades_linked,
         "trades_realized": trades_realized,
+        "brokerage_orders_filled": brokerage_tick.get("filled", 0),
+        "brokerage_orders_expired": brokerage_tick.get("expired", 0),
         "lifecycles_refreshed": lifecycles_refreshed,
         "snapshot_persisted": pulse_counts["snapshot"],
         "deltas_generated": pulse_counts["deltas"],

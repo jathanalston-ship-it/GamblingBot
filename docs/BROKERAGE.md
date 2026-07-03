@@ -130,3 +130,29 @@ table (value, unrealized, today, R, stop, close button), the order blotter
 (status chips, fills, cancel, and the **full persisted lifecycle** expandable
 per order) and the Portfolio Manager panel (measurements + suggestions).
 "Process market tick" advances the venue from the freshest cached bars.
+
+## Automatic management on every scan (Prompt 7)
+
+`run_scan` advances the venue right after the tracked-trade reevaluation
+step: `brokerage_service.tick` builds quotes for every symbol with an open
+order or position (freshest cached bars, overridden by the scan's intraday
+prices) and lets resting orders — brackets, stops, trailing stops — expire,
+trigger and fill. The scan summary reports `brokerage_orders_filled` /
+`brokerage_orders_expired`. Everything the venue does is journaled
+append-only; `GET /brokerage/timeline` merges account events, order
+transitions and fills into one chronological story, and historical decisions
+are never modified (the events tables refuse deletes).
+
+## Portfolio Replay (Prompt 8)
+
+`GET /brokerage/replay/timestamps` lists every replayable instant (each
+account-history row, downsampled ≤ 1000); `GET /brokerage/replay/state?ts=…`
+reconstructs the venue at that instant **from the immutable trail**: the
+newest account snapshot at-or-before `ts`, each order's status *at that
+moment* (its event trail replayed up to `ts`), the positions open then, and
+the fills to date. Nothing is recomputed, so the replay can never disagree
+with what happened. The Brokerage view's **Portfolio Replay** card drives it:
+play / pause / step / jump via a slider over the timeline
+(`api/brokerage_replay_service.py`; `tests/unit/brokerage/test_replay.py`
+proves flat-before-entry, working-children-mid-session, OCO-cancel-at-end
+and read-only replay).
