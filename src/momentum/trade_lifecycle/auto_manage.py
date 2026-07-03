@@ -22,6 +22,8 @@ the linked paper trade and persists the report, alert and audit trail.
 
 from __future__ import annotations
 
+from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -299,3 +301,26 @@ def _context(evaluation: ThesisEvaluation | None, days_held: float) -> str:
         bits.append(f"conviction {evaluation.current_conviction:.0f}{delta}")
     bits.append(f"held {days_held:.0f}d")
     return f" At the decision the thesis read: {', '.join(bits)}."
+
+
+def sector_concentration(
+    sectors: Sequence[str | None],
+    *,
+    warn_share: float,
+    min_positions: int,
+) -> tuple[str, float, int] | None:
+    """Detect a crowded book: one sector holding >= ``warn_share`` of the open
+    positions (only meaningful from ``min_positions`` trades). Returns
+    ``(sector, share, count)`` or ``None`` when the book is diversified.
+
+    Correlation is guarded at ENTRY by the risk engine; this watches the book
+    as it evolves — winners in one theme can concentrate a once-diverse book.
+    """
+    named = [s for s in sectors if s]
+    if len(named) < min_positions:
+        return None
+    sector, count = Counter(named).most_common(1)[0]
+    share = count / len(named)
+    if share >= warn_share:
+        return sector, share, count
+    return None

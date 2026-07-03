@@ -11,6 +11,7 @@ from momentum.trade_lifecycle.auto_manage import (
     ManagementDecision,
     TargetState,
     decide_management,
+    sector_concentration,
     targets_from_records,
 )
 from momentum.trade_lifecycle.config import (
@@ -76,5 +77,6 @@ __all__ = [
     "features_from_bars",
     "grade_advice",
     "overall_accuracy",
+    "sector_concentration",
     "targets_from_records",
 ]

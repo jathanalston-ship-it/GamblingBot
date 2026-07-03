@@ -51,8 +51,26 @@ class PricedProvider:
 
     def __init__(self) -> None:
         self.last: dict[str, float] = {}
+        self.intraday: dict[str, float] = {}  # 1-minute last print, when set
 
     def get_bars(self, symbol: str, *a: object, **k: object) -> pd.DataFrame:
+        from momentum.data.schema import Timeframe
+
+        if Timeframe.MINUTE in a:
+            pinned = self.intraday.get(symbol)
+            if pinned is None:
+                return pd.DataFrame()
+            idx = pd.date_range(end=pd.Timestamp.now(tz="UTC"), periods=3, freq="min")
+            return pd.DataFrame(
+                {
+                    "open": [pinned] * 3,
+                    "high": [pinned] * 3,
+                    "low": [pinned] * 3,
+                    "close": [pinned] * 3,
+                    "volume": [10_000.0] * 3,
+                },
+                index=idx,
+            )
         rng = np.random.default_rng(zlib.crc32(symbol.encode()) % 9999)
         close = 50.0 * np.cumprod(1 + rng.normal(0.004, 0.02, 300))
         pinned = self.last.get(symbol)
@@ -245,3 +263,29 @@ def test_held_symbol_outside_universe_is_still_managed(
     with factory() as s:
         trade = TrackedTradeRepository(s).get_by_uid(uid)
         assert trade is not None and trade.status == "closed"
+
+
+def test_intraday_price_manages_before_the_daily_bar_shows_it(
+    factory: sessionmaker[Session], monkeypatch: Any
+) -> None:
+    """Market open: a stop breached intraday closes NOW, not at the daily print."""
+    from momentum.daemon import market_state as ms
+
+    provider = PricedProvider()
+    _scan(factory, provider)
+    symbol, uid, _targets, stop = _take_one(factory)
+
+    # Daily bar still ABOVE the stop; the 1-minute feed has already breached it.
+    monkeypatch.setattr(
+        "momentum.api.actions._intraday_last_prices",
+        lambda *_a, **_k: {symbol: stop * 0.99},
+    )
+    result = _scan(factory, provider)
+    assert result["trades_auto_closed"] >= 1
+    with factory() as s:
+        trade = TrackedTradeRepository(s).get_by_uid(uid)
+        assert trade is not None and trade.status == "closed"
+        journal = s.get(Trade, trade.journal_trade_id)
+        assert journal is not None and journal.status == "closed"
+        assert journal.exit_price == pytest.approx(stop * 0.99, rel=1e-4)
+    assert ms  # imported to prove the module is available for state resolution

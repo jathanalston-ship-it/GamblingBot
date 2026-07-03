@@ -181,6 +181,25 @@ def start_backtest(request: Request, params: ActionParams | None = None) -> JobO
     return JobOut(**_jobs(request).submit("backtest", fn).to_dict())
 
 
+@router.post("/walk-forward", response_model=JobOut, status_code=202)
+def start_walk_forward(request: Request, params: ActionParams | None = None) -> JobOut:
+    p = params or ActionParams()
+    sf = _session_factory(request)
+    provider = _provider(request)
+    symbols = _symbols(p)
+
+    def fn(progress: Progress) -> dict[str, object]:
+        return actions.walk_forward_backtest(
+            provider=provider,
+            symbols=symbols,
+            lookback_days=max(p.lookback_days, 500),  # folds need deeper history
+            progress=progress,
+            session_factory=sf,
+        )
+
+    return JobOut(**_jobs(request).submit("walk-forward", fn).to_dict())
+
+
 @router.post("/seed-demo", response_model=JobOut, status_code=202)
 def start_seed_demo(request: Request) -> JobOut:
     sf = _session_factory(request)

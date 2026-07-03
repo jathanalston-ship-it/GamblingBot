@@ -10,6 +10,7 @@ import type {
 import { ActionButton } from "../components/ActionButton";
 import { Card } from "../components/Card";
 import { DiagnosticsPanel } from "../components/DiagnosticsPanel";
+import { TOUR_EVENT } from "../components/OnboardingTour";
 import { ErrorBox, Loading, PageTitle } from "../components/Page";
 import { ResetPanel } from "../components/ResetPanel";
 import { useApi } from "../hooks/useApi";
@@ -221,6 +222,188 @@ function DataModePanel() {
           demo rows in database: <span className="tabular-nums text-slate-300">{data.demo_rows}</span>
         </div>
         {msg ? <div className="text-sm text-bull">{msg}</div> : null}
+        {err ? <div className="text-sm text-bear">{err}</div> : null}
+      </div>
+    </Card>
+  );
+}
+
+interface ExecutionModeSettings {
+  mode: string;
+  valid_modes: string[];
+  alpaca_keys_present: boolean;
+}
+
+const EXECUTION_LABEL: Record<string, string> = {
+  internal: "Internal simulator (offline, deterministic)",
+  alpaca_paper: "Alpaca paper trading (real quotes & fills)",
+};
+
+function ExecutionModePanel() {
+  const { data, error, loading, reload } = useApi<ExecutionModeSettings>(
+    "/settings/execution-mode",
+  );
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  if (loading) return <Loading />;
+  if (error) return <ErrorBox message={error} />;
+  if (!data) return null;
+
+  const setMode = async (mode: string) => {
+    if (mode === data.mode) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await apiPut("/settings/execution-mode", { mode });
+      reload();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card title="Paper Execution Venue">
+      <div className="space-y-4">
+        <p className="text-sm text-slate-400">
+          Which venue fills paper orders. The internal simulator works offline with deterministic
+          slippage; Alpaca paper trading uses their live paper API (real market fills, still not
+          real money — this app never touches a live brokerage account). Alpaca requires the same
+          API keys as the Alpaca data provider.
+        </p>
+        <div className="flex flex-wrap gap-3">
+          {data.valid_modes.map((m) => (
+            <button
+              key={m}
+              disabled={busy}
+              onClick={() => setMode(m)}
+              className={`rounded px-4 py-2 text-sm disabled:opacity-50 ${
+                data.mode === m
+                  ? "bg-accent text-white"
+                  : "border border-surface-border text-slate-300 hover:bg-surface/60"
+              }`}
+            >
+              {EXECUTION_LABEL[m] ?? m}
+            </button>
+          ))}
+        </div>
+        {data.mode === "alpaca_paper" && !data.alpaca_keys_present ? (
+          <div className="text-sm text-amber-400">
+            Alpaca API keys are not set — sessions will fall back to the internal simulator until
+            keys are saved under Data Provider above.
+          </div>
+        ) : null}
+        {err ? <div className="text-sm text-bear">{err}</div> : null}
+      </div>
+    </Card>
+  );
+}
+
+interface NotificationPrefs {
+  enabled: boolean;
+  min_severity: string;
+  muted_kinds: string[];
+  valid_severities: string[];
+}
+
+const SEVERITY_LABEL: Record<string, string> = {
+  info: "Everything (info and up)",
+  warning: "Important (warning and up)",
+  critical: "Critical only",
+};
+
+// The alert kinds the daemon emits today (free-typed kinds still work via the API).
+const KNOWN_ALERT_KINDS = ["trade_managed", "conviction_change", "regime_change", "concentration"];
+
+function NotificationsPanel() {
+  const { data, error, loading, reload } = useApi<NotificationPrefs>("/settings/notifications");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  if (loading) return <Loading />;
+  if (error) return <ErrorBox message={error} />;
+  if (!data) return null;
+
+  const save = async (patch: Partial<NotificationPrefs>) => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await apiPut("/settings/notifications", patch);
+      reload();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const muted = new Set(data.muted_kinds);
+  const toggleKind = (kind: string) => {
+    const next = new Set(muted);
+    if (next.has(kind)) next.delete(kind);
+    else next.add(kind);
+    void save({ muted_kinds: [...next] });
+  };
+
+  return (
+    <Card title="Notifications">
+      <div className="space-y-4">
+        <p className="text-sm text-slate-400">
+          Desktop notifications for market alerts — automatic trade management (stop-loss /
+          take-profit), conviction upgrades and downgrades, regime changes and sector concentration
+          warnings.
+        </p>
+        <label className="flex items-center gap-2 text-sm text-slate-200">
+          <input
+            type="checkbox"
+            checked={data.enabled}
+            disabled={busy}
+            onChange={(e) => void save({ enabled: e.target.checked })}
+          />
+          Show OS notifications
+        </label>
+        <div className="max-w-sm">
+          <label className="mb-1 block text-xs uppercase tracking-wide text-slate-400">
+            Notify me about
+          </label>
+          <select
+            value={data.min_severity}
+            disabled={busy || !data.enabled}
+            onChange={(e) => void save({ min_severity: e.target.value })}
+            className={inputClass}
+          >
+            {data.valid_severities.map((s) => (
+              <option key={s} value={s}>
+                {SEVERITY_LABEL[s] ?? s}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <div className="mb-1 text-xs uppercase tracking-wide text-slate-400">Muted alert types</div>
+          <div className="flex flex-wrap gap-2">
+            {KNOWN_ALERT_KINDS.map((kind) => {
+              const isMuted = muted.has(kind);
+              return (
+                <button
+                  key={kind}
+                  disabled={busy || !data.enabled}
+                  onClick={() => toggleKind(kind)}
+                  title={isMuted ? "Muted — click to unmute" : "Active — click to mute"}
+                  className={`rounded px-2.5 py-1 text-xs disabled:opacity-50 ${
+                    isMuted
+                      ? "border border-surface-border text-slate-500 line-through"
+                      : "border border-accent/40 bg-accent/10 text-slate-200"
+                  }`}
+                >
+                  {kind.replace(/_/g, " ")}
+                </button>
+              );
+            })}
+          </div>
+        </div>
         {err ? <div className="text-sm text-bear">{err}</div> : null}
       </div>
     </Card>
@@ -454,6 +637,95 @@ function UniversePanel() {
   );
 }
 
+function ProfilesPanel() {
+  const bridge = window.mrp?.profiles;
+  const [state, setState] = useState<{ active: string; profiles: string[] } | null>(null);
+  const [newName, setNewName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!bridge) return;
+    bridge
+      .get()
+      .then(setState)
+      .catch(() => setState(null));
+  }, [bridge]);
+
+  // Profiles are a desktop-shell feature (separate data dirs) — hidden on plain web.
+  if (!bridge || !state) return null;
+
+  const activate = async (name: string) => {
+    if (name === state.active) return;
+    if (
+      !window.confirm(
+        `Switch to profile "${name}"? The app restarts with that profile's own database, ` +
+          `settings and history. Nothing in the current profile is lost.`,
+      )
+    )
+      return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await bridge.switch(name);
+      if (!res.ok) {
+        setErr("invalid profile name");
+        return;
+      }
+      await window.mrp?.relaunch?.();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card title="Profiles">
+      <div className="space-y-4">
+        <p className="text-sm text-slate-400">
+          Profiles keep completely separate copies of the app's data — database, trades, settings
+          and API keys — under one install. Use them to run e.g. a “research” and a “live paper”
+          workflow side by side. Switching restarts the app.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {state.profiles.map((p) => (
+            <button
+              key={p}
+              disabled={busy}
+              onClick={() => void activate(p)}
+              className={`rounded px-3 py-1.5 text-sm capitalize disabled:opacity-50 ${
+                p === state.active
+                  ? "bg-accent text-white"
+                  : "border border-surface-border text-slate-300 hover:bg-surface/60"
+              }`}
+            >
+              {p}
+              {p === state.active ? " · active" : ""}
+            </button>
+          ))}
+        </div>
+        <div className="flex max-w-sm items-center gap-2">
+          <input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="New profile name…"
+            className={inputClass}
+          />
+          <button
+            disabled={busy || !newName.trim()}
+            onClick={() => void activate(newName)}
+            className="whitespace-nowrap rounded bg-accent px-3 py-2 text-sm text-white disabled:opacity-50"
+          >
+            Create &amp; switch
+          </button>
+        </div>
+        {err ? <div className="text-sm text-bear">{err}</div> : null}
+      </div>
+    </Card>
+  );
+}
+
 function flatten(obj: Record<string, unknown>, prefix = ""): [string, string][] {
   const out: [string, string][] = [];
   for (const [k, v] of Object.entries(obj)) {
@@ -557,6 +829,12 @@ function Maintenance() {
           onDone={() => window.location.reload()}
         />
         <ActionButton label="Refresh market data" path="/actions/refresh-data" variant="ghost" />
+        <button
+          onClick={() => window.dispatchEvent(new Event(TOUR_EVENT))}
+          className="rounded border border-surface-border px-3 py-1.5 text-sm text-slate-300 hover:bg-surface/60"
+        >
+          Show getting-started tour
+        </button>
         <span className="text-xs text-slate-500">
           Sample data populates every screen with a deterministic demo dataset (50 trades, signals,
           regimes, scans). Safe to run once.
@@ -572,6 +850,9 @@ export default function Settings() {
       <PageTitle title="Settings" subtitle="Data provider, API keys, maintenance and configuration" />
       <DataProviderPanel />
       <DataModePanel />
+      <ExecutionModePanel />
+      <NotificationsPanel />
+      <ProfilesPanel />
       <UniversePanel />
       <Maintenance />
       <DiagnosticsPanel />

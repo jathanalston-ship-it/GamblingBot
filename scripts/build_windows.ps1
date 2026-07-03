@@ -58,8 +58,9 @@ pyinstaller --noconfirm `
     --workpath desktop\build\.pyiwork `
     desktop\build\backend.spec
 
-if (-not (Test-Path desktop\build\backend\mrp-backend.exe)) {
-    throw "backend freeze failed: desktop\build\backend\mrp-backend.exe not found"
+# Onedir bundle: the launcher lives inside the mrp-backend\ directory.
+if (-not (Test-Path desktop\build\backend\mrp-backend\mrp-backend.exe)) {
+    throw "backend freeze failed: desktop\build\backend\mrp-backend\mrp-backend.exe not found"
 }
 deactivate
 

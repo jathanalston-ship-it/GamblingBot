@@ -74,6 +74,62 @@ def put_data_mode(body: DataModeIn, session: Session = Depends(get_session)) -> 
     return {**result, "demo_rows": data_mode.count_demo_rows(session)}
 
 
+@router.get("/execution-mode")
+def get_execution_mode() -> dict[str, Any]:
+    """Which venue fills paper orders (internal simulator vs Alpaca paper)."""
+    from momentum.api.user_settings import read_provider_settings
+
+    keys = read_provider_settings().keys_present
+    return {
+        "mode": user_settings.read_execution_mode(),
+        "valid_modes": list(user_settings.VALID_EXECUTION_MODES),
+        "alpaca_keys_present": bool(keys.get("alpaca_api_key") and keys.get("alpaca_api_secret")),
+    }
+
+
+class ExecutionModeIn(BaseModel):
+    mode: str
+
+
+@router.put("/execution-mode")
+def put_execution_mode(body: ExecutionModeIn) -> dict[str, Any]:
+    """Set the execution venue (persists to settings.yaml; used by the next session)."""
+    try:
+        mode = user_settings.write_execution_mode(body.mode)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"mode": mode, "valid_modes": list(user_settings.VALID_EXECUTION_MODES)}
+
+
+class NotificationPrefsIn(BaseModel):
+    enabled: bool | None = None
+    min_severity: str | None = None
+    muted_kinds: list[str] | None = None
+
+
+@router.get("/notifications")
+def get_notification_prefs() -> dict[str, Any]:
+    """OS-notification preferences (enabled, severity floor, muted alert kinds)."""
+    return {
+        **user_settings.read_notification_prefs(),
+        "valid_severities": list(user_settings.VALID_ALERT_SEVERITIES),
+    }
+
+
+@router.put("/notifications")
+def put_notification_prefs(body: NotificationPrefsIn) -> dict[str, Any]:
+    """Update notification preferences (partial; persists to settings.yaml)."""
+    try:
+        prefs = user_settings.write_notification_prefs(
+            enabled=body.enabled,
+            min_severity=body.min_severity,
+            muted_kinds=body.muted_kinds,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {**prefs, "valid_severities": list(user_settings.VALID_ALERT_SEVERITIES)}
+
+
 @router.put("/data-provider", response_model=DataProviderOut)
 def put_data_provider(body: DataProviderIn) -> DataProviderOut:
     """Set the provider and (optionally) its API-key secrets. Blank keys are kept."""

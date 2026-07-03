@@ -115,6 +115,15 @@ class TradeLifecycleConfig(BaseModel):
     # raise_stop_gain_r — the "Raise Stop" advice, executed (tightens only).
     auto_raise_stop_to_breakeven: bool = True
 
+    # Refuse to TAKE a trade when earnings are within this many days
+    # (0 = off; advisory data — an unknown earnings date never blocks).
+    block_take_days_before_earnings: int = Field(0, ge=0)
+
+    # Warn (deduped alert) when one sector holds this share of the open book
+    # (checked every scan, from min_positions open trades).
+    sector_concentration_warn_share: float = Field(0.5, gt=0, le=1)
+    sector_concentration_min_positions: int = Field(3, ge=2)
+
     # How many prior evaluations feed thesis stability.
     history_limit: int = Field(20, ge=2)
 

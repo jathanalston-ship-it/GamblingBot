@@ -1,4 +1,4 @@
-# PyInstaller spec — freeze the FastAPI backend into a standalone one-file binary.
+# PyInstaller spec — freeze the FastAPI backend into a standalone ONEDIR bundle.
 #
 # Paths below are anchored to the repository root via SPECPATH, so it can be
 # invoked from anywhere. The canonical invocation is from the repo root:
@@ -8,8 +8,12 @@
 #         --workpath desktop/build/.pyiwork \
 #         desktop/build/backend.spec
 #
-# Output: desktop/build/backend/mrp-backend(.exe) — the sidecar the Electron main
-# process spawns in a packaged build. No Python is required on the user's machine.
+# Output: desktop/build/backend/mrp-backend/ — a directory holding the launcher
+# (mrp-backend(.exe)) plus its _internal/ runtime. Electron ships the whole
+# directory as an extraResource and spawns the launcher; no Python is required
+# on the user's machine. Onedir (vs the previous onefile) starts noticeably
+# faster because nothing is unpacked to a temp dir on every launch, and it
+# avoids one-file's antivirus-triggering self-extraction behaviour.
 
 import os
 
@@ -60,21 +64,29 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
+    exclude_binaries=True,  # onedir: binaries/datas ship in the COLLECT dir below
     name="mrp-backend",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
     upx_exclude=[],
-    runtime_tmpdir=None,
     console=False,  # no console window flashes on a non-technical user's screen
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name="mrp-backend",
 )

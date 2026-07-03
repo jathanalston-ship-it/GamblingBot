@@ -21,13 +21,11 @@ remains below is blocked on external data/services or a platform decision.*
   contract-level options-qualification gate against real quotes (replace the
   approximate Brenner–Subrahmanyam pricing with chain mids/greeks). Same
   provider dependency as above.
-- **Earnings / ex-div event flags** on candidates — needs a corporate-actions
-  data source; $ADV and ATR columns are already live.
+- **Ex-div event flags** on candidates — needs a corporate-actions data
+  source. (Earnings dates are live via Yahoo calendarEvents; a dedicated feed
+  would improve coverage.)
 - **VIX in the context bar** — needs a volatility-index feed; breadth and
   realized vol (RV) are shown today.
-- **Backtest OOS split / vs-benchmark** — the per-run equity curve + trade list
-  are persisted and rendered; walk-forward OOS folds and a benchmark overlay
-  need a benchmark-series ingestion decision.
 
 ## Blocked on platform / decision
 
@@ -39,11 +37,6 @@ remains below is blocked on external data/services or a platform decision.*
   the research loop proves out. The `Broker` protocol + persisted orders/fills
   are the seam a live adapter plugs into. (The market daemon already provides
   the timed scan loop.)
-- **PyInstaller `onedir` build** — onefile spawns a bootloader child + extracts
-  to temp on every launch (slower first paint, AV locks, the double-process
-  that motivated `taskkill /T`). Switching to onedir needs iteration on a real
-  Windows machine; revisit `desktop/build/backend.spec` +
-  `electron-builder.yml` extraResources.
 
 ## Decided — keep as is (not planned)
 
@@ -56,31 +49,32 @@ remains below is blocked on external data/services or a platform decision.*
 
 ## Roadmap — top usability/functionality steps (2026-07 assessment)
 
-Ranked; each is independently shippable. 1–2 are the highest-leverage.
+*All ten roadmap items were built in the 2026-07 execution pass:* intraday
+prices for trade management during regular hours (`actions._intraday_last_prices`),
+the Alpaca **paper** broker adapter (`execution/alpaca_broker.py` + Settings →
+Paper Execution Venue), the first-run onboarding tour (`OnboardingTour.tsx`),
+the take-size confirm dialog (shares + live risk $ in `TradeActions`),
+walk-forward backtesting with IS/OOS folds + degradation
+(`backtest/walk_forward.py`, `POST /actions/walk-forward`) and the SPY
+buy-and-hold benchmark overlay on the equity curve, earnings awareness
+(`GET /earnings/{symbol}`, chip on Trade Plan, optional take-block via
+`block_take_days_before_earnings`), the sector-concentration guard
+(`sector_concentration` + deduped `concentration` alerts), notification
+preferences (Settings → Notifications; severity floor + per-kind mutes,
+honored by `useAlertNotifications`), multi-profile support (isolated data
+roots via `profiles/<name>`, Settings → Profiles, relaunch to switch) and the
+PyInstaller **onedir** backend build (faster cold start; dual-layout exe
+resolution in `main.ts`).
 
-1. **Intraday bars for management** — manage stops/targets on 5–15m bars during
-   market hours instead of the daily bar's last print (needs an intraday
-   provider call; the daemon cadence already supports it).
-2. **Broker paper-API integration (Alpaca paper)** — replace the internal
-   simulator with real paper fills/quotes; the `Broker` protocol + orders/fills
-   tables are the seam.
-3. **Onboarding + first-run tour** — guided "pick provider → pick universe →
-   run first scan → take first trade" flow for non-technical users.
-4. **Position-size override at take time** — Take dialog with shares/risk
-   editing (today it takes the plan's suggested size or a URL param).
-5. **Walk-forward backtesting + benchmark overlay** — OOS folds
-   (`backtest/walk_forward.py` stub) and SPY-indexed equity comparison.
-6. **Earnings/ex-div awareness** — corporate-actions feed; flag "earnings in
-   N days" on plans and optionally block entries just before reports.
-7. **Portfolio-level correlation guard in management** — the risk engine
-   checks correlation at entry; management could also warn when open trades
-   crowd one sector/theme.
-8. **Alert center + notification preferences** — mute rules, severity
-   thresholds, per-kind toggles; today notifications are all-or-nothing.
-9. **Multi-account/profile support** — separate paper books (e.g. aggressive
-   vs conservative configs) with per-book analytics.
-10. **PyInstaller onedir build** — faster cold start + fewer AV issues on
-    Windows (already backlogged; needs a Windows iteration).
+Remaining refinements (not blockers):
+
+- **Intraday granularity** — management uses 1-minute last prices when the
+  provider supports them; a configurable 5/15m aggregation could reduce calls.
+- **Earnings source** — the earnings date comes from Yahoo's calendarEvents
+  (best-effort); a dedicated corporate-actions feed would add ex-div dates.
+- **Onedir on real Windows** — validated by the release pipeline's packaged
+  launch gate; first Windows release after this change should watch the
+  release-validation report.
 
 ## Conventions for this file
 

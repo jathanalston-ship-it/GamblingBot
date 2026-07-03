@@ -1279,6 +1279,15 @@ class BacktestDetailOut(BaseModel):
     run_id: str
     equity_curve: list[EquityPointOut]
     trades: list[BacktestTradeOut]
+    benchmark_curve: list[EquityPointOut] = []  # SPY buy-and-hold overlay (same start equity)
+
+
+class EarningsOut(BaseModel):
+    """A symbol's next scheduled earnings (advisory; nulls when unknown)."""
+
+    symbol: str
+    earnings_date: str | None  # calendar date (YYYY-MM-DD)
+    days_until: int | None
 
 
 class OrderFillOut(BaseModel):

@@ -261,6 +261,29 @@ Scan results (`run_scan`) now report `tracked_trades_created`,
 `trades_reevaluated`, `trades_auto_closed`, `trades_linked` and
 `trades_realized`.
 
+## Intraday prices, earnings gate, concentration guard
+
+- **Intraday management prices** — during the regular session, `run_scan`
+  fetches a best-effort 1-minute last price per **held** symbol
+  (`actions._intraday_last_prices`) and passes it into
+  `run_for_scan(..., intraday_prices=...)`, so stop-breach checks and
+  management decisions act on the freshest print instead of yesterday's daily
+  close. Outside regular hours (or on any provider failure) it degrades
+  silently to the daily bar — management is never blocked by a flaky minute
+  feed.
+- **Earnings gate** — `take_trade` refuses to open a new paper trade when the
+  symbol reports earnings within `block_take_days_before_earnings` days
+  (default 0 = off). Dates come from the provider's best-effort
+  `next_earnings` (Yahoo calendarEvents), cached 6 h in
+  `api/earnings_service.py`; `GET /earnings/{symbol}` + an amber chip on the
+  Trade Plan view surface "earnings in N days".
+- **Sector-concentration guard** — after every reevaluation pass,
+  `sector_concentration` (pure, `trade_lifecycle/auto_manage.py`) checks the
+  open book; when one sector holds ≥ `sector_concentration_warn_share` of ≥
+  `sector_concentration_min_positions` positions, a deduped
+  `concentration` **alert** (warning) + activity explain that the book's real
+  risk is higher than per-trade stops suggest.
+
 ## Configuration
 
 `config/trade_lifecycle.example.yaml` (user override:

@@ -12,6 +12,8 @@ lows stay internally consistent with the adjusted close.
 
 from __future__ import annotations
 
+import datetime as dt
+
 from typing import Any, ClassVar
 
 import httpx
@@ -98,6 +100,32 @@ class YahooProvider(RestProvider):
 
         frame = frame.dropna(how="all", subset=["open", "high", "low", "close"])
         return normalize_bars(frame, keep_optional=False)
+
+    def next_earnings(self, symbol: str) -> dt.date | None:
+        """The symbol's next scheduled earnings date, or ``None`` when unknown.
+
+        Best-effort: Yahoo's calendar endpoint is flaky/auth-gated at times —
+        any failure means "unknown", never an exception (earnings awareness is
+        advisory, not a data dependency).
+        """
+        try:
+            payload = self._get_json(
+                f"/v10/finance/quoteSummary/{symbol.upper()}",
+                params={"modules": "calendarEvents"},
+            )
+            results = (payload.get("quoteSummary") or {}).get("result") or []
+            earnings = ((results[0] or {}).get("calendarEvents") or {}).get("earnings") or {}
+            stamps = earnings.get("earningsDate") or []
+            today = dt.date.today()
+            dates = []
+            for stamp in stamps:
+                raw = stamp.get("raw") if isinstance(stamp, dict) else stamp
+                if isinstance(raw, (int, float)):
+                    dates.append(dt.datetime.fromtimestamp(float(raw), tz=dt.UTC).date())
+            future = sorted(d for d in dates if d >= today)
+            return future[0] if future else None
+        except Exception:  # noqa: BLE001 — advisory data, degrade to unknown
+            return None
 
     def get_corporate_actions(self, symbol: str, start: DateLike, end: DateLike) -> pd.DataFrame:
         params = {

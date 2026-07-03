@@ -34,3 +34,39 @@ export function resolveDataRoot(p: PathInputs): string {
   if (p.isPortable) return join(p.exeDir, PORTABLE_DATA_DIR);
   return p.userDataDir;
 }
+
+// ---------------------------------------------------------------------------
+// Profiles — separate, fully isolated data roots under one install.
+//
+// The base root holds `profile.json` ({"active": name}) plus the default
+// profile's data; every non-default profile lives under `profiles/<name>/`
+// with its own database, logs and settings. Switching profiles is a relaunch
+// (the backend is spawned with the new root), so state can never bleed.
+// ---------------------------------------------------------------------------
+
+/** The default profile: data lives directly in the base root (back-compat). */
+export const DEFAULT_PROFILE = "default";
+
+/** File in the base root recording which profile is active. */
+export const PROFILE_FILE = "profile.json";
+
+/** Subdirectory of the base root holding the non-default profiles. */
+export const PROFILES_DIR = "profiles";
+
+/** Normalize a user-typed profile name to a safe directory name (or null). */
+export function sanitizeProfileName(name: string): string | null {
+  const cleaned = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-_ ]/g, "")
+    .replace(/\s+/g, "-")
+    .slice(0, 40);
+  return cleaned.length > 0 ? cleaned : null;
+}
+
+/** The writable root for a profile: the base root itself for "default". */
+export function profileDataRoot(baseRoot: string, profile: string): string {
+  const name = sanitizeProfileName(profile) ?? DEFAULT_PROFILE;
+  if (name === DEFAULT_PROFILE) return baseRoot;
+  return join(baseRoot, PROFILES_DIR, name);
+}

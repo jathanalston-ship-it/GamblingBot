@@ -10,10 +10,31 @@ import { Card } from "../components/Card";
 import { ErrorBox, Loading, PageTitle } from "../components/Page";
 import { PriceChart } from "../components/PriceChart";
 import { TradeActions } from "../components/TradeActions";
+
 import { Stat } from "../components/Stat";
 import { useApi } from "../hooks/useApi";
 import { money, num, pct } from "../lib/format";
 import { useWorkspace } from "../state/workspace";
+
+interface Earnings {
+  symbol: string;
+  earnings_date: string | null;
+  days_until: number | null;
+}
+
+/** Amber chip when the symbol reports within two weeks (advisory). */
+function EarningsChip({ symbol }: { symbol: string }) {
+  const { data } = useApi<Earnings>(`/earnings/${symbol}`);
+  if (!data || data.days_until == null || data.days_until > 14 || data.days_until < 0) return null;
+  return (
+    <span
+      className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-300"
+      title={`Scheduled earnings ${data.earnings_date ?? ""} — expect a volatility event; stops and targets may gap`}
+    >
+      Earnings in {data.days_until}d
+    </span>
+  );
+}
 
 export default function TradePlan() {
   const { runId, symbol } = useWorkspace();
@@ -53,7 +74,10 @@ function Body({ symbol, runId }: { symbol: string; runId: string | null }) {
         title={`Trade Plan · ${data.symbol}`}
         subtitle="Derived from ATR, support, analogs, volatility & regime — paper only"
       >
-        <TradeActions symbol={data.symbol} />
+        <div className="flex items-center gap-2">
+          <EarningsChip symbol={data.symbol} />
+          <TradeActions symbol={data.symbol} />
+        </div>
       </PageTitle>
 
       {/* headline numbers */}

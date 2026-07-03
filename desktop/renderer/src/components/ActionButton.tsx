@@ -12,6 +12,10 @@ function summarize(job: Job): string {
     }
     case "backtest":
       return `${String(r.num_trades ?? 0)} trades · equity ${String(r.final_equity ?? "?")}`;
+    case "walk-forward": {
+      const deg = r.degradation == null ? "n/a" : `${Math.round(Number(r.degradation) * 100)}%`;
+      return `${String(r.folds ?? 0)} folds · OOS holds ${deg} of IS`;
+    }
     case "paper-session":
       return `opened ${String(r.num_opened ?? 0)}`;
     case "refresh-data":
@@ -33,12 +37,14 @@ export function ActionButton({
   body,
   onDone,
   variant = "primary",
+  title,
 }: {
   label: string;
   path: string;
   body?: unknown;
   onDone?: (job: Job) => void;
   variant?: "primary" | "ghost";
+  title?: string;
 }) {
   const { job, running, start } = useAction(path, onDone);
 
@@ -46,7 +52,7 @@ export function ActionButton({
 
   return (
     <span className="inline-flex items-center gap-2">
-      <button onClick={() => void start(body)} disabled={running} className={base}>
+      <button onClick={() => void start(body)} disabled={running} className={base} title={title}>
         {running ? (
           <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
         ) : null}

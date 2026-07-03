@@ -98,3 +98,25 @@ def test_build_provider_matches_selection(user_dir, monkeypatch):
 
     user_settings.write_provider_settings("yfinance", {})
     assert user_settings.build_provider().name == "yahoo"
+
+
+def test_notification_prefs_default(user_dir):
+    prefs = user_settings.read_notification_prefs()
+    assert prefs == {"enabled": True, "min_severity": "warning", "muted_kinds": []}
+
+
+def test_notification_prefs_partial_write_and_persist(user_dir):
+    user_settings.write_notification_prefs(min_severity="critical")
+    user_settings.write_notification_prefs(muted_kinds=["regime_change", ""])
+    prefs = user_settings.read_notification_prefs()
+    assert prefs["enabled"] is True  # untouched by the partial updates
+    assert prefs["min_severity"] == "critical"
+    assert prefs["muted_kinds"] == ["regime_change"]  # blanks dropped
+    # Round-trips through settings.yaml alongside other sections.
+    user_settings.write_provider_settings("yfinance", {})
+    assert user_settings.read_notification_prefs()["min_severity"] == "critical"
+
+
+def test_notification_prefs_reject_bad_severity(user_dir):
+    with pytest.raises(ValueError, match="unknown severity"):
+        user_settings.write_notification_prefs(min_severity="loud")

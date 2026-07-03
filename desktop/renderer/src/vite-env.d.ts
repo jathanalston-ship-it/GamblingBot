@@ -77,6 +77,11 @@ export interface MrpBridge {
   getBackendStatus?: () => Promise<string>;
   /** Restart the app (fresh backend + reloaded UI). Packaged build only. */
   relaunch?: () => Promise<boolean>;
+  /** Profiles: isolated data roots (own DB/logs/settings). Switch + relaunch. */
+  profiles?: {
+    get: () => Promise<{ active: string; profiles: string[] }>;
+    switch: (name: string) => Promise<{ ok: boolean; active: string }>;
+  };
   /** In-app auto-update controls (packaged build only). */
   updater?: {
     check: () => Promise<{ version: string | null }>;

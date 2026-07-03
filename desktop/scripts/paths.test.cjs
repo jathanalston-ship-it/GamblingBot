@@ -13,7 +13,14 @@
 
 const assert = require("node:assert");
 const { join } = require("node:path");
-const { resolveDataRoot, PORTABLE_MARKER, PORTABLE_DATA_DIR } = require("../dist-electron/paths.js");
+const {
+  resolveDataRoot,
+  PORTABLE_MARKER,
+  PORTABLE_DATA_DIR,
+  DEFAULT_PROFILE,
+  profileDataRoot,
+  sanitizeProfileName,
+} = require("../dist-electron/paths.js");
 
 const base = {
   isDevApp: false,
@@ -43,6 +50,26 @@ test("dev-app uses <repo>/.dev and wins over portable", () => {
 test("exposes a stable marker + data-dir name", () => {
   assert.strictEqual(PORTABLE_MARKER, "MomentumLab.portable");
   assert.strictEqual(PORTABLE_DATA_DIR, "MomentumLab-Data");
+});
+
+test("default profile keeps the base root (back-compat)", () => {
+  assert.strictEqual(profileDataRoot("/root", DEFAULT_PROFILE), "/root");
+  assert.strictEqual(profileDataRoot("/root", "!!!"), "/root"); // unsanitizable → default
+});
+
+test("named profiles nest under profiles/<name>", () => {
+  assert.strictEqual(profileDataRoot("/root", "research"), join("/root", "profiles", "research"));
+  assert.strictEqual(
+    profileDataRoot("/root", "Live Paper"),
+    join("/root", "profiles", "live-paper"),
+  );
+});
+
+test("sanitizeProfileName normalizes and rejects junk", () => {
+  assert.strictEqual(sanitizeProfileName("  Research 2026  "), "research-2026");
+  assert.strictEqual(sanitizeProfileName("../../etc"), "etc");
+  assert.strictEqual(sanitizeProfileName("///"), null);
+  assert.strictEqual(sanitizeProfileName(""), null);
 });
 
 (async () => {

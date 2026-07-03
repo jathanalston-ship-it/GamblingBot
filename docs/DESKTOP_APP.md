@@ -312,3 +312,38 @@ a `result`/`error`). The job runner, session factory and market-data provider ar
 injectable via `app.state`, so the whole flow is tested offline with a stub
 provider and a synchronous runner. Backend: `api/jobs.py`, `api/actions.py`,
 `api/routes/actions.py`. Frontend: `hooks/useAction.ts`, `components/ActionButton.tsx`.
+
+## First-run experience, sizing, notifications & profiles (2026-07)
+
+- **Onboarding tour** (`components/OnboardingTour.tsx`, mounted in the
+  AppShell) — a six-step modal walkthrough (connect data → pick universe →
+  run a scan → read the Command Center → take a managed paper trade) that
+  shows once (localStorage `mrp:onboarding:done`) and can be relaunched from
+  Settings → **Show getting-started tour** (a `mrp:tour:start` window event).
+- **Take-size dialog** (`components/TradeActions.tsx`) — "Take paper trade"
+  now opens an inline confirm step: shares prefilled from the plan's
+  suggested size (fetched from `/tradeplan/{symbol}`), editable, with the
+  dollar risk (`shares × (entry − stop)`) recomputed live; Confirm posts
+  `{symbol, quantity}` to `/actions/take-trade`.
+- **Notification preferences** (Settings → **Notifications**;
+  `GET/PUT /settings/notifications`, persisted under `notifications:` in
+  `settings.yaml`) — a global on/off switch, a severity floor
+  (info/warning/critical) and per-kind mutes (trade_managed,
+  conviction_change, regime_change, concentration).
+  `hooks/useAlertNotifications.ts` fetches the prefs on every poll and
+  filters before firing OS notifications.
+- **Profiles** (Settings → **Profiles**; Electron-only) — fully isolated data
+  roots (own database, logs, settings, API keys) under one install. The
+  active profile is recorded in `<dataRoot>/profile.json`; non-default
+  profiles live under `profiles/<name>/` (`profileDataRoot` in
+  `electron/paths.ts`, unit-tested). Switching (or creating) a profile
+  relaunches the app so the backend is respawned against the new root — state
+  can never bleed between profiles. IPC: `mrp:profiles:get` /
+  `mrp:profiles:switch` via the preload bridge (`window.mrp.profiles`).
+- **Paper execution venue** (Settings → **Paper Execution Venue**) — pick the
+  internal simulator or Alpaca paper trading (see `docs/PAPER_SLICE.md`
+  § Execution venues).
+- **Onedir backend** — the frozen backend now ships as a PyInstaller
+  **onedir** bundle (`resources/backend/mrp-backend/` with `_internal/`),
+  which starts faster than one-file (no per-launch temp extraction) and
+  avoids AV heuristics; `backendCommand()` resolves both layouts.

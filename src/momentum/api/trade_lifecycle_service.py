@@ -53,6 +53,7 @@ from momentum.persistence.repositories.trade_evaluations import TradeEvaluationR
 from momentum.trade_lifecycle import (
     EvaluationInputs,
     ManagementDecision,
+    sector_concentration,
     MarketFeatures,
     PriorSnapshot,
     ThesisEvaluation,
@@ -245,8 +246,14 @@ def reevaluate_open_trades(
     run_id: str | None = None,
     ts: dt.datetime,
     config: TradeLifecycleConfig | None = None,
+    intraday_prices: Mapping[str, float] | None = None,
 ) -> dict[str, int]:
-    """Regrade every OPEN tracked trade; append one evaluation each. Commits."""
+    """Regrade every OPEN tracked trade; append one evaluation each. Commits.
+
+    ``intraday_prices`` (market-open only) overrides each symbol's evaluation
+    price with the freshest intraday print — stops/targets are then judged on
+    live prices instead of the daily bar's last close.
+    """
     cfg = config or default_config()
     repo = TrackedTradeRepository(session)
     evals = TradeEvaluationRepository(session)
@@ -303,11 +310,12 @@ def reevaluate_open_trades(
             else None
         )
         days_held = max(0.0, (_naive(ts) - _naive(trade.recommended_at)).total_seconds() / 86400.0)
+        live_price = intraday_prices.get(symbol) if intraday_prices else None
         inputs = EvaluationInputs(
             symbol=symbol,
             entry_price=trade.entry_price,
             stop_price=trade.stop_price,
-            price=features.price,
+            price=live_price if live_price is not None and live_price > 0 else features.price,
             original_conviction=trade.conviction_score,
             current_conviction=_current_conviction(
                 session,
@@ -360,6 +368,7 @@ def reevaluate_open_trades(
             stops_raised += 1
         elif managed is not None:
             scaled_out += 1
+    _check_concentration(session, repo, run_id=run_id, ts=ts, config=cfg)
     session.commit()
     return {
         "evaluated": evaluated,
@@ -368,6 +377,59 @@ def reevaluate_open_trades(
         "scaled_out": scaled_out,
         "stops_raised": stops_raised,
     }
+
+
+def _check_concentration(
+    session: Session,
+    repo: TrackedTradeRepository,
+    *,
+    run_id: str | None,
+    ts: dt.datetime,
+    config: TradeLifecycleConfig,
+) -> None:
+    """Warn (deduped) when one sector dominates the open book."""
+    from momentum.persistence.models.activity import Activity
+    from momentum.persistence.models.alert import Alert
+    from momentum.persistence.repositories.pulse import AlertRepository
+
+    crowded = sector_concentration(
+        [t.sector for t in repo.open_trades()],
+        warn_share=config.sector_concentration_warn_share,
+        min_positions=config.sector_concentration_min_positions,
+    )
+    if crowded is None:
+        return
+    sector, share, count = crowded
+    dedupe_key = f"concentration:{sector}:{count}"[:160]
+    if AlertRepository(session).existing_keys([dedupe_key]):
+        return
+    text = (
+        f"Concentration: {count} of your open trades ({share:.0%}) are {sector} — "
+        f"they will tend to move together, so the book's real risk is higher than "
+        f"the per-trade stops suggest."
+    )
+    session.add(
+        Alert(
+            ts=ts,
+            run_id=run_id,
+            symbol=None,
+            severity="warning",
+            kind="concentration",
+            title=f"Open book crowded in {sector}"[:120],
+            description=text[:400],
+            dedupe_key=dedupe_key,
+        )
+    )
+    session.add(
+        Activity(
+            ts=ts,
+            run_id=run_id,
+            symbol=None,
+            category="management",
+            text=text[:300],
+            payload={"sector": sector, "share": round(share, 3), "count": count},
+        )
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -602,13 +664,20 @@ def run_for_scan(
     bars: Mapping[str, pd.DataFrame] | None = None,
     benchmark: pd.DataFrame | None = None,
     config: TradeLifecycleConfig | None = None,
+    intraday_prices: Mapping[str, float] | None = None,
 ) -> dict[str, int]:
     """The scan-time hook: create tracked trades, reevaluate every open one,
     then link executed journal trades + record any realized outcomes."""
     cfg = config or default_config()
     created = create_from_recommendations(session, run_id=run_id, ts=ts, config=cfg)
     counts = reevaluate_open_trades(
-        session, bars=bars, benchmark=benchmark, run_id=run_id, ts=ts, config=cfg
+        session,
+        bars=bars,
+        benchmark=benchmark,
+        run_id=run_id,
+        ts=ts,
+        config=cfg,
+        intraday_prices=intraday_prices,
     )
     link_counts = link_journal_trades(session, ts=ts)
     return {"created": created, **counts, **link_counts}
@@ -1112,6 +1181,19 @@ def take_trade(
             "ok": False,
             "error": f"no trade plan exists for {sym} — run a scan that surfaces it first",
         }
+    block_days = default_config().block_take_days_before_earnings
+    if block_days > 0:
+        from momentum.api import earnings_service
+
+        days = earnings_service.days_until_earnings(sym)
+        if days is not None and 0 <= days <= block_days:
+            return {
+                "ok": False,
+                "error": (
+                    f"{sym} reports earnings in {days} day(s) — entries are blocked within "
+                    f"{block_days} days of earnings (Settings: block_take_days_before_earnings)"
+                ),
+            }
     shares = quantity or plan.suggested_shares
     if not shares or shares <= 0:
         return {"ok": False, "error": f"no position size for {sym} — pass an explicit quantity"}

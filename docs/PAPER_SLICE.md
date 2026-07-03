@@ -94,3 +94,27 @@ Later sessions filled the original gaps:
 - **No live broker adapter** — paper-only by design; the `Broker` protocol +
   persisted orders/fills are the seam a live adapter plugs into. See
   `docs/BACKLOG.md`.
+
+## Execution venues (internal simulator vs Alpaca paper)
+
+The broker behind a paper session is now **selectable**
+(`settings.yaml` → `execution.mode`; Settings → **Paper Execution Venue**;
+`GET/PUT /settings/execution-mode`):
+
+- **`internal`** (default) — the deterministic in-process `PaperBroker`
+  (offline, reproducible, the same slippage/commission models as the
+  backtester).
+- **`alpaca_paper`** — `momentum.execution.alpaca_broker.AlpacaPaperBroker`,
+  an adapter over Alpaca's **paper-trading** API (real quotes, their fill
+  simulation). Strictly paper-only: the base URL is pinned to
+  `paper-api.alpaca.markets`, so the adapter can never reach a live account.
+  Auth reuses `ALPACA_API_KEY`/`ALPACA_API_SECRET`. `client_order_id` is
+  forwarded (idempotent re-submits), and `submit` polls briefly (bounded,
+  injectable sleeper) so callers see the same "terminal order with fills"
+  shape the internal broker returns.
+
+`user_settings.build_broker()` constructs the configured venue for both the
+API action (`actions.paper_session`) and the CLI (`mrp paper-run`); when
+`alpaca_paper` is selected but the keys are missing it logs a warning and
+**falls back to the internal simulator** — a session never fails to run
+because of an unconfigured optional venue.

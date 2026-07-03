@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import datetime as dt
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import typer
 
@@ -25,7 +25,6 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session, sessionmaker
 
     from momentum.data.providers.base import MarketDataProvider
-    from momentum.execution.paper_broker import PaperBroker
 
 app = typer.Typer(add_completion=False, help="Momentum Research Platform CLI.")
 
@@ -365,11 +364,11 @@ def _restart_runner(command: str | None) -> Callable[[], None] | None:
     return _run
 
 
-def _paper_broker() -> PaperBroker:
-    from momentum.execution.execution_config import ExecutionConfig
-    from momentum.execution.paper_broker import PaperBroker
+def _paper_broker() -> Any:
+    """The configured execution venue (internal simulator or Alpaca paper)."""
+    from momentum.api import user_settings
 
-    return PaperBroker(ExecutionConfig())
+    return user_settings.build_broker()
 
 
 if __name__ == "__main__":  # pragma: no cover

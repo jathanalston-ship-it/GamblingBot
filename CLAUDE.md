@@ -653,6 +653,36 @@ trading platform for US equities. Python 3.12, strictly typed. See
   reported as `num_scale_outs`, never counted in `num_closed`. The remaining
   backlog is only externally-blocked items — see `docs/BACKLOG.md`.
 
+- **Roadmap execution (2026-07)** — all ten top-usability steps built:
+  **intraday management prices** (`actions._intraday_last_prices`: 1-minute
+  last price per held symbol during the regular session, silent degrade to
+  the daily bar); **Alpaca paper broker** (`execution/alpaca_broker.py`, base
+  URL pinned to `paper-api.alpaca.markets` — can never reach a live account;
+  `execution.mode` in settings.yaml, `GET/PUT /settings/execution-mode`,
+  `user_settings.build_broker()` with fallback-to-simulator, Settings →
+  Paper Execution Venue); **walk-forward backtesting**
+  (`backtest/walk_forward.py`: expanding-window IS/OOS folds through the real
+  engine + degradation ratio; `POST /actions/walk-forward` persists one
+  `optimization_results` row per fold+sample; Sample/Fold columns in the
+  Backtesting table) + **SPY benchmark overlay** (`details["benchmark_curve"]`
+  scaled to starting equity, dashed line on the equity chart); **earnings
+  awareness** (`YahooProvider.next_earnings`, cached
+  `api/earnings_service.py`, `GET /earnings/{symbol}`, Trade Plan chip,
+  optional take-block `block_take_days_before_earnings`);
+  **sector-concentration guard** (`sector_concentration` pure fn + deduped
+  `concentration` alerts after every reevaluation); **onboarding tour**
+  (`OnboardingTour.tsx`, 6 steps, localStorage-gated, relaunchable from
+  Settings); **take-size dialog** (shares prefilled from the plan, live risk
+  $, posts `quantity`); **notification preferences**
+  (`GET/PUT /settings/notifications`: enabled/severity floor/per-kind mutes,
+  honored by `useAlertNotifications`); **profiles** (isolated data roots
+  `profiles/<name>` via `profileDataRoot` in `electron/paths.ts`,
+  `profile.json`, IPC `mrp:profiles:*`, Settings → Profiles, relaunch to
+  switch); **onedir backend** (PyInstaller COLLECT bundle, dual-layout exe
+  resolution in `backendCommand()`, faster cold start). See
+  `docs/BACKTESTING.md`, `docs/PAPER_SLICE.md`, `docs/TRADE_LIFECYCLE.md`,
+  `docs/DESKTOP_APP.md`.
+
 ## Philosophy (what we optimise for)
 
 Optimise for **expectancy, profit factor, average winner, largest winner, trend

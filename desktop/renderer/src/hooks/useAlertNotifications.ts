@@ -12,9 +12,17 @@ interface AlertRow {
   description: string;
 }
 
+interface NotificationPrefs {
+  enabled: boolean;
+  min_severity: string;
+  muted_kinds: string[];
+}
+
 const POLL_MS = 60_000; // matches the daemon's scan cadence
 const LAST_SEEN_KEY = "mrp:alerts:last-seen-id";
 const MAX_PER_POLL = 5; // never blast a backlog
+
+const SEVERITY_RANK: Record<string, number> = { info: 0, warning: 1, critical: 2 };
 
 function lastSeen(): number {
   const raw = window.localStorage.getItem(LAST_SEEN_KEY);
@@ -27,12 +35,14 @@ function remember(id: number): void {
 }
 
 /**
- * OS-level notifications for important alerts (warning/critical) — trade
- * managed (stop-loss / take-profit), stop or target reached, regime change.
+ * OS-level notifications for important alerts — trade managed (stop-loss /
+ * take-profit), stop or target reached, regime change.
  *
  * Polls `/alerts` on the scan cadence and fires a system Notification for
  * each alert newer than the last one seen (persisted, so a restart doesn't
  * re-notify). The first run on a fresh install only sets the baseline.
+ * Honors the user's notification preferences (Settings → Notifications):
+ * a global on/off switch, a severity floor, and per-kind mutes.
  */
 export function useAlertNotifications(): void {
   const timer = useRef<number | null>(null);
@@ -42,8 +52,10 @@ export function useAlertNotifications(): void {
 
     const poll = async (): Promise<void> => {
       let rows: AlertRow[];
+      let prefs: NotificationPrefs = { enabled: true, min_severity: "warning", muted_kinds: [] };
       try {
         rows = await apiGet<AlertRow[]>("/alerts?limit=20");
+        prefs = await apiGet<NotificationPrefs>("/settings/notifications");
       } catch {
         return; // backend restarting — try again next tick
       }
@@ -55,13 +67,18 @@ export function useAlertNotifications(): void {
         remember(newestId); // fresh install: baseline only, no back-notifying
         return;
       }
+      const floor = SEVERITY_RANK[prefs.min_severity] ?? 1;
+      const muted = new Set(prefs.muted_kinds ?? []);
       const fresh = rows
-        .filter((r) => r.id > seen && (r.severity === "critical" || r.severity === "warning"))
+        .filter(
+          (r) =>
+            r.id > seen && (SEVERITY_RANK[r.severity] ?? 0) >= floor && !muted.has(r.kind),
+        )
         .sort((a, b) => a.id - b.id)
         .slice(-MAX_PER_POLL);
       remember(newestId);
 
-      if (fresh.length === 0 || typeof Notification === "undefined") return;
+      if (!prefs.enabled || fresh.length === 0 || typeof Notification === "undefined") return;
       if (Notification.permission === "default") {
         try {
           await Notification.requestPermission();

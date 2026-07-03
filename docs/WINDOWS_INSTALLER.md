@@ -69,7 +69,9 @@ powershell -ExecutionPolicy Bypass -File scripts\build_windows.ps1
 This script (`scripts/build_windows.ps1`):
 
 1. **Freezes the backend** — creates a build venv, installs the project, and runs
-   PyInstaller (`desktop/build/backend.spec`) → `desktop/build/backend/mrp-backend.exe`.
+   PyInstaller (`desktop/build/backend.spec`) → the onedir bundle
+   `desktop/build/backend/mrp-backend/` (launcher `mrp-backend.exe` + `_internal/`
+   runtime — faster startup than one-file, no per-launch temp extraction).
 2. **Builds the desktop app** — `npm ci` then `npm run build` (renderer via Vite →
    `renderer/dist`, Electron main via tsc → `dist-electron`).
 3. **Packages the installer** — `electron-builder --win` → `desktop/release/MomentumLab-Setup-<version>.exe`.

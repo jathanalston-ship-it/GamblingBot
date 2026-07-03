@@ -12,7 +12,15 @@
  * Security: contextIsolation on, nodeIntegration off; the renderer talks to the
  * backend only over http://127.0.0.1:<port> via the typed preload bridge.
  */
-import { copyFileSync, existsSync, mkdirSync, readFileSync, watch, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  watch,
+  writeFileSync,
+} from "node:fs";
 import { createServer } from "node:net";
 import { dirname, join } from "node:path";
 
@@ -33,7 +41,15 @@ import {
 import { autoUpdater } from "electron-updater";
 
 import { BackendManager, type BackendStatus } from "./backend-manager";
-import { PORTABLE_MARKER, resolveDataRoot } from "./paths";
+import {
+  DEFAULT_PROFILE,
+  PORTABLE_MARKER,
+  PROFILE_FILE,
+  PROFILES_DIR,
+  profileDataRoot,
+  resolveDataRoot,
+  sanitizeProfileName,
+} from "./paths";
 import { StartupTrace } from "./startup-trace";
 
 const API_HOST = "127.0.0.1";
@@ -103,21 +119,76 @@ function isPortable(): boolean {
   return portableCache;
 }
 
-/**
- * Per-user, writable paths for the database, logs and editable config.
- *
- * Development Mode isolates everything under a visible, git-ignored `<repo>/.dev`;
- * a portable build uses `<exeDir>/MomentumLab-Data` (beside the executable); the
- * installed app uses the per-user `userData` directory. (See `paths.ts`.)
- */
-function userPaths(): { root: string; dataDir: string; logDir: string; dbUrl: string } {
-  const root = resolveDataRoot({
+/** The mode-resolved BASE data root (before the profile subdirectory). */
+function baseDataRoot(): string {
+  return resolveDataRoot({
     isDevApp,
     isPortable: isPortable(),
     repoRoot: repoRoot(),
     exeDir: app.isPackaged ? dirname(app.getPath("exe")) : repoRoot(),
     userDataDir: app.getPath("userData"),
   });
+}
+
+// -------------------------------------------------------------------------- //
+// Profiles: isolated data roots (own DB / logs / settings) under one install.
+// The active profile is recorded in `<baseRoot>/profile.json`; switching it
+// takes effect on relaunch (the backend is spawned with the profile's root).
+// -------------------------------------------------------------------------- //
+let profileCache: string | null = null;
+
+function activeProfile(): string {
+  if (profileCache !== null) return profileCache;
+  try {
+    const raw = readFileSync(join(baseDataRoot(), PROFILE_FILE), "utf-8");
+    const parsed: unknown = JSON.parse(raw);
+    const name =
+      parsed && typeof parsed === "object" && "active" in parsed
+        ? sanitizeProfileName(String((parsed as { active: unknown }).active))
+        : null;
+    profileCache = name ?? DEFAULT_PROFILE;
+  } catch {
+    profileCache = DEFAULT_PROFILE;
+  }
+  return profileCache;
+}
+
+function listProfiles(): string[] {
+  const names = new Set<string>([DEFAULT_PROFILE, activeProfile()]);
+  try {
+    const dir = join(baseDataRoot(), PROFILES_DIR);
+    if (existsSync(dir)) {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.isDirectory()) names.add(entry.name);
+      }
+    }
+  } catch {
+    // unreadable profiles dir — the defaults still work
+  }
+  return [...names].sort();
+}
+
+function setActiveProfile(name: string): string | null {
+  const cleaned = sanitizeProfileName(name);
+  if (!cleaned) return null;
+  const base = baseDataRoot();
+  mkdirSync(profileDataRoot(base, cleaned), { recursive: true });
+  writeFileSync(join(base, PROFILE_FILE), JSON.stringify({ active: cleaned }, null, 2));
+  profileCache = cleaned;
+  return cleaned;
+}
+
+/**
+ * Per-user, writable paths for the database, logs and editable config.
+ *
+ * Development Mode isolates everything under a visible, git-ignored `<repo>/.dev`;
+ * a portable build uses `<exeDir>/MomentumLab-Data` (beside the executable); the
+ * installed app uses the per-user `userData` directory. (See `paths.ts`.)
+ * A non-default profile nests its own data root under `profiles/<name>/`.
+ */
+function userPaths(): { root: string; dataDir: string; logDir: string; dbUrl: string } {
+  const base = baseDataRoot();
+  const root = profileDataRoot(base, activeProfile());
   const dataDir = join(root, "data");
   const logDir = join(root, "logs");
   mkdirSync(dataDir, { recursive: true });
@@ -134,11 +205,11 @@ function backendCommand(): { cmd: string; args: string[]; cwd: string } {
     return { cmd: python, args: ["-m", "momentum.api"], cwd: repoRoot() };
   }
   const binary = process.platform === "win32" ? "mrp-backend.exe" : "mrp-backend";
-  return {
-    cmd: join(process.resourcesPath, "backend", binary),
-    args: [],
-    cwd: process.resourcesPath,
-  };
+  // Onedir layout (current): resources/backend/mrp-backend/<binary> + _internal/.
+  // Onefile layout (older builds): resources/backend/<binary>. Prefer onedir.
+  const onedir = join(process.resourcesPath, "backend", "mrp-backend", binary);
+  const cmd = existsSync(onedir) ? onedir : join(process.resourcesPath, "backend", binary);
+  return { cmd, args: [], cwd: process.resourcesPath };
 }
 
 /** The environment the backend is launched with. */
@@ -803,6 +874,16 @@ function runPrimaryInstance(): void {
       app.relaunch();
       app.quit();
       return true;
+    });
+    // Profiles: isolated data roots (own DB / logs / settings) under one install.
+    // Switching (or creating) writes profile.json; the caller relaunches to apply.
+    ipcMain.handle("mrp:profiles:get", () => ({
+      active: activeProfile(),
+      profiles: listProfiles(),
+    }));
+    ipcMain.handle("mrp:profiles:switch", (_event, name: string) => {
+      const applied = setActiveProfile(name);
+      return { ok: applied !== null, active: applied ?? activeProfile() };
     });
 
     // Show the window first (loading screen) so the user sees "Backend Starting"

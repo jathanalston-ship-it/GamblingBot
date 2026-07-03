@@ -31,8 +31,6 @@ from momentum.data.calendar import TradingCalendar
 from momentum.data.providers.base import MarketDataProvider
 from momentum.data.schema import Timeframe, to_utc_timestamp
 from momentum.demo import seed_all
-from momentum.execution.execution_config import ExecutionConfig
-from momentum.execution.paper_broker import PaperBroker
 from momentum.execution.slippage import BpsSlippage, PerShareCommission
 from momentum.orchestration.engine import DailyOrchestrationEngine
 from momentum.orchestration.session import pull_bars, run_paper_session
@@ -70,12 +68,54 @@ _REGIME_TO_CONVICTION: dict[RegimeState, str] = {
 _log = logging.getLogger(__name__)
 
 
+def _intraday_last_prices(
+    provider: MarketDataProvider,
+    symbols: Sequence[str],
+    *,
+    market_state: str | None,
+) -> dict[str, float]:
+    """Freshest intraday last price per held symbol, while the market is open.
+
+    Only attempted during the regular session (intraday bars are meaningless
+    when closed and unreliable pre/post). Every failure degrades silently to
+    the daily bar — management must never be blocked by a flaky minute feed.
+    """
+    if not symbols:
+        return {}
+    now = dt.datetime.now(tz=dt.UTC)
+    state = market_state
+    if state is None:
+        from momentum.daemon.market_state import market_state as classify
+
+        state = classify(now).value
+    if state != "regular":
+        return {}
+
+    prices: dict[str, float] = {}
+    start = now - dt.timedelta(days=1)
+    for symbol in symbols:
+        try:
+            frame = provider.get_bars(symbol, start, now, Timeframe.MINUTE)
+            if frame is not None and not frame.empty:
+                prices[symbol] = float(frame["close"].iloc[-1])
+        except Exception:  # noqa: BLE001 — degrade to the daily close
+            continue
+    return prices
+
+
 def _today() -> dt.date:
     return dt.date.today()
 
 
 def _run_stamp(prefix: str) -> str:
     return f"{prefix}-{dt.datetime.now(tz=dt.UTC):%Y%m%d-%H%M%S}"
+
+
+def _paper_broker() -> Any:
+    """The configured execution venue (internal simulator or Alpaca paper)."""
+    from momentum.api import user_settings
+
+    return user_settings.build_broker()
 
 
 # --------------------------------------------------------------------------- #
@@ -405,6 +445,12 @@ def run_scan(
         else {}
     )
 
+    # 1a3. Intraday refinement: while the market is OPEN, manage held trades on
+    #      the freshest intraday print instead of the daily bar's last close —
+    #      a stop breached at 10:30 shouldn't wait for the daily bar to show it.
+    #      Best-effort per symbol; a failed intraday pull falls back to daily.
+    intraday_prices = _intraday_last_prices(provider, held_symbols, market_state=market_state)
+
     # 1b. Verify freshness: newest bar vs the pull time, measured in trading
     #     sessions by default (weekend/holiday-old daily bars are still fresh).
     pull_timestamp = dt.datetime.now(tz=dt.UTC)
@@ -599,7 +645,12 @@ def run_scan(
         progress(0.98, "reevaluating + managing open trades")
         with session_factory() as session:
             lc = trade_lifecycle_service.run_for_scan(
-                session, run_id=run_id, ts=ts, bars={**bars, **held_bars}, benchmark=spy
+                session,
+                run_id=run_id,
+                ts=ts,
+                bars={**bars, **held_bars},
+                benchmark=spy,
+                intraday_prices=intraday_prices,
             )
             tracked_trades_created = lc["created"]
             trades_reevaluated = lc["evaluated"]
@@ -745,20 +796,45 @@ class BreakoutStrategy:
         return intents
 
 
-def _backtest_detail(result: Any) -> dict[str, Any]:
-    """Equity curve + per-trade detail for the Backtesting screen (pure).
-
-    The equity curve is downsampled to <= 250 points (endpoints preserved) and
-    the trade list capped at the 200 most recent, so the JSON stays small.
-    """
-    curve = result.equity_curve
+def _downsample_curve(curve: pd.Series) -> list[dict[str, Any]]:
+    """Downsample an equity series to <= 250 {ts, equity} points (endpoints kept)."""
     step = max(1, -(-len(curve) // 250))  # ceil division → at most ~250 points
     sampled = list(curve.items())[::step]
     if len(curve) and curve.index[-1] != sampled[-1][0]:
         sampled.append((curve.index[-1], curve.iloc[-1]))
-    equity_points = [
+    return [
         {"ts": ts.date().isoformat(), "equity": round(float(equity), 2)} for ts, equity in sampled
     ]
+
+
+def _benchmark_curve(spy: pd.DataFrame | None, equity_curve: pd.Series) -> list[dict[str, Any]]:
+    """A buy-and-hold benchmark curve scaled to the strategy's starting equity.
+
+    Restricted to the backtest window and normalized so both lines start at the
+    same dollar value — the overlay answers "did the strategy beat just holding
+    the index?" at a glance.
+    """
+    if spy is None or spy.empty or equity_curve.empty:
+        return []
+    closes = spy["close"]
+    window = closes[
+        (closes.index >= equity_curve.index[0]) & (closes.index <= equity_curve.index[-1])
+    ]
+    if window.empty or float(window.iloc[0]) <= 0:
+        return []
+    scaled = window / float(window.iloc[0]) * float(equity_curve.iloc[0])
+    return _downsample_curve(scaled)
+
+
+def _backtest_detail(result: Any, benchmark: pd.DataFrame | None = None) -> dict[str, Any]:
+    """Equity curve + per-trade detail for the Backtesting screen (pure).
+
+    The equity curve is downsampled to <= 250 points (endpoints preserved) and
+    the trade list capped at the 200 most recent, so the JSON stays small. When
+    benchmark bars are supplied a buy-and-hold ``benchmark_curve`` (same schema,
+    same starting equity) is included for the overlay.
+    """
+    equity_points = _downsample_curve(result.equity_curve)
     trades = sorted(result.trades, key=lambda t: t.exit_date or dt.date.min)[-200:]
     trade_rows = [
         {
@@ -772,7 +848,11 @@ def _backtest_detail(result: Any) -> dict[str, Any]:
         }
         for t in trades
     ]
-    return {"equity_curve": equity_points, "trades": trade_rows}
+    detail = {"equity_curve": equity_points, "trades": trade_rows}
+    bench = _benchmark_curve(benchmark, result.equity_curve)
+    if bench:
+        detail["benchmark_curve"] = bench
+    return detail
 
 
 def run_backtest(
@@ -798,6 +878,14 @@ def run_backtest(
         )
     )
     result = engine.run(bars, BreakoutStrategy(list(bars), lookback=lookback))
+    benchmark = bars.get(BENCHMARK_SYMBOL)
+    if benchmark is None:
+        try:
+            benchmark = pull_bars(
+                provider, [BENCHMARK_SYMBOL], end=_today(), lookback_days=lookback_days
+            ).get(BENCHMARK_SYMBOL)
+        except Exception:  # noqa: BLE001 — the overlay is auxiliary to the backtest
+            benchmark = None
     run_id = _run_stamp("backtest")
     summary = {
         "run_id": run_id,
@@ -828,7 +916,7 @@ def run_backtest(
             num_trades=summary["num_trades"],
             rank=1,
             is_selected=True,
-            details=_backtest_detail(result),
+            details=_backtest_detail(result, benchmark),
         )
         with session_factory() as session:
             OptimizationResultRepository(session).save(row)
@@ -855,6 +943,86 @@ def run_backtest(
     return summary
 
 
+def walk_forward_backtest(
+    *,
+    provider: MarketDataProvider,
+    symbols: Sequence[str],
+    lookback_days: int,
+    progress: Progress,
+    session_factory: sessionmaker[Session] | None = None,
+    lookback: int = 50,
+    n_folds: int = 3,
+) -> dict[str, Any]:
+    """Walk-forward robustness test: expanding-window folds through the real engine.
+
+    Persists one ``optimization_results`` row per fold+sample (in-sample vs
+    out-of-sample) under a shared run_id so the Backtesting screen can show the
+    degradation between the two — the overfitting check a single full-sample
+    backtest cannot provide.
+    """
+    from momentum.backtest.walk_forward import walk_forward
+
+    progress(0.2, "pulling market data")
+    bars = pull_bars(provider, symbols, end=_today(), lookback_days=lookback_days)
+    if not bars:
+        raise RuntimeError("no market data available for the universe")
+    progress(0.5, "running walk-forward folds")
+    config = BacktestConfig(
+        initial_cash=100_000.0,
+        commission=PerShareCommission(),
+        slippage=BpsSlippage(),
+    )
+    report = walk_forward(
+        bars,
+        lambda fold_bars: BreakoutStrategy(list(fold_bars), lookback=lookback),
+        config=config,
+        n_folds=n_folds,
+    )
+    run_id = _run_stamp("walkforward")
+    summary: dict[str, Any] = {
+        "run_id": run_id,
+        "symbols": list(bars),
+        "folds": len(report.folds),
+        "is_expectancy_r": report.is_expectancy_r,
+        "oos_expectancy_r": report.oos_expectancy_r,
+        "degradation": report.degradation,
+    }
+
+    if session_factory is not None and report.folds:
+        progress(0.9, "saving results")
+        rows = [
+            OptimizationResult(
+                study_name="walk_forward",
+                optimizer="manual",
+                run_id=run_id,
+                param_hash=f"{run_id}:{fold.index}:{metrics.sample}",
+                parameters={"breakout_lookback": lookback, "symbols": len(bars)},
+                objective="expectancy_r",
+                objective_value=metrics.expectancy_r,
+                sample=metrics.sample,
+                fold=fold.index,
+                max_drawdown=metrics.max_drawdown,
+                profit_factor=metrics.profit_factor,
+                expectancy_r=metrics.expectancy_r,
+                num_trades=metrics.num_trades,
+                rank=fold.index,
+                is_selected=False,
+                details=fold.to_dict() | {"degradation": report.degradation},
+            )
+            for fold in report.folds
+            for metrics in (fold.in_sample, fold.out_of_sample)
+        ]
+        with session_factory() as session:
+            repo = OptimizationResultRepository(session)
+            for row in rows:
+                repo.save(row)
+            session.commit()
+        summary["persisted"] = True
+
+    progress(1.0, "done")
+    return summary
+
+
 # --------------------------------------------------------------------------- #
 # Paper Session
 # --------------------------------------------------------------------------- #
@@ -872,7 +1040,7 @@ def paper_session(
     engine = DailyOrchestrationEngine(
         conviction=ConvictionEngine(),
         risk=RiskManager(),
-        broker=PaperBroker(ExecutionConfig()),
+        broker=_paper_broker(),
         starting_equity=starting_equity,
     )
     with session_factory() as session:

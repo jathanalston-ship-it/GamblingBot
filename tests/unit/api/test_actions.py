@@ -228,6 +228,49 @@ def test_run_backtest_persists_equity_curve_and_trades(
     assert client.get("/backtests/optimizations/none/tearsheet").status_code == 404
     assert client.get("/backtests/optimizations/a%2Fb/tearsheet").status_code == 404
 
+    # A SPY buy-and-hold benchmark overlay ships with the detail, scaled to the
+    # strategy's starting equity so both lines are comparable.
+    assert detail["benchmark_curve"], "benchmark overlay should be recorded"
+    assert body["benchmark_curve"] == detail["benchmark_curve"]
+    first_bench = detail["benchmark_curve"][0]["equity"]
+    assert first_bench == pytest.approx(detail["equity_curve"][0]["equity"], rel=0.02)
+
+
+def test_walk_forward_backtest_persists_folds(factory: sessionmaker[Session]) -> None:
+    from momentum.persistence.models import OptimizationResult
+
+    result = actions.walk_forward_backtest(
+        provider=StubProvider(),
+        symbols=["AAA", "BBB"],
+        lookback_days=600,
+        progress=_noop,
+        session_factory=factory,
+        n_folds=3,
+    )
+    assert result["folds"] == 3
+    assert result["persisted"] is True
+    with factory() as session:
+        rows = list(session.query(OptimizationResult).filter_by(study_name="walk_forward"))
+    assert len(rows) == 6  # one row per fold per sample
+    assert {r.sample for r in rows} == {"in_sample", "out_of_sample"}
+    assert {r.fold for r in rows} == {1, 2, 3}
+    assert all(r.run_id == result["run_id"] for r in rows)
+
+    # Re-running replaces per param_hash rather than duplicating within a run id.
+    again = actions.walk_forward_backtest(
+        provider=StubProvider(),
+        symbols=["AAA", "BBB"],
+        lookback_days=600,
+        progress=_noop,
+        session_factory=factory,
+        n_folds=3,
+    )
+    with factory() as session:
+        total = session.query(OptimizationResult).filter_by(study_name="walk_forward").count()
+    # A same-second re-run shares the run_id and replaces per param_hash;
+    # otherwise it is a new run and history is kept.
+    assert total == (6 if again["run_id"] == result["run_id"] else 12)
+
 
 def test_seed_demo_data_is_idempotent(factory: sessionmaker[Session]) -> None:
     from momentum.persistence.models import PortfolioSnapshot, ScanResult, Trade

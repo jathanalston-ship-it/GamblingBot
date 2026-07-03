@@ -63,6 +63,14 @@ target_scale_out_fraction: 0.3333333333333333
 # raise_stop_gain_r (the "Raise Stop" advice, executed; tightens only).
 auto_raise_stop_to_breakeven: true
 
+# Refuse to TAKE a trade when earnings are within this many days
+# (0 = off; unknown earnings dates never block).
+block_take_days_before_earnings: 0
+
+# Warn when one sector holds this share of the open book (>= min positions).
+sector_concentration_warn_share: 0.5
+sector_concentration_min_positions: 3
+
 # Prior evaluations feeding thesis stability.
 history_limit: 20
 

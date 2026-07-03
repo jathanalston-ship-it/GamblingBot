@@ -175,6 +175,112 @@ def write_data_mode(mode: str) -> str:
     return mode
 
 
+# Execution mode: which broker fills paper orders.
+#   internal     — the deterministic in-process simulator (default; offline).
+#   alpaca_paper — Alpaca's paper-trading API (real quotes/fills; needs keys).
+VALID_EXECUTION_MODES: tuple[str, ...] = ("internal", "alpaca_paper")
+DEFAULT_EXECUTION_MODE = "internal"
+
+
+def read_execution_mode() -> str:
+    """The configured execution mode (``"internal"`` if unset/invalid)."""
+    section = _read_settings_yaml().get("execution")
+    if isinstance(section, dict):
+        mode = section.get("mode")
+        if isinstance(mode, str) and mode in VALID_EXECUTION_MODES:
+            return mode
+    return DEFAULT_EXECUTION_MODE
+
+
+def write_execution_mode(mode: str) -> str:
+    """Persist the execution mode to ``settings.yaml`` (under ``execution.mode``)."""
+    if mode not in VALID_EXECUTION_MODES:
+        raise ValueError(f"unknown execution mode: {mode}")
+    data = _read_settings_yaml()
+    section = data.get("execution")
+    if not isinstance(section, dict):
+        section = {}
+    section["mode"] = mode
+    data["execution"] = section
+    path = _settings_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+    return mode
+
+
+# Notification preferences (OS alerts raised by the desktop shell).
+VALID_ALERT_SEVERITIES: tuple[str, ...] = ("info", "warning", "critical")
+DEFAULT_MIN_SEVERITY = "warning"
+
+
+def read_notification_prefs() -> dict[str, object]:
+    """OS-notification preferences (enabled flag, severity floor, muted kinds)."""
+    section = _read_settings_yaml().get("notifications")
+    enabled = True
+    min_severity = DEFAULT_MIN_SEVERITY
+    muted_kinds: list[str] = []
+    if isinstance(section, dict):
+        if isinstance(section.get("enabled"), bool):
+            enabled = section["enabled"]
+        sev = section.get("min_severity")
+        if isinstance(sev, str) and sev in VALID_ALERT_SEVERITIES:
+            min_severity = sev
+        muted = section.get("muted_kinds")
+        if isinstance(muted, list):
+            muted_kinds = [str(k) for k in muted if isinstance(k, str) and k]
+    return {"enabled": enabled, "min_severity": min_severity, "muted_kinds": muted_kinds}
+
+
+def write_notification_prefs(
+    *,
+    enabled: bool | None = None,
+    min_severity: str | None = None,
+    muted_kinds: list[str] | None = None,
+) -> dict[str, object]:
+    """Persist notification preferences to ``settings.yaml`` (partial update)."""
+    if min_severity is not None and min_severity not in VALID_ALERT_SEVERITIES:
+        raise ValueError(f"unknown severity: {min_severity}")
+    current = read_notification_prefs()
+    if enabled is not None:
+        current["enabled"] = enabled
+    if min_severity is not None:
+        current["min_severity"] = min_severity
+    if muted_kinds is not None:
+        current["muted_kinds"] = [k for k in muted_kinds if k]
+    data = _read_settings_yaml()
+    data["notifications"] = current
+    path = _settings_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+    return current
+
+
+def build_broker(mode: str | None = None) -> object:
+    """The broker for paper sessions, per the persisted execution mode.
+
+    ``alpaca_paper`` falls back to the internal simulator (with a log line)
+    when the Alpaca keys are missing — a session must never fail to run
+    because of an unconfigured optional venue.
+    """
+    import logging
+
+    from momentum.execution.execution_config import ExecutionConfig
+    from momentum.execution.paper_broker import PaperBroker
+
+    selected = (mode or read_execution_mode()).lower()
+    if selected == "alpaca_paper":
+        try:
+            from momentum.execution.alpaca_broker import AlpacaPaperBroker
+
+            load_user_env()
+            return AlpacaPaperBroker()
+        except Exception as exc:  # noqa: BLE001 — degrade to the simulator
+            logging.getLogger(__name__).warning(
+                "alpaca_paper unavailable (%s) — using the internal paper broker", exc
+            )
+    return PaperBroker(ExecutionConfig())
+
+
 # --------------------------------------------------------------------------- #
 # Public API.
 # --------------------------------------------------------------------------- #

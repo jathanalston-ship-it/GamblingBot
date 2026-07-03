@@ -42,6 +42,7 @@ def get_backtest_detail(run_id: str, session: Session = Depends(get_session)) ->
         run_id=run_id,
         equity_curve=detail.get("equity_curve", []),
         trades=detail.get("trades", []),
+        benchmark_curve=detail.get("benchmark_curve", []),
     )
 
 

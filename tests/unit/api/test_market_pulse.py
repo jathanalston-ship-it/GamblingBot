@@ -97,11 +97,16 @@ def _count(factory: sessionmaker[Session], model: Any) -> int:
 
 
 def _pulse_alerts(factory: sessionmaker[Session]) -> int:
-    """Alerts derived from scan deltas — excludes trade-management alerts, which
-    the lifecycle service writes directly (outside the pulse counters)."""
+    """Alerts derived from scan deltas — excludes lifecycle-service alerts
+    (trade management, sector concentration), which are written directly
+    outside the pulse counters."""
     with factory() as s:
         return int(
-            s.scalar(select(func.count()).select_from(Alert).where(Alert.kind != "trade_managed"))
+            s.scalar(
+                select(func.count())
+                .select_from(Alert)
+                .where(Alert.kind.notin_(["trade_managed", "concentration"]))
+            )
             or 0
         )
 

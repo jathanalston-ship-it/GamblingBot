@@ -11,9 +11,11 @@ files:
   - dist-electron/**/*
   - renderer/dist/**/*
 
-# The frozen FastAPI backend (PyInstaller one-file binary) is shipped alongside
-# the app and spawned by the Electron main process. Built into build/backend/
-# by scripts/build_windows.ps1 before packaging (see docs/WINDOWS_INSTALLER.md).
+# The frozen FastAPI backend (PyInstaller ONEDIR bundle: backend/mrp-backend/
+# holding the launcher + _internal/ runtime — faster startup than one-file, no
+# per-launch temp extraction) is shipped alongside the app and spawned by the
+# Electron main process. Built into build/backend/ by scripts/build_windows.ps1
+# before packaging (see docs/WINDOWS_INSTALLER.md).
 extraResources:
   - from: build/backend
     to: backend

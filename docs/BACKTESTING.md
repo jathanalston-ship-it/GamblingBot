@@ -120,3 +120,32 @@ backtest** button) persists more than the summary row:
   /backtests/optimizations/{run_id}/tearsheet` — the Backtesting run detail has
   an **Open tearsheet** button that opens it in the system browser.
   Best-effort: a reporting failure never fails the backtest.
+
+## Walk-forward (out-of-sample) testing
+
+`momentum.backtest.walk_forward` answers the question a single full-sample
+backtest cannot: **does the edge survive on data it wasn't fitted to?**
+
+- **Expanding-window folds** — the shared bar history is cut into
+  `n_folds + 1` equal segments; fold *k* trains on segments `[0..k)`
+  (in-sample) and is evaluated on segment `k` (out-of-sample). Both sides run
+  through the real event-driven `BacktestEngine` (same costs, same
+  no-look-ahead guarantees), so OOS numbers are honest.
+- **Pure** — `walk_forward(bars, strategy_factory, config=..., n_folds=3)`
+  returns a `WalkForwardReport` (per-fold `FoldMetrics` for each side plus
+  aggregate `is_expectancy_r` / `oos_expectancy_r` / `degradation` = OOS/IS).
+  Raises on insufficient history (each slice needs ≥ 60 bars).
+- **Persisted** — `api/actions.walk_forward_backtest`
+  (`POST /actions/walk-forward`, the desktop **Walk-forward** button) persists
+  one `optimization_results` row per fold+sample (`study_name="walk_forward"`,
+  `sample` ∈ in_sample/out_of_sample, `fold` = k) under one run id; the
+  Backtesting table shows the Sample (IS/OOS) and Fold columns.
+
+## Benchmark overlay
+
+Every persisted backtest detail also carries a **SPY buy-and-hold benchmark
+curve** (`details["benchmark_curve"]`, same `{ts, equity}` schema, scaled to
+the strategy's starting equity and restricted to the backtest window). The
+Backtesting equity chart draws it as a dashed slate line, so "did this beat
+just holding the index?" is answered at a glance. Best-effort: a missing SPY
+series simply omits the overlay.

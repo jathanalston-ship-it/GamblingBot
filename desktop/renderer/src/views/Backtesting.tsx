@@ -29,6 +29,7 @@ interface BacktestDetail {
   run_id: string;
   equity_curve: EquityPoint[];
   trades: BacktestTrade[];
+  benchmark_curve?: EquityPoint[];
 }
 
 function ParamPills({ value }: { value: unknown }) {
@@ -46,8 +47,8 @@ function ParamPills({ value }: { value: unknown }) {
   );
 }
 
-/** Pure-SVG equity line with a subtle baseline — no chart library. */
-function EquityCurve({ points }: { points: EquityPoint[] }) {
+/** Pure-SVG equity line (+ optional SPY buy-and-hold overlay) — no chart library. */
+function EquityCurve({ points, benchmark }: { points: EquityPoint[]; benchmark?: EquityPoint[] }) {
   if (points.length < 2) {
     return <div className="py-6 text-center text-xs text-slate-500">no equity curve stored</div>;
   }
@@ -55,13 +56,19 @@ function EquityCurve({ points }: { points: EquityPoint[] }) {
   const height = 200;
   const pad = 10;
   const padL = 56;
-  const values = points.map((p) => p.equity);
+  const bench = benchmark && benchmark.length >= 2 ? benchmark : null;
+  const values = points.map((p) => p.equity).concat(bench ? bench.map((p) => p.equity) : []);
   const min = Math.min(...values);
   const max = Math.max(...values);
   const span = max - min || 1;
-  const x = (i: number) => padL + (i / (points.length - 1)) * (width - padL - pad);
   const y = (v: number) => pad + (1 - (v - min) / span) * (height - pad * 2);
-  const path = points.map((p, i) => `${i === 0 ? "M" : "L"}${x(i)},${y(p.equity)}`).join(" ");
+  const linePath = (pts: EquityPoint[]) =>
+    pts
+      .map((p, i) => {
+        const px = padL + (i / (pts.length - 1)) * (width - padL - pad);
+        return `${i === 0 ? "M" : "L"}${px},${y(p.equity)}`;
+      })
+      .join(" ");
   const start = points[0];
   const end = points[points.length - 1];
   const up = end.equity >= start.equity;
@@ -80,12 +87,24 @@ function EquityCurve({ points }: { points: EquityPoint[] }) {
           );
         })}
         <line x1={padL} x2={width - pad} y1={y(start.equity)} y2={y(start.equity)} stroke="#2a3850" strokeDasharray="4 4" strokeWidth={1} />
-        <path d={path} fill="none" stroke={up ? "#059669" : "#ef4444"} strokeWidth={1.6} />
+        {bench && (
+          <path d={linePath(bench)} fill="none" stroke="#64748b" strokeWidth={1.2} strokeDasharray="5 3" />
+        )}
+        <path d={linePath(points)} fill="none" stroke={up ? "#059669" : "#ef4444"} strokeWidth={1.6} />
       </svg>
       <div className="mt-1 flex justify-between text-[10px] text-slate-600">
         <span>{start.ts}</span>
-        <span>
-          {num(start.equity, 0)} → {num(end.equity, 0)}
+        <span className="flex items-center gap-3">
+          <span>
+            <span className={up ? "text-emerald-500" : "text-bear"}>—</span> strategy{" "}
+            {num(start.equity, 0)} → {num(end.equity, 0)}
+          </span>
+          {bench && (
+            <span>
+              <span className="text-slate-500">┄</span> SPY buy &amp; hold →{" "}
+              {num(bench[bench.length - 1].equity, 0)}
+            </span>
+          )}
         </span>
         <span>{end.ts}</span>
       </div>
@@ -153,7 +172,7 @@ function RunDetail({ runId }: { runId: string }) {
       <div className="flex justify-end">
         <TearsheetButton runId={runId} />
       </div>
-      <EquityCurve points={data?.equity_curve ?? []} />
+      <EquityCurve points={data?.equity_curve ?? []} benchmark={data?.benchmark_curve} />
       <DataTable
         columns={tradeCols}
         rows={data?.trades ?? []}
@@ -186,6 +205,28 @@ export default function Backtesting() {
         ),
     },
     { key: "study_name", header: "Study" },
+    {
+      key: "sample",
+      header: "Sample",
+      render: (o) => {
+        const sample = String(o["sample"] ?? "full");
+        const label =
+          sample === "in_sample" ? "IS" : sample === "out_of_sample" ? "OOS" : sample;
+        const tone =
+          sample === "out_of_sample"
+            ? "text-sky-400"
+            : sample === "in_sample"
+              ? "text-slate-400"
+              : "text-slate-500";
+        return <span className={tone}>{label}</span>;
+      },
+    },
+    {
+      key: "fold",
+      header: "Fold",
+      align: "right",
+      render: (o) => (o["fold"] == null ? <span className="text-slate-600">—</span> : String(o["fold"])),
+    },
     { key: "objective_value", header: "Objective", align: "right", render: (o) => num(o.objective_value, 4) },
     {
       key: "params",
@@ -197,7 +238,16 @@ export default function Backtesting() {
   return (
     <div className="p-5">
       <PageTitle title="Backtesting" subtitle="Event-driven backtests & optimization results">
-        <ActionButton label="Run backtest" path="/actions/backtest" onDone={() => reload()} />
+        <div className="flex items-center gap-2">
+          <ActionButton label="Run backtest" path="/actions/backtest" onDone={() => reload()} />
+          <ActionButton
+            label="Walk-forward"
+            path="/actions/walk-forward"
+            variant="ghost"
+            title="Out-of-sample robustness test: expanding-window folds, IS vs OOS expectancy"
+            onDone={() => reload()}
+          />
+        </div>
       </PageTitle>
       <div className="space-y-4">
         <Card title="Optimization Results">
