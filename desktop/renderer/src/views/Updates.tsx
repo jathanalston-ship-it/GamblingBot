@@ -113,7 +113,12 @@ function PackagedUpdates() {
       });
   };
 
+  const [installing, setInstalling] = useState(false);
   const install = (): void => {
+    // IMMEDIATE visual response: the button flips to "Restarting…" and every
+    // control disables on the same click; the full-screen Update overlay
+    // (driven by the UpdateFlow state machine) takes over from here.
+    setInstalling(true);
     void window.mrp?.updater?.install();
   };
 
@@ -122,7 +127,7 @@ function PackagedUpdates() {
       <PageTitle title="Updates" subtitle="Check for and install the latest version of Momentum Lab">
         <button
           onClick={check}
-          disabled={state === "checking" || state === "downloading"}
+          disabled={state === "checking" || state === "downloading" || installing}
           className="rounded border border-surface-border px-3 py-1.5 text-sm text-slate-300 hover:bg-surface/60 disabled:opacity-50"
         >
           {state === "checking" ? "Checking…" : "Check again"}
@@ -151,9 +156,17 @@ function PackagedUpdates() {
             {state === "downloaded" ? (
               <button
                 onClick={install}
-                className="rounded bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90"
+                disabled={installing}
+                className="rounded bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90 disabled:opacity-60"
               >
-                Restart &amp; install
+                {installing ? (
+                  <span className="inline-flex items-center gap-2">
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                    Restarting…
+                  </span>
+                ) : (
+                  <>Restart &amp; install</>
+                )}
               </button>
             ) : (
               <button

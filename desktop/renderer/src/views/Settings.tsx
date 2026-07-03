@@ -10,6 +10,7 @@ import type {
 import { ActionButton } from "../components/ActionButton";
 import { Card } from "../components/Card";
 import { DiagnosticsPanel } from "../components/DiagnosticsPanel";
+import { StartupWaterfall } from "../components/StartupWaterfall";
 import { TOUR_EVENT } from "../components/OnboardingTour";
 import { ErrorBox, Loading, PageTitle } from "../components/Page";
 import { ResetPanel } from "../components/ResetPanel";
@@ -1100,6 +1101,7 @@ export default function Settings() {
       <UniversePanel />
       <Maintenance />
       <DiagnosticsPanel />
+      <StartupWaterfall />
       <ResetPanel />
       <ConfigTemplates />
     </div>

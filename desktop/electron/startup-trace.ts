@@ -28,6 +28,8 @@ export type StartupStage =
   | "backend-start"
   | "backend-healthy"
   | "backend-failed"
+  | "renderer-hydrated"
+  | "first-api-response"
   | "ready";
 
 /** One entry in the startup timeline: a stage and when it was entered. */

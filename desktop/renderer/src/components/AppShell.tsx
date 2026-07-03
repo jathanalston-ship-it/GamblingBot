@@ -10,6 +10,7 @@ import { CommandPalette } from "./CommandPalette";
 import { ContextBar } from "./ContextBar";
 import { DevBanner } from "./DevBanner";
 import { OnboardingTour } from "./OnboardingTour";
+import { UpdateOverlay } from "./UpdateOverlay";
 import { ShortcutsOverlay } from "./ShortcutsOverlay";
 import { StageRail } from "./StageRail";
 import { StatusBar } from "./StatusBar";
@@ -45,6 +46,7 @@ export function AppShell() {
         {palette ? <CommandPalette onClose={() => setPalette(false)} /> : null}
         {shortcuts ? <ShortcutsOverlay onClose={() => setShortcuts(false)} /> : null}
         <OnboardingTour />
+        <UpdateOverlay />
       </div>
     </UpdateStatusProvider>
   );

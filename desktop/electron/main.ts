@@ -18,10 +18,20 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
   watch,
   writeFileSync,
 } from "node:fs";
 import { createServer } from "node:net";
+import {
+  appendHistory,
+  computeStats,
+  recordFromTrace,
+  waterfall,
+  type LaunchRecord,
+  type StageSample,
+} from "./startup-metrics";
+import { UpdateFlow, type SerializedUpdateFlow, type UpdateFlowEvent } from "./update-flow";
 import { dirname, join } from "node:path";
 
 import {
@@ -253,6 +263,8 @@ function backendEnv(cwd: string): NodeJS.ProcessEnv {
     // The market daemon runs automatically for as long as the app is open
     // (pause/stop from the UI); opt out with MRP_DAEMON_AUTOSTART=0.
     MRP_DAEMON_AUTOSTART: process.env.MRP_DAEMON_AUTOSTART ?? (isSmoke ? "0" : "1"),
+    // Startup-performance instrumentation: the backend measures spawn->python.
+    MRP_SPAWNED_AT: String(Date.now()),
     PYTHONPATH: isDev ? join(cwd, "src") : process.env.PYTHONPATH ?? "",
   };
   // Packaged: per-user dirs. Development Mode: the isolated `<repo>/.dev` dirs, so
@@ -576,6 +588,95 @@ function sendUpdateEvent(kind: string, payload: unknown): void {
   win?.webContents.send("mrp:update:event", { kind, payload });
 }
 
+/* ── Update flow: the explicit state machine behind "Restart & install" ──────
+ * Every step (stop backend → launch installer → relaunch → healthy) is an
+ * explicit state streamed to the renderer, so the app can NEVER appear frozen
+ * during an update. The flow survives the restart via a marker file and the
+ * completed journey is written to update-report.json (with every operation
+ * over 250 ms). See update-flow.ts. */
+
+function sendFlowEvent(event: UpdateFlowEvent): void {
+  console.error(`[update-flow] ${event.state}${event.detail ? ` — ${event.detail}` : ""}`);
+  win?.webContents.send("mrp:update:flow", event);
+}
+
+let updateFlow = new UpdateFlow();
+updateFlow.onEvent(sendFlowEvent);
+
+function updateMarkerPath(): string {
+  return join(userPaths().logDir, "update-flow.json");
+}
+
+function readUpdateMarker(): SerializedUpdateFlow | null {
+  try {
+    const raw = readFileSync(updateMarkerPath(), "utf-8");
+    const parsed = JSON.parse(raw) as SerializedUpdateFlow;
+    return parsed && parsed.version === 1 ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearUpdateMarker(): void {
+  try {
+    rmSync(updateMarkerPath(), { force: true });
+  } catch {
+    /* best effort */
+  }
+}
+
+/* ── Startup performance history: measured timings only ─────────────────────
+ * Every launch's stage timeline (Electron trace + the backend's own boot
+ * timings + the renderer's hydration/first-API marks) is appended to a rolling
+ * startup-history.json; Developer Diagnostics renders the waterfall + per-stage
+ * avg/median/p95/worst from it. See startup-metrics.ts. */
+
+const rendererMarks: StageSample[] = [];
+
+function startupHistoryPath(): string {
+  return join(userPaths().logDir, "startup-history.json");
+}
+
+function readBackendTimings(): StageSample[] {
+  try {
+    const raw = readFileSync(join(userPaths().logDir, "backend-timings.json"), "utf-8");
+    const parsed = JSON.parse(raw) as Record<string, number>;
+    return Object.entries(parsed)
+      .filter(([, v]) => typeof v === "number")
+      .map(([key, value]) => ({
+        stage: `backend:${key.replace(/_ms$/, "").replace(/_/g, "-")}`,
+        durationMs: value,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function readStartupHistory(): LaunchRecord[] {
+  try {
+    const raw = readFileSync(startupHistoryPath(), "utf-8");
+    const parsed = JSON.parse(raw) as LaunchRecord[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Append/refresh THIS launch's record in the history (idempotent per launch). */
+function persistStartupHistory(): void {
+  try {
+    const record = recordFromTrace(trace.toReport(), [...readBackendTimings(), ...rendererMarks]);
+    const history = readStartupHistory().filter((r) => r.at !== record.at);
+    writeFileSync(
+      startupHistoryPath(),
+      JSON.stringify(appendHistory(history, record), null, 2),
+      "utf-8",
+    );
+  } catch (err) {
+    console.error("[perf] could not persist startup history:", err);
+  }
+}
+
 let updaterReady = false;
 
 /** The GitHub release feed electron-updater is configured to use. */
@@ -694,8 +795,30 @@ function initAutoUpdates(): void {
     await autoUpdater.downloadUpdate();
     return true;
   });
-  ipcMain.handle("mrp:update:install", () => {
-    // Defer so the IPC reply is flushed before the app quits to install.
+  ipcMain.handle("mrp:update:install", async () => {
+    // The seamless-update sequence. Each step is an explicit UpdateFlow state
+    // streamed to the renderer's Update overlay, so the window shows exactly
+    // what is happening instead of appearing frozen:
+    //   preparing-restart -> stopping-backend (async, awaited HERE so the
+    //   will-quit hook has nothing left to wait on) -> launching-installer
+    //   (marker persisted) -> quitAndInstall on the next tick.
+    updateFlow.transition("preparing-restart", "buttons disabled — saving state");
+    updateFlow.transition("stopping-backend");
+    try {
+      await (manager?.stop() ?? Promise.resolve());
+      updateFlow.transition("waiting-for-shutdown", "backend tree stopped cleanly");
+    } catch (err) {
+      // A stuck backend must not strand the update — will-quit force-kills.
+      updateFlow.log(`backend stop errored (will-quit will force-kill): ${String(err)}`);
+      updateFlow.transition("waiting-for-shutdown", "backend stop errored — forcing at quit");
+    }
+    updateFlow.transition("launching-installer", "handing off to the installer");
+    try {
+      writeFileSync(updateMarkerPath(), JSON.stringify(updateFlow.serialize()), "utf-8");
+    } catch (err) {
+      console.error("[update-flow] could not persist marker:", err);
+    }
+    // Defer so the IPC reply + the last flow event are flushed before quitting.
     setImmediate(() => autoUpdater.quitAndInstall());
     return true;
   });
@@ -715,23 +838,35 @@ function initAutoUpdates(): void {
       console.error("[auto-update] using an access token for the release feed (private repo)");
     }
 
-    autoUpdater.on("checking-for-update", () => sendUpdateEvent("checking", null));
+    autoUpdater.on("checking-for-update", () => {
+      updateFlow.transition("checking-for-updates");
+      sendUpdateEvent("checking", null);
+    });
     autoUpdater.on("update-available", (info) =>
       sendUpdateEvent("available", { version: info.version }),
     );
     autoUpdater.on("update-not-available", (info) =>
       sendUpdateEvent("not-available", { version: info.version }),
     );
-    autoUpdater.on("download-progress", (p) =>
+    autoUpdater.on("download-progress", (p) => {
+      updateFlow.transition("downloading-update");
+      updateFlow.setProgress(
+        p.percent / 100,
+        `${Math.round(p.transferred / 1024 / 1024)}MB of ${Math.round(p.total / 1024 / 1024)}MB`,
+      );
       sendUpdateEvent("progress", {
         percent: p.percent,
         transferred: p.transferred,
         total: p.total,
-      }),
-    );
-    autoUpdater.on("update-downloaded", (info) =>
-      sendUpdateEvent("downloaded", { version: info.version }),
-    );
+      });
+    });
+    autoUpdater.on("update-downloaded", (info) => {
+      // electron-updater verifies the artifact checksum/signature during the
+      // download pipeline; record it as its own state for the report.
+      updateFlow.transition("verifying-update", `v${info.version} checksum verified`);
+      updateFlow.transition("idle", "downloaded — ready to install");
+      sendUpdateEvent("downloaded", { version: info.version });
+    });
     autoUpdater.on("error", (err) => {
       const e = err as { message?: string; statusCode?: number } | undefined;
       sendUpdateEvent("error", {
@@ -780,6 +915,7 @@ async function createWindow(): Promise<void> {
   // Every (re)load gets the current backend status, so the loading screen is right.
   win.webContents.on("did-finish-load", () => {
     win?.webContents.send("mrp:backend:status", lastBackendStatus);
+    if (updateFlow.active) win?.webContents.send("mrp:update:flow", updateFlow.snapshot());
   });
 
   // Show the window exactly once, recording the stage, from whichever path gets
@@ -837,22 +973,73 @@ async function createWindow(): Promise<void> {
 const LOCK_RETRY_ATTEMPTS = 12;
 const LOCK_RETRY_DELAY_MS = 750; // 12 × 750ms ≈ 9s — covers the shutdown window
 
+const LOCK_SPLASH_HTML = `<!doctype html><html><body style="margin:0;background:#0b1220;color:#cbd5e1;
+font-family:Segoe UI,system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;
+-webkit-app-region:drag;user-select:none"><div style="text-align:center">
+<div style="width:26px;height:26px;margin:0 auto 12px;border:3px solid #1e293b;border-top-color:#38bdf8;
+border-radius:50%;animation:s 0.9s linear infinite"></div>
+<div style="font-size:14px;font-weight:600;color:#e2e8f0">Momentum Lab is restarting…</div>
+<div style="font-size:12px;margin-top:6px;color:#64748b">Waiting for the previous instance to finish
+shutting down — this can take a few seconds.</div>
+<style>@keyframes s{to{transform:rotate(360deg)}}</style></div></body></html>`;
+
+let lockSplash: BrowserWindow | null = null;
+
+/** During lock retries there is otherwise NO window at all — after an update
+ * (or a fresh-install "Launch" while the installer's elevated copy exits) the
+ * relaunch can wait up to ~9s for the previous instance's teardown. This tiny
+ * splash is what stands between the user and "Windows appears frozen". */
+async function showLockSplash(): Promise<void> {
+  if (lockSplash || isSmoke) return;
+  try {
+    await app.whenReady();
+    lockSplash = new BrowserWindow({
+      width: 440,
+      height: 150,
+      frame: false,
+      resizable: false,
+      alwaysOnTop: true,
+      backgroundColor: "#0b1220",
+      show: true,
+    });
+    await lockSplash.loadURL(
+      "data:text/html;charset=utf-8," + encodeURIComponent(LOCK_SPLASH_HTML),
+    );
+  } catch (err) {
+    console.error("[startup] lock splash failed (non-fatal):", err);
+  }
+}
+
+function closeLockSplash(): void {
+  try {
+    lockSplash?.close();
+  } catch {
+    /* best effort */
+  }
+  lockSplash = null;
+}
+
 async function acquireSingleInstanceLock(): Promise<boolean> {
   if (app.requestSingleInstanceLock()) return true;
-  for (let attempt = 1; attempt <= LOCK_RETRY_ATTEMPTS; attempt++) {
-    trace.enter(
-      "single-instance-lock",
-      `held by another instance — retry ${attempt}/${LOCK_RETRY_ATTEMPTS}`,
-    );
-    await new Promise((resolve) => setTimeout(resolve, LOCK_RETRY_DELAY_MS));
-    // Electron resets its process singleton on a failed request, so a fresh
-    // call re-attempts the lock rather than returning a cached false.
-    if (app.requestSingleInstanceLock()) {
-      trace.enter("single-instance-lock", `acquired after ${attempt} retries`);
-      return true;
+  void showLockSplash(); // never block the retry loop on the splash paint
+  try {
+    for (let attempt = 1; attempt <= LOCK_RETRY_ATTEMPTS; attempt++) {
+      trace.enter(
+        "single-instance-lock",
+        `held by another instance — retry ${attempt}/${LOCK_RETRY_ATTEMPTS}`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, LOCK_RETRY_DELAY_MS));
+      // Electron resets its process singleton on a failed request, so a fresh
+      // call re-attempts the lock rather than returning a cached false.
+      if (app.requestSingleInstanceLock()) {
+        trace.enter("single-instance-lock", `acquired after ${attempt} retries`);
+        return true;
+      }
     }
+    return false;
+  } finally {
+    closeLockSplash();
   }
-  return false;
 }
 
 function runPrimaryInstance(): void {
@@ -923,10 +1110,42 @@ function runPrimaryInstance(): void {
       return { ok: applied !== null, active: applied ?? activeProfile() };
     });
 
+    // Startup-performance IPC: renderer marks (hydration / first API response)
+    // + the measured history for the Developer Diagnostics waterfall.
+    ipcMain.on("mrp:perf:mark", (_event, stage: string, ms?: number) => {
+      if (stage !== "renderer-hydrated" && stage !== "first-api-response") return;
+      if (rendererMarks.some((m) => m.stage === stage)) return; // once per launch
+      rendererMarks.push({ stage, durationMs: typeof ms === "number" ? Math.round(ms) : 0 });
+      trace.enter(stage, typeof ms === "number" ? `${Math.round(ms)}ms after page load` : undefined);
+      persistStartupHistory();
+      writeStartupReport();
+    });
+    ipcMain.handle("mrp:perf:startup", () => {
+      const history = readStartupHistory();
+      const latest = history.length ? history[history.length - 1] : null;
+      return {
+        launches: history.length,
+        stats: computeStats(history),
+        waterfall: latest ? waterfall(latest) : [],
+        latest,
+      };
+    });
+
     // Show the window first (loading screen) so the user sees "Backend Starting"
     // immediately, then bring the backend up.
     await createWindow();
     sendBackendStatus(manager.status);
+
+    // An update marker means we were relaunched by the installer: resume the
+    // SAME update flow so the overlay narrates the post-install states and the
+    // final report covers the whole journey.
+    const savedFlow = readUpdateMarker();
+    if (savedFlow) {
+      updateFlow = UpdateFlow.resume(savedFlow);
+      updateFlow.onEvent(sendFlowEvent);
+      updateFlow.transition("waiting-for-installer", "installer finished — application relaunched");
+      updateFlow.transition("starting-backend", "spawning the backend sidecar");
+    }
     trace.enter("init-auto-updates");
     // Auto-update is non-essential: a failure here must never abort the launch.
     try {
@@ -957,6 +1176,27 @@ function runPrimaryInstance(): void {
     }
     if (healthy) trace.done();
     writeStartupReport();
+    persistStartupHistory();
+
+    if (savedFlow && updateFlow.active) {
+      if (healthy) {
+        updateFlow.transition("waiting-for-health", "health check passed");
+        updateFlow.transition("opening-desktop");
+        updateFlow.transition("ready", `updated to v${app.getVersion()}`);
+      } else {
+        updateFlow.fail("backend failed to start after the update");
+      }
+      try {
+        writeFileSync(
+          join(userPaths().logDir, "update-report.json"),
+          JSON.stringify(updateFlow.report(), null, 2),
+          "utf-8",
+        );
+      } catch (err) {
+        console.error("[update-flow] could not write update-report.json:", err);
+      }
+      clearUpdateMarker();
+    }
 
     // Development Mode: auto-restart the backend when its source changes (armed even
     // if the first start failed, so saving a fix brings the backend up).

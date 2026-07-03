@@ -811,6 +811,24 @@ trading platform for US equities. Python 3.12, strictly typed. See
   60-trading-day report (execution accuracy, expected P&L, exits, missed
   opportunities). See `docs/BROKERAGE.md`, `docs/SHADOW_MODE.md`.
 
+- **Desktop UX responsiveness** (`desktop/electron/update-flow.ts`,
+  `startup-metrics.ts`, `UpdateOverlay.tsx`, `StartupWaterfall.tsx`) — the app
+  must never appear frozen. "Restart & install" now runs an explicit
+  **UpdateFlow state machine** (checking → downloading(%) → verifying →
+  preparing-restart → stopping-backend → … → ready) streamed to a full-screen
+  overlay (step checklist, elapsed, 5-s reassurance, failure recovery dialog);
+  the machine survives the installer restart via a marker file and writes
+  `update-report.json` listing every operation over 250 ms. A **lock splash**
+  covers the up-to-9 s single-instance retry after relaunch (previously
+  windowless). **Startup perf is measured, never assumed**: backend boot
+  stages (`api/__main__.py` → `backend-timings.json`), Electron trace,
+  renderer hydration/first-API marks → rolling `startup-history.json` →
+  avg/median/p95/worst + 100/250/500/1000 ms tiers in Settings → Diagnostics
+  (waterfall). Measured: Python imports ≈1.4 s (92 % of boot); SQLite 7 ms;
+  reconcile 16–75 ms; hydration 34–67 ms. Screenshots generated in real
+  Chromium (`scripts/ux-screenshots.cjs` → `docs/screenshots/`). See
+  `docs/UX_RESPONSIVENESS_AUDIT.md`, `docs/UX_INTERACTION_AUDIT.md`.
+
 ## Philosophy (what we optimise for)
 
 Optimise for **expectancy, profit factor, average winner, largest winner, trend

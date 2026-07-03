@@ -104,11 +104,48 @@ export interface MrpBridge {
     install: () => Promise<boolean>;
     diagnostics: () => Promise<UpdateDiagnostics>;
     onEvent: (cb: (e: UpdaterEvent) => void) => () => void;
+    onFlow?: (cb: (e: UpdateFlowEvent) => void) => () => void;
+  };
+  /** Startup-performance instrumentation (measured timings only). */
+  perf?: {
+    mark: (stage: string, ms?: number) => void;
+    startup: () => Promise<StartupPerf>;
   };
 }
+
 
 declare global {
   interface Window {
     mrp?: MrpBridge;
+  }
+
+  /** One event from the seamless-update state machine (see update-flow.ts). */
+  interface UpdateFlowEvent {
+    state: string;
+    label: string;
+    expects: string;
+    detail: string | null;
+    progress: number | null;
+    sequence: number;
+    sinceStartMs: number;
+    inStateMs: number;
+    error: string | null;
+  }
+
+  /** Measured startup performance (history stats + the latest waterfall). */
+  interface StartupPerf {
+    launches: number;
+    stats: {
+      stage: string;
+      count: number;
+      avgMs: number;
+      medianMs: number;
+      p95Ms: number;
+      worstMs: number;
+      lastMs: number;
+      tier: "ok" | "over100" | "over250" | "over500" | "over1000";
+    }[];
+    waterfall: { stage: string; startMs: number; durationMs: number; tier: string }[];
+    latest: { at: string; totalMs: number | null; completed: boolean } | null;
   }
 }

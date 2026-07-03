@@ -20,8 +20,21 @@ export function onApiMutation(listener: MutationListener): void {
   mutationListeners.push(listener);
 }
 
+let firstApiMarked = false;
+
+function markFirstApiResponse(): void {
+  if (firstApiMarked) return;
+  firstApiMarked = true;
+  try {
+    window.mrp?.perf?.mark("first-api-response", Math.round(performance.now()));
+  } catch {
+    /* instrumentation must never break the app */
+  }
+}
+
 export async function apiGet<T>(path: string): Promise<T> {
   const res = await fetch(`${apiBaseUrl()}${path}`);
+  if (res.ok) markFirstApiResponse();
   if (!res.ok) {
     throw new Error(`${res.status} ${res.statusText} — GET ${path}`);
   }

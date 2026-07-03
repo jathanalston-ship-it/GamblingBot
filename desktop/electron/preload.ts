@@ -10,6 +10,36 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 
 const API_PORT = Number(process.env.MRP_API_PORT ?? 8000);
 
+/** One event from the seamless-update state machine (see update-flow.ts). */
+export interface UpdateFlowEvent {
+  state: string;
+  label: string;
+  expects: string;
+  detail: string | null;
+  progress: number | null;
+  sequence: number;
+  sinceStartMs: number;
+  inStateMs: number;
+  error: string | null;
+}
+
+/** Measured startup performance (history stats + the latest waterfall). */
+export interface StartupPerf {
+  launches: number;
+  stats: {
+    stage: string;
+    count: number;
+    avgMs: number;
+    medianMs: number;
+    p95Ms: number;
+    worstMs: number;
+    lastMs: number;
+    tier: "ok" | "over100" | "over250" | "over500" | "over1000";
+  }[];
+  waterfall: { stage: string; startMs: number; durationMs: number; tier: string }[];
+  latest: { at: string; totalMs: number | null; completed: boolean } | null;
+}
+
 /** A single lifecycle event from the packaged auto-updater (electron-updater). */
 export interface UpdaterEvent {
   kind: "checking" | "available" | "not-available" | "progress" | "downloaded" | "error";
@@ -127,6 +157,20 @@ const bridge = {
       ipcRenderer.on("mrp:update:event", listener);
       return () => ipcRenderer.removeListener("mrp:update:event", listener);
     },
+    /** The seamless-update state machine (UpdateFlow) — drives the overlay. */
+    onFlow(cb: (e: UpdateFlowEvent) => void): () => void {
+      const listener = (_event: IpcRendererEvent, data: UpdateFlowEvent) => cb(data);
+      ipcRenderer.on("mrp:update:flow", listener);
+      return () => ipcRenderer.removeListener("mrp:update:flow", listener);
+    },
+  },
+  /** Startup-performance instrumentation (measured timings only). */
+  perf: {
+    /** Renderer marks: "renderer-hydrated" / "first-api-response" (once each). */
+    mark(stage: string, ms?: number): void {
+      ipcRenderer.send("mrp:perf:mark", stage, ms);
+    },
+    startup: (): Promise<StartupPerf> => ipcRenderer.invoke("mrp:perf:startup"),
   },
 };
 

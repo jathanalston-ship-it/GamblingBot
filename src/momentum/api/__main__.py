@@ -10,8 +10,11 @@ is intentionally bound to loopback only — it is a private sidecar, never expos
 
 from __future__ import annotations
 
+import json
 import os
 import sys
+import time
+from pathlib import Path
 
 import uvicorn
 
@@ -82,19 +85,44 @@ def main() -> None:
             diagnostic("failed", None, error=report.message())
             raise secrets.MissingSecretsError(report)
 
+    # Startup-performance instrumentation (measured, never assumed): each boot
+    # stage is timed and written to <log_dir>/backend-timings.json so the
+    # desktop's startup waterfall can show where backend startup time goes.
+    timings: dict[str, float] = {}
+    spawned_at = os.environ.get("MRP_SPAWNED_AT")
+    if spawned_at:
+        try:
+            timings["spawn_to_python_ms"] = round(time.time() * 1000.0 - float(spawned_at), 1)
+        except ValueError:
+            pass
+
     db_url: str | None = None
     try:
+        mark = time.perf_counter()
         engine = create_db_engine()
+        timings["sqlite_init_ms"] = round((time.perf_counter() - mark) * 1000.0, 1)
         db_url = str(engine.url)
         log.info("database: %s", db_url)
         # Create the schema on first launch AND self-heal an older database after an
         # app upgrade (add any new tables/columns) so reads never hit "no such column".
+        mark = time.perf_counter()
         reconcile_schema(engine)
+        timings["schema_reconcile_ms"] = round((time.perf_counter() - mark) * 1000.0, 1)
+        mark = time.perf_counter()
         app = create_app(create_session_factory(engine))
+        timings["app_create_ms"] = round((time.perf_counter() - mark) * 1000.0, 1)
     except Exception as exc:
         log.exception("backend failed during startup")
         diagnostic("failed", db_url, error=f"{type(exc).__name__}: {exc}")
         raise
+
+    if log_dir:
+        try:
+            timings_path = Path(log_dir) / "backend-timings.json"
+            timings_path.write_text(json.dumps(timings, indent=2))
+            log.info("backend boot timings: %s", timings)
+        except OSError:  # diagnostics must never block serving
+            log.warning("could not write backend-timings.json", exc_info=True)
 
     # Configuration loaded, DB opened, app built — record success before we hand off
     # to uvicorn (which blocks serving requests).

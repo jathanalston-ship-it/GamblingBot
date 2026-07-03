@@ -202,7 +202,7 @@ function DeltaList({ rows, warn = false }: { rows: ScanDelta[]; warn?: boolean }
 /** Worker status + countdown + controls (pause/resume/scan now). */
 function DaemonStrip({ status, error }: { status: DaemonStatus | null; error: string | null }) {
   const [countdown, setCountdown] = useState<number | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
     setCountdown(status?.seconds_to_next_wake ?? null);
@@ -214,11 +214,11 @@ function DaemonStrip({ status, error }: { status: DaemonStatus | null; error: st
   }, [status?.seconds_to_next_wake, status?.version]);
 
   const control = async (path: string): Promise<void> => {
-    setBusy(true);
+    setBusy(path); // immediate per-button feedback — no click is ever ignored
     try {
       await apiPost(path, {});
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
@@ -274,18 +274,24 @@ function DaemonStrip({ status, error }: { status: DaemonStatus | null; error: st
       ) : null}
       <span className="ml-auto flex items-center gap-1.5">
         <button
-          disabled={busy}
+          disabled={busy !== null}
           onClick={() => void control(status.paused ? "/daemon/resume" : "/daemon/pause")}
           className="rounded border border-surface-border px-2 py-0.5 text-slate-300 hover:bg-surface disabled:opacity-50"
         >
-          {status.paused ? "Resume" : "Pause"}
+          {busy !== null && busy !== "/daemon/scan-now"
+            ? status.paused
+              ? "Resuming…"
+              : "Pausing…"
+            : status.paused
+              ? "Resume"
+              : "Pause"}
         </button>
         <button
-          disabled={busy}
+          disabled={busy !== null}
           onClick={() => void control("/daemon/scan-now")}
           className="rounded border border-accent/50 px-2 py-0.5 text-accent hover:bg-accent/10 disabled:opacity-50"
         >
-          Scan now
+          {busy === "/daemon/scan-now" ? "Requesting…" : "Scan now"}
         </button>
       </span>
     </div>

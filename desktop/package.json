@@ -22,7 +22,7 @@
     "icon": "python build/make_icon.py",
     "lint": "npm --workspace renderer run lint",
     "typecheck": "npm --workspace renderer run typecheck && tsc -p electron/tsconfig.json --noEmit",
-    "test:backend": "npm run build:electron && node scripts/backend-manager.test.cjs && node scripts/startup-trace.test.cjs && node scripts/paths.test.cjs && node scripts/release-validation.test.cjs && node scripts/electron-updater-import.test.cjs && node scripts/no-secret-exposure.test.cjs && node scripts/local-time.test.cjs",
+    "test:backend": "npm run build:electron && node scripts/backend-manager.test.cjs && node scripts/startup-trace.test.cjs && node scripts/paths.test.cjs && node scripts/release-validation.test.cjs && node scripts/electron-updater-import.test.cjs && node scripts/no-secret-exposure.test.cjs && node scripts/local-time.test.cjs && node scripts/automation.test.cjs && node scripts/update-flow.test.cjs && node scripts/startup-metrics.test.cjs",
     "validate-release": "node scripts/validate-release.cjs",
     "smoke": "node scripts/smoke.cjs"
   },
