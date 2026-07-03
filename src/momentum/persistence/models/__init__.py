@@ -26,6 +26,7 @@ from momentum.persistence.models.broker import (
 )
 from momentum.persistence.models.candidate_analog import CandidateAnalog
 from momentum.persistence.models.committee_meeting import CommitteeMeeting
+from momentum.persistence.models.shadow_trade import ShadowTrade
 from momentum.persistence.models.conviction_score import ConvictionScore
 from momentum.persistence.models.fill import FillRecord
 from momentum.persistence.models.instrument_selection import InstrumentSelection
@@ -98,4 +99,5 @@ __all__ = [
     "BrokerFill",
     "BrokerPosition",
     "CommitteeMeeting",
+    "ShadowTrade",
 ]

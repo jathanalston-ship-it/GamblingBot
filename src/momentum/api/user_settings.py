@@ -239,6 +239,32 @@ def write_account_balance(balance: float) -> float:
 
 # Autopilot: the daemon takes committee-approved entries automatically.
 # OFF by default — turning it on is an explicit, persisted user decision.
+DEFAULT_SHADOW: dict[str, object] = {"enabled": False}
+
+
+def read_shadow() -> dict[str, object]:
+    """Shadow-mode settings (defaults for anything unset/invalid)."""
+    section = _read_settings_yaml().get("shadow")
+    out = dict(DEFAULT_SHADOW)
+    if isinstance(section, dict) and isinstance(section.get("enabled"), bool):
+        out["enabled"] = section["enabled"]
+    return out
+
+
+def write_shadow(*, enabled: bool) -> dict[str, object]:
+    """Persist the shadow-mode toggle."""
+    data = _read_settings_yaml()
+    section = data.get("shadow")
+    if not isinstance(section, dict):
+        section = {}
+    section["enabled"] = bool(enabled)
+    data["shadow"] = section
+    path = _settings_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+    return read_shadow()
+
+
 DEFAULT_AUTOPILOT: dict[str, object] = {
     "enabled": False,
     "max_open_positions": 8,

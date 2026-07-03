@@ -623,6 +623,7 @@ def run_scan(
     trades_scaled_out = 0
     brokerage_tick: dict[str, Any] = {"filled": 0, "expired": 0, "quotes": 0}
     autopilot: dict[str, Any] = {"enabled": False, "entered": 0, "outcomes": []}
+    shadow: dict[str, Any] = {"enabled": False}
     if not stale and conviction_rows:
         from momentum.api import scan_artifacts, watchlist_service
 
@@ -690,6 +691,25 @@ def run_scan(
         except Exception:  # noqa: BLE001 — autopilot must never fail a scan
             _log.warning("autopilot failed for %s", run_id, exc_info=True)
             autopilot = {"enabled": False, "entered": 0, "outcomes": []}
+
+        # 11a-4. Shadow mode (opt-in): record the orders the strategy WOULD
+        #        place and manage the shadow book on this cycle's data —
+        #        never submitting anything anywhere.
+        try:
+            from momentum.api import shadow_service
+
+            with session_factory() as session:
+                shadow = shadow_service.run_for_scan(
+                    session,
+                    run_id=run_id,
+                    ts=ts,
+                    market_state=market_state,
+                    bars={**bars, **held_bars},
+                    intraday_prices=intraday_prices,
+                )
+        except Exception:  # noqa: BLE001 — shadow mode must never fail a scan
+            _log.warning("shadow mode failed for %s", run_id, exc_info=True)
+            shadow = {"enabled": False}
 
     if not stale and conviction_rows:
         # 11b. Setup lifecycles: derive each candidate's Building→…→Completed
@@ -791,6 +811,7 @@ def run_scan(
         "autopilot_enabled": autopilot.get("enabled", False),
         "autopilot_entries": autopilot.get("entered", 0),
         "autopilot_outcomes": autopilot.get("outcomes", []),
+        "shadow": shadow,
         "lifecycles_refreshed": lifecycles_refreshed,
         "snapshot_persisted": pulse_counts["snapshot"],
         "deltas_generated": pulse_counts["deltas"],

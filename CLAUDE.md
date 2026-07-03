@@ -784,6 +784,33 @@ trading platform for US equities. Python 3.12, strictly typed. See
   **Never certifies until every requirement passes.** No new tables. See
   `docs/CERTIFICATION.md`.
 
+- **Live-broker path (adapter → gates → reconciliation → shadow)** — the
+  four layers between the decision engine and live money, all built and
+  tested with no live broker attached: (1) `brokerage/{adapter,capabilities,
+  router,reports,sync}.py` — `BrokerAdapter` + `BrokerCapabilities` +
+  `OrderRouter` (single door; capability refusal before the venue; bounded
+  routing log; `ExecutionReport`; `PositionSync`/`AccountSync` snapshots;
+  `/brokerage/capabilities` + `/routing-log`); a live adapter is routing
+  config, zero upstream changes (source-level test enforces it). (2)
+  `brokerage/safety_gates.py` + `api/safety_gate_service.py` — ten
+  non-negotiable gates before ANY live order (market open, fresh data,
+  current scan, risk engine, broker health, buying power, position limits,
+  sector concentration, daily loss limit, max risk with mandatory stop);
+  every failure named; fail-safe: a live adapter without a gatekeeper never
+  trades; audit-logged (`safety_gate`); `POST /brokerage/safety-gates/preview`.
+  (3) `brokerage/reconciliation.py` — 30s `ReconciliationLoop` + post-tick
+  pass comparing venue positions/cash/orders/fills/BP against the immutable
+  fills trail; derived rows auto-corrected to the trail (audited,
+  `reconciliation` events), money/trail mismatches flagged critical, never
+  rewritten; `GET /brokerage/reconciliation` + `POST /brokerage/reconcile`.
+  (4) **Shadow mode** (`src/momentum/shadow/`, `shadow_trades` + migration
+  `0029`, `api/shadow_service.py`, `/shadow[/trades|/settings]`) — opt-in:
+  every scan generates the orders the strategy WOULD place (autopilot
+  selection, plan stops/targets, `ExecutionSimulator` expected fills with
+  slippage bps) and manages the shadow book, never submitting anything;
+  60-trading-day report (execution accuracy, expected P&L, exits, missed
+  opportunities). See `docs/BROKERAGE.md`, `docs/SHADOW_MODE.md`.
+
 ## Philosophy (what we optimise for)
 
 Optimise for **expectancy, profit factor, average winner, largest winner, trend
