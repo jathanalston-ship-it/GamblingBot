@@ -273,10 +273,12 @@ Scan results (`run_scan`) now report `tracked_trades_created`,
   feed.
 - **Earnings gate** — `take_trade` refuses to open a new paper trade when the
   symbol reports earnings within `block_take_days_before_earnings` days
-  (default 0 = off). Dates come from the provider's best-effort
-  `next_earnings` (Yahoo calendarEvents), cached 6 h in
-  `api/earnings_service.py`; `GET /earnings/{symbol}` + an amber chip on the
-  Trade Plan view surface "earnings in N days".
+  (default 0 = off). Dates come from the **dedicated corporate-actions
+  provider** (`data/corporate_calendar.py`, cached 6 h in
+  `api/corporate_actions_service.py`; see `docs/CORPORATE_ACTIONS.md`);
+  `GET /earnings/{symbol}` + `GET /corporate-actions/{symbol}` + advisory
+  chips on the Trade Plan view surface "earnings in N days" / "ex-div in N
+  days".
 - **Sector-concentration guard** — after every reevaluation pass,
   `sector_concentration` (pure, `trade_lifecycle/auto_manage.py`) checks the
   open book; when one sector holds ≥ `sector_concentration_warn_share` of ≥

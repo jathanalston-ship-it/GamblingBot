@@ -1290,6 +1290,20 @@ class EarningsOut(BaseModel):
     days_until: int | None
 
 
+class CorporateActionsOut(BaseModel):
+    """A symbol's upcoming corporate-actions calendar (advisory; nulls = unknown)."""
+
+    symbol: str
+    as_of: str  # calendar date (YYYY-MM-DD)
+    earnings_date: str | None
+    days_until_earnings: int | None
+    ex_dividend_date: str | None
+    days_until_ex_dividend: int | None
+    dividend_payment_date: str | None
+    dividend_amount: float | None  # annualized $ per share
+    source: str
+
+
 class OrderFillOut(BaseModel):
     """One persisted execution against an order."""
 

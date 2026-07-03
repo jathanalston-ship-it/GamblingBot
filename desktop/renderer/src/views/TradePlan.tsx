@@ -16,23 +16,47 @@ import { useApi } from "../hooks/useApi";
 import { money, num, pct } from "../lib/format";
 import { useWorkspace } from "../state/workspace";
 
-interface Earnings {
+interface CorporateActions {
   symbol: string;
   earnings_date: string | null;
-  days_until: number | null;
+  days_until_earnings: number | null;
+  ex_dividend_date: string | null;
+  days_until_ex_dividend: number | null;
+  dividend_amount: number | null;
 }
 
-/** Amber chip when the symbol reports within two weeks (advisory). */
-function EarningsChip({ symbol }: { symbol: string }) {
-  const { data } = useApi<Earnings>(`/earnings/${symbol}`);
-  if (!data || data.days_until == null || data.days_until > 14 || data.days_until < 0) return null;
+/** Advisory event chips: earnings within two weeks, ex-dividend within a week. */
+function EventChips({ symbol }: { symbol: string }) {
+  const { data } = useApi<CorporateActions>(`/corporate-actions/${symbol}`);
+  if (!data) return null;
+  const earnings =
+    data.days_until_earnings != null &&
+    data.days_until_earnings >= 0 &&
+    data.days_until_earnings <= 14;
+  const exDiv =
+    data.days_until_ex_dividend != null &&
+    data.days_until_ex_dividend >= 0 &&
+    data.days_until_ex_dividend <= 7;
+  if (!earnings && !exDiv) return null;
   return (
-    <span
-      className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-300"
-      title={`Scheduled earnings ${data.earnings_date ?? ""} — expect a volatility event; stops and targets may gap`}
-    >
-      Earnings in {data.days_until}d
-    </span>
+    <>
+      {earnings ? (
+        <span
+          className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-300"
+          title={`Scheduled earnings ${data.earnings_date ?? ""} — expect a volatility event; stops and targets may gap`}
+        >
+          Earnings in {data.days_until_earnings}d
+        </span>
+      ) : null}
+      {exDiv ? (
+        <span
+          className="rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[11px] font-medium text-sky-300"
+          title={`Ex-dividend ${data.ex_dividend_date ?? ""}${data.dividend_amount != null ? ` (~$${data.dividend_amount.toFixed(2)}/yr)` : ""} — the open will gap down by roughly the dividend`}
+        >
+          Ex-div in {data.days_until_ex_dividend}d
+        </span>
+      ) : null}
+    </>
   );
 }
 
@@ -75,7 +99,7 @@ function Body({ symbol, runId }: { symbol: string; runId: string | null }) {
         subtitle="Derived from ATR, support, analogs, volatility & regime — paper only"
       >
         <div className="flex items-center gap-2">
-          <EarningsChip symbol={data.symbol} />
+          <EventChips symbol={data.symbol} />
           <TradeActions symbol={data.symbol} />
         </div>
       </PageTitle>
