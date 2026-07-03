@@ -230,18 +230,23 @@ def replay_timestamps(request: Request, account_id: str = DEFAULT_ACCOUNT) -> li
 
 
 @router.get("/replay/state")
-def replay_state(ts: str, request: Request, account_id: str = DEFAULT_ACCOUNT) -> dict[str, Any]:
-    """The venue's full state at ``ts`` (ISO), replayed from the immutable trail."""
+def replay_state(
+    request: Request, ts: str | None = None, account_id: str = DEFAULT_ACCOUNT
+) -> dict[str, Any]:
+    """The venue's state at ``ts`` (ISO; defaults to now), from the immutable trail."""
     import datetime as dt
 
     from momentum.api import brokerage_replay_service
 
-    try:
-        when = dt.datetime.fromisoformat(ts)
-        if when.tzinfo is None:
-            when = when.replace(tzinfo=dt.UTC)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=f"invalid timestamp: {ts}") from exc
+    if ts is None:
+        when = dt.datetime.now(tz=dt.UTC)
+    else:
+        try:
+            when = dt.datetime.fromisoformat(ts)
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=dt.UTC)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=f"invalid timestamp: {ts}") from exc
     return brokerage_replay_service.state_at(_session_factory(request), when, account_id=account_id)
 
 

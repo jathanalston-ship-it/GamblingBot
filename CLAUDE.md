@@ -683,6 +683,53 @@ trading platform for US equities. Python 3.12, strictly typed. See
   `docs/BACKTESTING.md`, `docs/PAPER_SLICE.md`, `docs/TRADE_LIFECYCLE.md`,
   `docs/DESKTOP_APP.md`.
 
+- **Corporate-actions provider** (`data/corporate_calendar.py`,
+  `api/corporate_actions_service.py`) — the dedicated earnings/dividend
+  calendar seam: `CorporateActionsProvider` protocol, keyless Yahoo impl,
+  Null impl, 6h TTL cache; the earnings service is a façade over it.
+  `GET /corporate-actions/{symbol}` + ex-div chip on Trade Plan. Advisory:
+  every failure degrades to honest unknown. See `docs/CORPORATE_ACTIONS.md`.
+
+- **Brokerage simulation** (`src/momentum/brokerage/`, `broker_*` tables +
+  migration `0027`) — Momentum Lab owns a complete simulated venue behind the
+  `Brokerage` protocol (place/cancel/modify/close + account/portfolio/
+  buying-power/positions/orders/fills/history; a live adapter needs zero
+  upstream changes). `PaperBrokerage`: accounts with T+n settlement (only
+  settled cash counts toward buying power), immutable append-only account
+  history; full OMS (market/limit/stop/stop-limit/trailing-stop/bracket/OCO,
+  lifecycle Submitted→Accepted→Working→PartiallyFilled→Filled/Cancelled/
+  Rejected/Expired with every transition persisted append-only); execution
+  simulator (ask/bid crossing — never midpoint — participation slippage,
+  liquidity partials, open/close penalty, realism levels via
+  `config/brokerage.example.yaml`); position analytics (avg cost, MFE/MAE,
+  today's gain, R, time-in-trade; options via instrument+multiplier);
+  Portfolio Manager (`portfolio_manager.py`: exposure, concentration,
+  correlation, beta, open risk, expected downside, capital efficiency +
+  justified Increase/Reduce/Close/Add/Diversify suggestions). Every scan
+  advances the venue (`brokerage_service.tick`); Portfolio Replay
+  reconstructs any past instant purely from the immutable trail
+  (`/brokerage/replay/*`, play/pause/step/jump UI). `/brokerage/*` routes;
+  desktop **Brokerage** view. Venue clock injectable (no real clock in
+  tests). See `docs/BROKERAGE.md`.
+
+- **Performance attribution** (`analytics/dollar_attribution.py`,
+  `GET /attribution`) — every closed dollar explained: per-trade identity
+  `net = opportunity − give_back − fees` (opportunity = MFE × initial risk),
+  driver tables (regime/sector/entry & exit reason/holding bucket/
+  instrument), sizing effect vs an equal-risk counterfactual; unknown MFE
+  stays unknown. Dollar Attribution card on Analytics.
+
+- **Investment Committee** (`src/momentum/committee/`, `committee_meetings`
+  + migration `0028`, append-only) — seven engines (Scanner, Conviction,
+  Trade Manager, Risk, Portfolio Manager, Regime, Options) each vote
+  BUY/HOLD/REDUCE/EXIT with confidence + measurable justification (no-data =
+  explicit abstention); the decision explains agreement/disagreement/
+  confidence/evidence in a narrative. `take_trade` convenes an entry meeting
+  (a decisive EXIT blocks the entry); non-Hold scan reevaluations convene
+  manage meetings; `POST /committee/convene/{symbol}` on demand;
+  `GET /committee/meetings`. Committee card on Trade Plan. See
+  `docs/BROKERAGE.md` § Investment Committee.
+
 ## Philosophy (what we optimise for)
 
 Optimise for **expectancy, profit factor, average winner, largest winner, trend

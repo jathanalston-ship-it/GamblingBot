@@ -182,3 +182,32 @@ Analytics view's **Dollar Attribution** card renders the identity totals and
 every driver table. Tests: `tests/unit/analytics/test_dollar_attribution.py`
 (identity sums exactly, honest unknowns, driver grouping/shares, the sizing
 counterfactual, empty input).
+
+## Investment Committee
+
+Every automated trade action passes through a committee review
+(`src/momentum/committee/`, pure engine + `committee_meetings` table,
+migration `0028`, append-only — minutes are never edited or deleted).
+
+Seven members each cast **BUY / HOLD / REDUCE / EXIT** with a confidence and
+a measurable justification (a member with no data votes HOLD at confidence 0
+— an explicit abstention, never silence): **Scanner** (momentum score),
+**Conviction Engine** (score + band), **Trade Manager** (latest thesis
+health + advice), **Risk Manager** (portfolio-heat headroom), **Portfolio
+Manager** (book-level suggestion), **Market Regime Engine** (bull/bear
+context) and **Options Engine** (leverage eligibility). The final decision
+is the confidence-weighted stance, and its record explains **agreement**
+(who backs it and why), **disagreement** (each dissenter named with their
+evidence — a neutral HOLD is not dissent), **confidence** and the deciding
+**evidence** in a plain-language narrative.
+
+Wiring: `take_trade` convenes an *entry* meeting (persisted even when the
+trade proceeds; a decisive committee **EXIT blocks the entry** and the
+refusal quotes the dissent); every scan reevaluation with a non-Hold
+recommendation convenes a *manage* meeting; `POST /committee/convene/{sym}`
+holds an on-demand review. Reads: `GET /committee/meetings[?symbol=]`,
+`GET /committee/meetings/{uid}`. The Trade Plan view's **Investment
+Committee** card shows the latest meeting (vote chips + justifications +
+narrative) with a Convene button. Tests: `tests/unit/committee/`
+(seven-member invariants, bull/broken/dissent scenarios, evidence payloads,
+persisted-and-immutable minutes, routes).

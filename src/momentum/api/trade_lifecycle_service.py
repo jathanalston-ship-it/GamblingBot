@@ -19,6 +19,7 @@ Read functions back the ``/trade-lifecycle`` routes.
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from collections.abc import Mapping
 from typing import Any
 
@@ -73,6 +74,8 @@ from momentum.trade_lifecycle.outcomes import (
     grade_advice,
     overall_accuracy,
 )
+
+_log = logging.getLogger(__name__)
 
 
 def _instrument_for(session: Session, symbol: str, run_id: str | None) -> str:
@@ -368,6 +371,19 @@ def reevaluate_open_trades(
             stops_raised += 1
         elif managed is not None:
             scaled_out += 1
+
+        # Investment Committee review of every non-Hold recommendation: the
+        # meeting (all seven votes + narrative) is persisted append-only so
+        # each automated action carries a full multi-engine review trail.
+        if evaluation.action.value.lower() != "hold":
+            try:
+                from momentum.api import committee_service
+
+                committee_service.convene_and_persist(
+                    session, symbol, context="manage", run_id=run_id, ts=ts
+                )
+            except Exception:  # noqa: BLE001 — the review must never block management
+                _log.warning("committee review failed for %s", symbol, exc_info=True)
     _check_concentration(session, repo, run_id=run_id, ts=ts, config=cfg)
     session.commit()
     return {
@@ -1198,6 +1214,35 @@ def take_trade(
     if not shares or shares <= 0:
         return {"ok": False, "error": f"no position size for {sym} — pass an explicit quantity"}
 
+    # Investment Committee review: every trade action passes through it. The
+    # meeting is always persisted (append-only minutes); only a decisive EXIT
+    # verdict blocks the entry — the committee is a reviewer, not a coward.
+    committee_summary: dict[str, Any] | None = None
+    try:
+        from momentum.api import committee_service
+
+        decision = committee_service.convene_and_persist(
+            session, sym, context="entry", run_id="manual", ts=ts
+        )
+        committee_summary = {
+            "action": decision.action.value,
+            "confidence": round(decision.confidence, 3),
+            "agreement": round(decision.agreement, 3),
+            "narrative": decision.narrative,
+        }
+        if decision.action.value == "exit":
+            session.commit()  # the minutes survive the refusal
+            return {
+                "ok": False,
+                "error": (
+                    f"the Investment Committee voted EXIT on {sym} "
+                    f"(confidence {decision.confidence:.0%}): {decision.dissent}"
+                ),
+                "committee": committee_summary,
+            }
+    except Exception:  # noqa: BLE001 — a committee failure must not block trading
+        _log.warning("committee review failed for %s", sym, exc_info=True)
+
     scan = _latest_scan_row(session, sym)
     entry_price = scan.price if scan is not None and scan.price else plan.entry
     regime = services.latest_regime(session)
@@ -1242,6 +1287,7 @@ def take_trade(
         "entry_price": round(entry_price, 4),
         "stop_price": round(plan.stop, 4),
         "linked": link["linked"],
+        "committee": committee_summary,
     }
 
 

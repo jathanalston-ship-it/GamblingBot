@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ProvenancePanel } from "../components/ProvenancePanel";
 
@@ -6,6 +7,7 @@ import type {
   OptionsRecommendation,
   TradePlan as Plan,
 } from "../api/types";
+import { apiPost } from "../api/client";
 import { Card } from "../components/Card";
 import { ErrorBox, Loading, PageTitle } from "../components/Page";
 import { PriceChart } from "../components/PriceChart";
@@ -155,6 +157,8 @@ function Body({ symbol, runId }: { symbol: string; runId: string | null }) {
         />
       </Card>
 
+      <CommitteeCard symbol={data.symbol} />
+
       <OptionsEligibilityCard symbol={data.symbol} runId={runId} />
 
       <OptionsRecommendationCard symbol={data.symbol} runId={runId} />
@@ -237,6 +241,99 @@ const STATUS_DOT: Record<string, string> = {
   warn: "bg-amber-400",
   fail: "bg-bear",
 };
+
+
+interface CommitteeVote {
+  member: string;
+  choice: string;
+  confidence: number;
+  justification: string;
+}
+
+interface CommitteeMeeting {
+  meeting_uid?: string;
+  ts: string;
+  context: string;
+  action: string;
+  confidence: number;
+  agreement: number;
+  votes: CommitteeVote[];
+  narrative: string;
+}
+
+const VOTE_TONE: Record<string, string> = {
+  buy: "bg-bull/15 text-bull",
+  hold: "bg-surface text-slate-400",
+  reduce: "bg-amber-500/15 text-amber-400",
+  exit: "bg-bear/15 text-bear",
+};
+
+/** The Investment Committee: seven engines vote, every vote justified. */
+function CommitteeCard({ symbol }: { symbol: string }) {
+  const { data, reload } = useApi<CommitteeMeeting[]>(`/committee/meetings?symbol=${symbol}&limit=1`);
+  const [busy, setBusy] = useState(false);
+  const meeting = data && data.length > 0 ? data[0] : null;
+
+  const conveneNow = async () => {
+    setBusy(true);
+    try {
+      await apiPost(`/committee/convene/${symbol}`, {});
+      reload();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card title="Investment Committee">
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-slate-500">
+            {meeting
+              ? `Last meeting ${new Date(meeting.ts).toLocaleString()} · ${meeting.context}`
+              : "No meeting on record for this symbol."}
+          </span>
+          <button onClick={() => void conveneNow()} disabled={busy} className="btn-ghost px-2.5 py-1 text-xs">
+            {busy ? "Convening…" : "Convene review"}
+          </button>
+        </div>
+        {meeting ? (
+          <>
+            <div className="flex items-center gap-3">
+              <span
+                className={`rounded px-2 py-1 text-xs font-semibold uppercase ${VOTE_TONE[meeting.action] ?? ""}`}
+              >
+                {meeting.action}
+              </span>
+              <span className="text-xs text-slate-400">
+                confidence {Math.round(meeting.confidence * 100)}% · agreement{" "}
+                {Math.round(meeting.agreement * 100)}%
+              </span>
+            </div>
+            <div className="grid gap-1.5 md:grid-cols-2">
+              {meeting.votes.map((v) => (
+                <div key={v.member} className="flex items-start gap-2 text-xs">
+                  <span
+                    className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
+                      v.confidence === 0 ? "bg-surface text-slate-600" : (VOTE_TONE[v.choice] ?? "")
+                    }`}
+                    title={v.confidence === 0 ? "abstained (no data)" : `confidence ${Math.round(v.confidence * 100)}%`}
+                  >
+                    {v.confidence === 0 ? "abstain" : v.choice}
+                  </span>
+                  <span className="text-slate-300">
+                    <span className="font-medium text-slate-200">{v.member}:</span> {v.justification}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs leading-relaxed text-slate-400">{meeting.narrative}</p>
+          </>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
 
 function OptionsEligibilityCard({ symbol, runId }: { symbol: string; runId: string | null }) {
   const { data, error, loading } = useApi<OptionsEligibility>(
