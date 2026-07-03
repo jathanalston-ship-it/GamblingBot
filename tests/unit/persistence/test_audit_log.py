@@ -121,6 +121,7 @@ class TestAuditLogger:
         log.strategy_change(summary="cap 1%", ts=TS, run_id="paper-1")
         log.backtest_run(summary="bt", run_id="bt-1", ts=TS)
         log.reconciliation(summary="clean pass", account_id="primary", ts=TS)
+        log.safety_gate(summary="gates passed", symbol="AAPL", ts=TS)
         session.commit()
 
         events = [r.event_type for r in AuditLogRepository(session).by_run("paper-1")]

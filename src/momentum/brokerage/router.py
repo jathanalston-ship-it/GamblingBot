@@ -19,21 +19,35 @@ import threading
 from collections import deque
 from typing import Any
 
+from collections.abc import Callable
+
 from momentum.brokerage.adapter import BrokerAdapter
+from momentum.brokerage.capabilities import LIVE_MODE
 from momentum.brokerage.reports import ExecutionReport
+from momentum.brokerage.safety_gates import GateReport
 from momentum.brokerage.types import ModifyTicket, OrderTicket
 
 _log = logging.getLogger(__name__)
+
+# Gathers evidence and runs the ten live-trading safety gates for a ticket.
+LiveGatekeeper = Callable[[OrderTicket, BrokerAdapter], GateReport]
 
 
 class OrderRouter:
     """Routes tickets to the configured broker adapter."""
 
-    def __init__(self, *, default: str | None = None, log_size: int = 200) -> None:
+    def __init__(
+        self,
+        *,
+        default: str | None = None,
+        log_size: int = 200,
+        live_gatekeeper: LiveGatekeeper | None = None,
+    ) -> None:
         self._adapters: dict[str, BrokerAdapter] = {}
         self._default = default
         self._log: deque[dict[str, Any]] = deque(maxlen=log_size)
         self._lock = threading.Lock()
+        self._live_gatekeeper = live_gatekeeper
 
     def register(self, adapter: BrokerAdapter, *, default: bool = False) -> None:
         with self._lock:
@@ -65,6 +79,14 @@ class OrderRouter:
     ) -> ExecutionReport:
         adapter = self.adapter(broker)
         when = ts or dt.datetime.now(tz=dt.UTC)
+
+        # Live venues sit behind the non-negotiable safety gates. Fail-safe:
+        # a live adapter with no gatekeeper configured can never trade.
+        if adapter.capabilities.mode == LIVE_MODE:
+            refusal = self._live_gate_refusal(ticket, adapter, when)
+            if refusal is not None:
+                return refusal
+
         reason = adapter.capabilities.rejection_reason(ticket)
         if reason is not None:
             report = ExecutionReport(
@@ -146,6 +168,47 @@ class OrderRouter:
             ts=ts or dt.datetime.now(tz=dt.UTC),
         )
         self._record(report, symbol=symbol.upper())
+        return report
+
+    def _live_gate_refusal(
+        self, ticket: OrderTicket, adapter: BrokerAdapter, when: dt.datetime
+    ) -> ExecutionReport | None:
+        """Run the live safety gates; a refusal report or ``None`` (clear)."""
+        if self._live_gatekeeper is None:
+            reason = (
+                "live trading requires the safety gate chain and none is configured "
+                "— refusing every live order (fail-safe)"
+            )
+            report = ExecutionReport(
+                action="place",
+                broker=adapter.name,
+                mode=adapter.capabilities.mode,
+                accepted=False,
+                reason=reason,
+                order=None,
+                ts=when,
+            )
+            self._record(report, symbol=ticket.symbol)
+            return report
+        gates = self._live_gatekeeper(ticket, adapter)
+        if gates.passed:
+            _log.info(
+                "live safety gates PASSED for %s %s x%d",
+                ticket.side.value,
+                ticket.symbol,
+                ticket.quantity,
+            )
+            return None
+        report = ExecutionReport(
+            action="place",
+            broker=adapter.name,
+            mode=adapter.capabilities.mode,
+            accepted=False,
+            reason=f"live order rejected — {gates.reasons}",
+            order=None,
+            ts=when,
+        )
+        self._record(report, symbol=ticket.symbol)
         return report
 
     # ------------------------------------------------------------------ #

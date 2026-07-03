@@ -163,7 +163,11 @@ def test_disk_full_database_fails_loudly_and_recovers(tmp_path: Path) -> None:
 
     from sqlalchemy import event
 
-    cap = {"pages": current_pages + 2}  # nearly no headroom left
+    # Cap at EXACTLY the current size: any page allocation is "disk full".
+    # 40 scanned symbols guarantee the scan tables outgrow their root pages,
+    # so the allocation (and the failure) is deterministic.
+    cap = {"pages": current_pages}
+    symbols = [f"S{i:02d}A" for i in range(40)]
 
     @event.listens_for(engine, "connect")
     def _limit(dbapi_conn: Any, record: Any) -> None:
@@ -176,18 +180,18 @@ def test_disk_full_database_fails_loudly_and_recovers(tmp_path: Path) -> None:
             session_factory=factory,
             provider=StubProvider(),
             scanner=_relaxed(),
-            symbols=["AAA", "BBB", "CCC"],
+            symbols=symbols,
             lookback_days=400,
             progress=_noop,
         )
 
-    cap["pages"] = 100_000  # "space freed"
+    cap["pages"] = 1_000_000  # "space freed"
     engine.dispose()
     recovered = actions.run_scan(
         session_factory=factory,
         provider=StubProvider(),
         scanner=_relaxed(),
-        symbols=["AAA", "BBB", "CCC"],
+        symbols=symbols,
         lookback_days=400,
         progress=_noop,
     )

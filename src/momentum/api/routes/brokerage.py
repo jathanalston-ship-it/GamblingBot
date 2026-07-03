@@ -175,6 +175,37 @@ def get_capabilities(request: Request) -> dict[str, Any]:
     }
 
 
+class SafetyGatePreviewIn(BaseModel):
+    symbol: str
+    quantity: int = Field(gt=0)
+    entry_price: float | None = None
+    stop_price: float | None = None
+    account_id: str = DEFAULT_ACCOUNT
+
+
+@router.post("/safety-gates/preview")
+def preview_safety_gates(body: SafetyGatePreviewIn, request: Request) -> dict[str, Any]:
+    """Evaluate the ten live-trading safety gates for a hypothetical order."""
+    from momentum.api import safety_gate_service
+    from momentum.brokerage import PaperBrokerAdapter
+    from momentum.brokerage.types import BracketSpec as _Bracket
+    from momentum.brokerage.types import OrderTicket as _Ticket
+
+    sf = _session_factory(request)
+    ticket = _Ticket(
+        client_order_id=f"gate-preview-{uuid.uuid4().hex[:8]}",
+        account_id=body.account_id,
+        symbol=body.symbol.upper(),
+        side=Side("long"),
+        quantity=body.quantity,
+        limit_price=body.entry_price,
+        bracket=_Bracket(stop_loss_stop=body.stop_price) if body.stop_price else None,
+    )
+    adapter = PaperBrokerAdapter(brokerage_service.build_brokerage(sf))
+    with sf() as session:
+        return safety_gate_service.evaluate_for_ticket(session, ticket, adapter).to_dict()
+
+
 @router.get("/reconciliation")
 def get_reconciliation(request: Request, account_id: str = DEFAULT_ACCOUNT) -> dict[str, Any]:
     """The freshest reconciliation report (runs a pass when none exists yet)."""

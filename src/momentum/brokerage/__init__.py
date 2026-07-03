@@ -28,6 +28,13 @@ from momentum.brokerage.reconciliation import (
     Reconciler,
 )
 from momentum.brokerage.reports import ExecutionReport
+from momentum.brokerage.safety_gates import (
+    GateInputs,
+    GateReport,
+    GateResult,
+    SafetyGateConfig,
+    evaluate_gates,
+)
 from momentum.brokerage.router import OrderRouter
 from momentum.brokerage.sync import AccountSnapshot, AccountSync, PositionSnapshot, PositionSync
 from momentum.brokerage.types import (
@@ -52,6 +59,9 @@ __all__ = [
     "Discrepancy",
     "ExecutionReport",
     "ExecutionSimulator",
+    "GateInputs",
+    "GateReport",
+    "GateResult",
     "ModifyTicket",
     "OrderLink",
     "OrderRouter",
@@ -67,8 +77,10 @@ __all__ = [
     "ReconciliationLoop",
     "ReconciliationReport",
     "Reconciler",
+    "SafetyGateConfig",
     "SimulatedExecution",
     "compute_account_metrics",
     "default_config",
+    "evaluate_gates",
     "paper_capabilities",
 ]

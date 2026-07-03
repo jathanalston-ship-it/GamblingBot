@@ -30,9 +30,10 @@ def build_router(session_factory: sessionmaker[Session]) -> OrderRouter:
     Today that is the internal paper venue; a live adapter registers here
     (routing configuration), never in decision code.
     """
+    from momentum.api import safety_gate_service
     from momentum.brokerage import PaperBrokerAdapter
 
-    router = OrderRouter()
+    router = OrderRouter(live_gatekeeper=safety_gate_service.build_gatekeeper(session_factory))
     router.register(PaperBrokerAdapter(build_brokerage(session_factory)), default=True)
     return router
 

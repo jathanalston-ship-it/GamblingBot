@@ -251,6 +251,25 @@ class AuditLogger:
             )
         )
 
+    def safety_gate(
+        self,
+        *,
+        summary: str,
+        symbol: str | None = None,
+        ts: dt.datetime | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> AuditLog:
+        return self.record(
+            AuditRecord(
+                event=AuditEvent.SAFETY_GATE,
+                summary=summary,
+                ts=ts or _now(),
+                symbol=symbol,
+                entity_type="order",
+                payload=payload or {},
+            )
+        )
+
     def backtest_run(
         self,
         *,

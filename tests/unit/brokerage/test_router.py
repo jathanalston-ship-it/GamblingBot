@@ -88,10 +88,13 @@ def test_router_routes_to_the_default_adapter(adapter: PaperBrokerAdapter) -> No
 def test_unsupported_order_is_refused_before_the_venue_sees_it(
     factory: sessionmaker[Session],
 ) -> None:
-    """A venue that declares no trailing stops never receives one."""
+    """A venue that declares no trailing stops never receives one.
+
+    (Simulation mode: live mode additionally sits behind the safety gates,
+    proven in test_safety_gates.py — here the capability check is isolated.)"""
     limited = BrokerCapabilities(
         broker="limited-live",
-        mode="live",
+        mode="simulation",
         order_types=frozenset({OrderType.MARKET, OrderType.LIMIT}),
     )
     adapter = PaperBrokerAdapter(PaperBrokerage(factory, clock=lambda: NOW), capabilities=limited)

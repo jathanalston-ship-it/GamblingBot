@@ -57,6 +57,36 @@ HTTP: `GET /brokerage/capabilities` (every registered broker + the routing
 default), `GET /brokerage/routing-log` (recent accepted/refused decisions).
 Tests: `tests/unit/brokerage/test_router.py`.
 
+## Live trading safety gates (`safety_gates.py`)
+
+Non-negotiable: before ANY live order leaves the router, ten gates run —
+**market_open** (regular session only), **fresh_market_data** (scan
+metadata age + stale flag), **current_scan** (a recent completed scan),
+**risk_engine** (constructible/healthy), **broker_health** (a live account
+read answered), **buying_power** (estimated cost fits), **position_limits**
+(book has room), **sector_concentration** (post-trade sector exposure under
+the cap), **daily_loss_limit** (today's P&L inside the limit) and
+**max_risk** (the order must carry a protective stop and risk ≤ the cap —
+an unstopped live order is rejected by construction). Every gate is always
+evaluated: a rejection names **every** failing gate with measured value vs
+threshold. Thresholds live in `SafetyGateConfig` (frozen; strict defaults).
+
+Enforcement is in the `OrderRouter`: any adapter whose declared capability
+mode is `live` passes through the gatekeeper
+(`api/safety_gate_service.build_gatekeeper` — gathers the evidence from
+the ET schedule, `scan_metadata`, `runs`, the risk engine and the broker's
+own reads). **Fail-safe default**: a live adapter with no gatekeeper
+configured can never receive an order at all. Every evaluation is logged
+and every report (pass or fail) lands in the append-only `audit_log`
+(`event_type = "safety_gate"`). Paper/simulation modes are never gated —
+the gates guard live money.
+
+HTTP: `POST /brokerage/safety-gates/preview` (evaluate the chain for a
+hypothetical order). Tests: `tests/unit/brokerage/test_safety_gates.py`
+(21 — all-green pass, each gate parametrically rejected with its exact
+reason, multi-failure reports name everything, router fail-safe /
+reject-before-venue / pass-through, paper never gated).
+
 ## Broker reconciliation (`reconciliation.py`)
 
 The venue's word is verified, never assumed. A dedicated
