@@ -1,0 +1,28 @@
+# Brokerage simulation — accounts, order management and execution realism.
+#
+# Copy to <MRP_USER_DIR>/config/brokerage.yaml to override. Every knob the
+# simulated brokerage uses lives here; nothing is hard-coded.
+
+account:
+  starting_cash: 100000.0     # cash a new account opens with ($)
+  margin_multiplier: 1.0      # 1.0 = cash account; 2.0 = Reg-T style margin
+  settlement_days: 1          # T+n settlement for sale proceeds (US equities: 1)
+
+orders:
+  default_time_in_force: day  # day | gtc | ioc | fok
+  day_order_expiry_hour_et: 16  # DAY orders expire at the close (ET hour)
+  max_open_orders: 200        # sanity cap per account
+
+execution:
+  realism: realistic          # basic | realistic | pessimistic
+  base_spread_bps: 4.0        # baseline half? no: FULL bid/ask spread, basis points of price
+  min_spread_cents: 1.0       # a spread never narrower than one cent
+  volatility_spread_factor: 2.0   # spread widens with daily range (ATR%/day)
+  illiquidity_spread_factor: 3.0  # spread widens as participation rises
+  option_spread_multiplier: 8.0   # options quote far wider than shares
+  slippage_participation_bps: 25.0  # extra bps per 1% of the bar's volume taken
+  open_close_penalty: 1.5     # spread/slippage multiplier in the first/last 30 min
+  midday_discount: 0.9        # calmer books midday
+  partial_fill_participation: 0.05  # max fraction of bar volume filled per tick
+  fee_per_share: 0.0          # commission per share (paper default: free)
+  min_fee: 0.0

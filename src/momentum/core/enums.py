@@ -36,6 +36,7 @@ class InstrumentType(str, Enum):
 
     SHARES = "shares"
     LONG_CALL = "long_call"
+    LONG_PUT = "long_put"
     VERTICAL_CALL_SPREAD = "vertical_call_spread"
     LEAPS = "leaps"
 
@@ -58,13 +59,15 @@ class OrderType(str, Enum):
 
     The paper slice uses ``MARKET`` (fill at the reference price adjusted for
     slippage) and ``LIMIT`` (fill only at or better than the limit). ``STOP``
-    and ``STOP_LIMIT`` are carried for the protective-exit path.
+    and ``STOP_LIMIT`` protect exits; ``TRAILING_STOP`` ratchets its trigger
+    behind the best price seen (the brokerage OMS owns the ratchet).
     """
 
     MARKET = "market"
     LIMIT = "limit"
     STOP = "stop"
     STOP_LIMIT = "stop_limit"
+    TRAILING_STOP = "trailing_stop"
 
     @property
     def needs_limit_price(self) -> bool:
@@ -89,31 +92,36 @@ class TimeInForce(str, Enum):
 class OrderStatus(str, Enum):
     """Lifecycle state of an order.
 
-    The legal flow is ``NEW -> SUBMITTED -> (PARTIALLY_FILLED) ->
-    FILLED | CANCELLED | REJECTED``. Terminal states accept no further
-    transition; the ``Order`` state machine enforces this.
+    The execution slice's flow is ``NEW -> SUBMITTED -> (PARTIALLY_FILLED) ->
+    FILLED | CANCELLED | REJECTED``. The brokerage OMS uses the full flow
+    ``SUBMITTED -> ACCEPTED -> WORKING -> (PARTIALLY_FILLED) ->
+    FILLED | CANCELLED | REJECTED | EXPIRED`` with every transition persisted.
     """
 
     NEW = "new"
     SUBMITTED = "submitted"
+    ACCEPTED = "accepted"
+    WORKING = "working"
     PARTIALLY_FILLED = "partially_filled"
     FILLED = "filled"
     CANCELLED = "cancelled"
     REJECTED = "rejected"
+    EXPIRED = "expired"
 
     @property
     def is_terminal(self) -> bool:
         """Whether the order has reached a final state (no more transitions)."""
-        return self in (OrderStatus.FILLED, OrderStatus.CANCELLED, OrderStatus.REJECTED)
+        return self in (
+            OrderStatus.FILLED,
+            OrderStatus.CANCELLED,
+            OrderStatus.REJECTED,
+            OrderStatus.EXPIRED,
+        )
 
     @property
     def is_open(self) -> bool:
         """Whether the order is still working (may yet fill or cancel)."""
-        return self in (
-            OrderStatus.NEW,
-            OrderStatus.SUBMITTED,
-            OrderStatus.PARTIALLY_FILLED,
-        )
+        return not self.is_terminal
 
     @property
     def is_fill(self) -> bool:

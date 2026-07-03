@@ -102,7 +102,8 @@ def test_small_move_picks_shares(engine) -> None:
 # --------------------------------------------------------------------------- #
 def test_decision_has_all_candidates(engine) -> None:
     d = engine.select(TradeThesis("X", 100, 0.20, 60), _ctx())
-    assert {c.instrument for c in d.candidates} == set(InstrumentType)
+    # The bullish-thesis engine never proposes puts (they express a bearish view).
+    assert {c.instrument for c in d.candidates} == set(InstrumentType) - {InstrumentType.LONG_PUT}
     assert 0.0 <= d.confidence <= 1.0
     assert d.margin >= 0.0
     assert d.rationale  # non-empty explanation

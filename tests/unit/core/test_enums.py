@@ -42,13 +42,20 @@ class TestOrderStatus:
 
     def test_terminal_states(self) -> None:
         terminal = {s for s in OrderStatus if s.is_terminal}
-        assert terminal == {OrderStatus.FILLED, OrderStatus.CANCELLED, OrderStatus.REJECTED}
+        assert terminal == {
+            OrderStatus.FILLED,
+            OrderStatus.CANCELLED,
+            OrderStatus.REJECTED,
+            OrderStatus.EXPIRED,
+        }
 
     def test_open_states(self) -> None:
         open_states = {s for s in OrderStatus if s.is_open}
         assert open_states == {
             OrderStatus.NEW,
             OrderStatus.SUBMITTED,
+            OrderStatus.ACCEPTED,
+            OrderStatus.WORKING,
             OrderStatus.PARTIALLY_FILLED,
         }
 

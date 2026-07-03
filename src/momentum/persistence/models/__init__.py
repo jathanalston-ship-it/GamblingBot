@@ -16,6 +16,14 @@ from momentum.persistence.models.activity import Activity
 from momentum.persistence.models.alert import Alert
 from momentum.persistence.models.audit_log import AuditLog
 from momentum.persistence.models.base import Base, IntPKMixin, TimestampMixin
+from momentum.persistence.models.broker import (
+    BrokerAccount,
+    BrokerAccountHistory,
+    BrokerFill,
+    BrokerOrderEvent,
+    BrokerOrderRow,
+    BrokerPosition,
+)
 from momentum.persistence.models.candidate_analog import CandidateAnalog
 from momentum.persistence.models.conviction_score import ConvictionScore
 from momentum.persistence.models.fill import FillRecord
@@ -82,4 +90,10 @@ __all__ = [
     "ScanStat",
     "OrderRecord",
     "FillRecord",
+    "BrokerAccount",
+    "BrokerAccountHistory",
+    "BrokerOrderRow",
+    "BrokerOrderEvent",
+    "BrokerFill",
+    "BrokerPosition",
 ]
