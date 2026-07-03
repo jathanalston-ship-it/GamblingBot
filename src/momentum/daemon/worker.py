@@ -33,6 +33,8 @@ from momentum.daemon.market_state import MarketState, interval_seconds, market_s
 _log = logging.getLogger("momentum.daemon")
 
 Clock = Callable[[], dt.datetime]
+# (now, last_scan_at, next_delay_seconds) — the resilience heartbeat.
+Heartbeat = Callable[[dt.datetime, dt.datetime | None, float], None]
 Cycle = Callable[[MarketState, bool], dict[str, Any]]
 Sleeper = Callable[[float], bool]  # wait(timeout) -> True when interrupted
 
@@ -46,10 +48,14 @@ class MarketDaemon:
         *,
         config: DaemonConfig | None = None,
         clock: Clock | None = None,
+        heartbeat: Heartbeat | None = None,
     ) -> None:
         self.config = config or DaemonConfig()
         self._cycle = cycle
         self._clock = clock or (lambda: dt.datetime.now(tz=dt.UTC))
+        # Automation-resilience hook: called once per loop iteration (scan or
+        # idle) so a crash/restart can measure the gap it left. Best-effort.
+        self._heartbeat = heartbeat
 
         self._thread: threading.Thread | None = None
         self._wake = threading.Event()  # interrupts any sleep
@@ -133,6 +139,11 @@ class MarketDaemon:
                 self._run_cycle(state, manual)
 
             delay = self._delay_after(state)
+            if self._heartbeat is not None:
+                try:
+                    self._heartbeat(now, self._last_scan_at, delay)
+                except Exception:  # noqa: BLE001 — a heartbeat must never kill the loop
+                    pass
             self._next_wake_at = self._clock() + dt.timedelta(seconds=delay)
             interrupted = self._wake.wait(timeout=delay)
             if interrupted:

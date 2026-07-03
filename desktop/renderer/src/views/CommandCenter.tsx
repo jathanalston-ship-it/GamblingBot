@@ -5,6 +5,7 @@ import { Badge, regimeTone } from "../components/Badge";
 import { Card } from "../components/Card";
 import { Freshness } from "../components/Freshness";
 import { LiveClock } from "../components/LiveClock";
+import { AutomationStatus } from "../components/AutomationStatus";
 import { LivePulse } from "../components/LivePulse";
 import { ErrorBox, Loading, PageTitle } from "../components/Page";
 import { Stat } from "../components/Stat";
@@ -164,6 +165,8 @@ export default function CommandCenter() {
 
       {/* live pulse: daemon, movers, alerts, activity, performance */}
       <LivePulse />
+
+      <AutomationStatus />
 
       {/* changes + triggered */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

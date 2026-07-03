@@ -245,6 +245,9 @@ DEFAULT_AUTOPILOT: dict[str, object] = {
     "max_entries_per_cycle": 2,
     "min_conviction_score": 70.0,
     "include_premarket": False,
+    # Automation Mode: the desktop shell holds a power-save blocker while
+    # Auto Pilot runs (system sleep prevented; the display may still sleep).
+    "prevent_sleep": True,
 }
 
 
@@ -257,6 +260,8 @@ def read_autopilot() -> dict[str, object]:
             out["enabled"] = section["enabled"]
         if isinstance(section.get("include_premarket"), bool):
             out["include_premarket"] = section["include_premarket"]
+        if isinstance(section.get("prevent_sleep"), bool):
+            out["prevent_sleep"] = section["prevent_sleep"]
         for key in ("max_open_positions", "max_entries_per_cycle"):
             value = section.get(key)
             if isinstance(value, int) and value > 0:
@@ -274,6 +279,7 @@ def write_autopilot(
     max_entries_per_cycle: int | None = None,
     min_conviction_score: float | None = None,
     include_premarket: bool | None = None,
+    prevent_sleep: bool | None = None,
 ) -> dict[str, object]:
     """Persist autopilot settings (partial update)."""
     current = read_autopilot()
@@ -281,6 +287,8 @@ def write_autopilot(
         current["enabled"] = enabled
     if include_premarket is not None:
         current["include_premarket"] = include_premarket
+    if prevent_sleep is not None:
+        current["prevent_sleep"] = prevent_sleep
     if max_open_positions is not None:
         if max_open_positions <= 0:
             raise ValueError("max_open_positions must be positive")

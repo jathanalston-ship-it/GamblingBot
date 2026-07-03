@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -108,6 +108,7 @@ class AutopilotIn(BaseModel):
     max_entries_per_cycle: int | None = None
     min_conviction_score: float | None = None
     include_premarket: bool | None = None
+    prevent_sleep: bool | None = None
 
 
 def _autopilot_out() -> dict[str, Any]:
@@ -124,12 +125,29 @@ def get_autopilot() -> dict[str, Any]:
 
 
 @router.put("/autopilot")
-def put_autopilot(body: AutopilotIn, session: Session = Depends(get_session)) -> dict[str, Any]:
+def put_autopilot(
+    body: AutopilotIn, request: Request, session: Session = Depends(get_session)
+) -> dict[str, Any]:
     """Update autopilot settings + starting balance (partial; persists).
 
-    A changed balance re-seeds the brokerage account only while it is still
-    untouched (no fills) — a live book's history is never rewritten.
+    **Long-Running preflight**: turning autopilot ON runs the automation
+    health checks first; a critical subsystem refuses the start (HTTP 409)
+    and the response explains every failing subsystem. A changed balance
+    re-seeds the brokerage account only while it is still untouched (no
+    fills) — a live book's history is never rewritten.
     """
+    if body.enabled is True and not user_settings.read_autopilot()["enabled"]:
+        from momentum.api import automation_health_service
+
+        failures = automation_health_service.preflight_failures(
+            daemon=getattr(request.app.state, "market_daemon", None)
+        )
+        if failures:
+            reasons = "; ".join(f"{f['name']}: {f['detail']}" for f in failures)
+            raise HTTPException(
+                status_code=409,
+                detail=f"Auto Pilot not started — preflight failed: {reasons}",
+            )
     try:
         if body.starting_balance is not None:
             user_settings.write_account_balance(body.starting_balance)
@@ -140,6 +158,7 @@ def put_autopilot(body: AutopilotIn, session: Session = Depends(get_session)) ->
             max_entries_per_cycle=body.max_entries_per_cycle,
             min_conviction_score=body.min_conviction_score,
             include_premarket=body.include_premarket,
+            prevent_sleep=body.prevent_sleep,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

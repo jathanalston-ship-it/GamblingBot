@@ -94,6 +94,21 @@ const bridge = {
   getBackendStatus: (): Promise<string> => ipcRenderer.invoke("mrp:backend:get-status"),
   /** Restart the app (relaunch the process → fresh backend + reloaded UI). */
   relaunch: (): Promise<boolean> => ipcRenderer.invoke("mrp:app:relaunch"),
+  /** Automation Mode: live power-save blocker status + a re-sync nudge. */
+  automation: {
+    status: (): Promise<{
+      automationActive: boolean;
+      sleepPrevented: boolean;
+      preventSleepSetting: boolean;
+      blockerId: number | null;
+    }> => ipcRenderer.invoke("mrp:automation:status"),
+    sync: (): Promise<{
+      automationActive: boolean;
+      sleepPrevented: boolean;
+      preventSleepSetting: boolean;
+      blockerId: number | null;
+    }> => ipcRenderer.invoke("mrp:automation:sync"),
+  },
   /** Profiles: isolated data roots (own DB/logs/settings). Switch + relaunch. */
   profiles: {
     get: (): Promise<{ active: string; profiles: string[] }> =>

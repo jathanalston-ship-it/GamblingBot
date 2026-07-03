@@ -743,6 +743,21 @@ trading platform for US equities. Python 3.12, strictly typed. See
   (`account.starting_balance`, default 100k) feeds paper sessions and new
   brokerage accounts. See `docs/AUTOPILOT.md`.
 
+- **Automation Mode + resilience** (`desktop/electron/automation.ts`,
+  `api/automation_{state,health_service}.py`, `/automation/*`) — run for days:
+  the shell holds ONE `powerSaveBlocker` (`prevent-app-suspension`) while Auto
+  Pilot runs (system sleep prevented; display sleep/screen saver/lock allowed),
+  released on stop/quit/crash — never leaks (7 node tests). Enabling autopilot
+  runs a seven-subsystem **preflight** (backend/scheduler/sleep/internet/
+  calendar/clock-drift/provider; critical ⇒ HTTP 409 naming every failure);
+  `GET /automation/health` serves live grades. **Resilience**: the daemon
+  heartbeats to `automation_state.json`, a clean shutdown is marked (FastAPI
+  shutdown hook), and startup `detect_recovery` records downtime + missed
+  scans (ET-schedule-aware; weekends = 0) → Command Center "Recovered After
+  Restart" banner + automation strip (status/sleep/backend/last/next scan +
+  health). Packaged app registers a login item while autopilot is ON. See
+  `docs/AUTOMATION.md`.
+
 ## Philosophy (what we optimise for)
 
 Optimise for **expectancy, profit factor, average winner, largest winner, trend

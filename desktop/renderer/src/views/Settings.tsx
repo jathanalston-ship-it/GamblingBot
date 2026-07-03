@@ -235,6 +235,7 @@ interface AutopilotSettings {
   max_entries_per_cycle: number;
   min_conviction_score: number;
   include_premarket: boolean;
+  prevent_sleep: boolean;
 }
 
 function AutopilotPanel() {
@@ -256,6 +257,8 @@ function AutopilotPanel() {
       await apiPut("/settings/autopilot", patch);
       setMsg(ok);
       reload();
+      // Nudge the desktop shell so the power-save blocker reacts immediately.
+      void window.mrp?.automation?.sync?.().catch(() => undefined);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -382,6 +385,33 @@ function AutopilotPanel() {
             the 9:30 open)
           </label>
         ) : null}
+
+        <div className="border-t border-surface-border pt-4">
+          <div className="mb-2 text-xs uppercase tracking-wide text-slate-400">Automation</div>
+          <label className="flex items-start gap-2 text-sm text-slate-300">
+            <input
+              type="checkbox"
+              checked={data.prevent_sleep}
+              disabled={busy}
+              onChange={(e) =>
+                void save(
+                  { prevent_sleep: e.target.checked },
+                  e.target.checked ? "System sleep will be prevented." : "OS sleep policy restored.",
+                )
+              }
+              className="mt-0.5"
+            />
+            <span>
+              Prevent system sleep while Auto Pilot is running
+              <span className="block text-[11px] text-slate-500">
+                Keeps the CPU, timers, networking, scheduler and backend running for days. The
+                display may still sleep, the screen saver may still run and you can still lock
+                the machine. Released automatically the moment Auto Pilot stops or the app
+                closes.
+              </span>
+            </span>
+          </label>
+        </div>
 
         {msg ? <div className="text-sm text-bull">{msg}</div> : null}
         {err ? <div className="text-sm text-bear">{err}</div> : null}

@@ -117,7 +117,13 @@ def create_daemon(
 ) -> tuple[MarketDaemon, IncrementalCache]:
     cfg = config or DaemonConfig()
     cycle, cache = build_cycle(session_factory, provider_factory, config=cfg)
-    return MarketDaemon(cycle, config=cfg), cache
+
+    def _heartbeat(now: dt.datetime, last_scan: dt.datetime | None, delay: float) -> None:
+        from momentum.api import automation_state
+
+        automation_state.record_heartbeat(ts=now, last_scan=last_scan, interval_seconds=delay)
+
+    return MarketDaemon(cycle, config=cfg, heartbeat=_heartbeat), cache
 
 
 def default_provider_factory() -> MarketDataProvider:

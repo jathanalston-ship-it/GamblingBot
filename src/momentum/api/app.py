@@ -24,6 +24,7 @@ from momentum.api.routes import (
     actions,
     analogs,
     attribution,
+    automation,
     api_health,
     audit,
     backtests,
@@ -75,6 +76,7 @@ _log = logging.getLogger(__name__)
 _ROUTERS = (
     health,
     daemon,
+    automation,
     bars,
     brokerage,
     earnings,
@@ -169,6 +171,18 @@ def create_app(session_factory: sessionmaker[Session] | None = None) -> FastAPI:
             raise RuntimeError(
                 f"production startup aborted: {_remaining} demo rows present after purge"
             )
+    # Automation resilience: did the previous process die uncleanly? Record the
+    # downtime + missed scans (Command Center shows "Recovered after restart");
+    # a clean shutdown below prevents false positives.
+    from momentum.api import automation_state
+
+    app.state.automation_recovery = automation_state.detect_recovery()
+
+    def _automation_clean_shutdown() -> None:
+        automation_state.mark_clean_shutdown()
+
+    app.router.add_event_handler("shutdown", _automation_clean_shutdown)
+
     # Background-job manager for operator-console actions (scan/backtest/paper/…).
     app.state.job_manager = JobManager()
     # In-memory ring buffer of recent unhandled exceptions (Diagnostics screen).

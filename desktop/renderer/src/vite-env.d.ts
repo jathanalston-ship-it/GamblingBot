@@ -77,6 +77,21 @@ export interface MrpBridge {
   getBackendStatus?: () => Promise<string>;
   /** Restart the app (fresh backend + reloaded UI). Packaged build only. */
   relaunch?: () => Promise<boolean>;
+  /** Automation Mode: live power-save blocker status + a re-sync nudge. */
+  automation?: {
+    status: () => Promise<{
+      automationActive: boolean;
+      sleepPrevented: boolean;
+      preventSleepSetting: boolean;
+      blockerId: number | null;
+    }>;
+    sync: () => Promise<{
+      automationActive: boolean;
+      sleepPrevented: boolean;
+      preventSleepSetting: boolean;
+      blockerId: number | null;
+    }>;
+  };
   /** Profiles: isolated data roots (own DB/logs/settings). Switch + relaunch. */
   profiles?: {
     get: () => Promise<{ active: string; profiles: string[] }>;

@@ -31,6 +31,7 @@ import {
   ipcMain,
   Menu,
   type MenuItemConstructorOptions,
+  powerSaveBlocker,
   shell,
 } from "electron";
 // electron-updater is a CommonJS module whose `autoUpdater` is a LAZY named
@@ -40,6 +41,7 @@ import {
 // it by name so it is resolved lazily, at the call site, inside the packaged guard.
 import { autoUpdater } from "electron-updater";
 
+import { AutomationManager } from "./automation";
 import { BackendManager, type BackendStatus } from "./backend-manager";
 import {
   DEFAULT_PROFILE,
@@ -63,6 +65,33 @@ const isDevApp = process.env.MRP_DEV_APP === "1";
 const SHUTDOWN_TIMEOUT_MS = 5_000; // graceful window before force-killing the tree
 
 let win: BrowserWindow | null = null;
+// Automation Mode: one power-save blocker while Auto Pilot runs; never leaks
+// past the process (released on quit/crash paths; the OS drops it on death).
+const automation = new AutomationManager(powerSaveBlocker, (line) => console.log(line));
+let automationTimer: NodeJS.Timeout | null = null;
+
+/** Reconcile the sleep blocker with the backend's persisted autopilot state. */
+async function syncAutomation(): Promise<void> {
+  try {
+    const res = await fetch(`http://${API_HOST}:${apiPort}/settings/autopilot`);
+    if (!res.ok) return;
+    const body = (await res.json()) as { enabled?: boolean; prevent_sleep?: boolean };
+    automation.sync(body.enabled === true, body.prevent_sleep !== false);
+    // Resilience: when Auto Pilot is on, relaunch at login so an OS restart
+    // resumes the loop as soon as the user signs back in (packaged only).
+    if (app.isPackaged && !isPortable()) {
+      app.setLoginItemSettings({ openAtLogin: body.enabled === true });
+    }
+  } catch {
+    // backend restarting — keep the current blocker state, retry next tick
+  }
+}
+
+function startAutomationSync(): void {
+  void syncAutomation();
+  automationTimer = setInterval(() => void syncAutomation(), 60_000);
+  automationTimer.unref?.();
+}
 let apiPort = 8000;
 let manager: BackendManager | null = null;
 let lastBackendStatus: BackendStatus = "starting";
@@ -875,6 +904,14 @@ function runPrimaryInstance(): void {
       app.quit();
       return true;
     });
+    // Automation Mode: live blocker status + an immediate re-sync nudge
+    // (the renderer calls sync after saving autopilot settings).
+    ipcMain.handle("mrp:automation:status", () => automation.status());
+    ipcMain.handle("mrp:automation:sync", async () => {
+      await syncAutomation();
+      return automation.status();
+    });
+    startAutomationSync();
     // Profiles: isolated data roots (own DB / logs / settings) under one install.
     // Switching (or creating) writes profile.json; the caller relaunches to apply.
     ipcMain.handle("mrp:profiles:get", () => ({
@@ -970,6 +1007,9 @@ app.on("will-quit", (event) => {
   if (cleanupRan) return;
   cleanupRan = true;
   event.preventDefault();
+  // Release the sleep blocker FIRST — it must never outlive the app.
+  automation.dispose("app quitting");
+  if (automationTimer) clearInterval(automationTimer);
   void (manager?.stop() ?? Promise.resolve()).finally(() => app.exit(0));
 });
 
@@ -981,6 +1021,11 @@ app.on("will-quit", (event) => {
  */
 function reportFatalCrash(label: string, err: unknown): void {
   console.error(`[main] ${label}:`, err);
+  try {
+    automation.dispose("fatal crash");
+  } catch {
+    /* best effort */
+  }
   try {
     manager?.forceKillSync();
   } catch {
@@ -1006,7 +1051,14 @@ function reportFatalCrash(label: string, err: unknown): void {
 // Last-resort safety nets for paths that bypass the quit events — a main-process
 // crash, an explicit process.exit, etc. (A hard kill of Electron or a system
 // shutdown that skips even these is covered by the backend's parent watchdog.)
-process.on("exit", () => manager?.forceKillSync());
+process.on("exit", () => {
+  try {
+    automation.dispose("process exit");
+  } catch {
+    /* the OS drops the blocker with the process anyway */
+  }
+  manager?.forceKillSync();
+});
 process.on("uncaughtException", (err) => {
   reportFatalCrash("uncaught exception", err);
   process.exit(1);

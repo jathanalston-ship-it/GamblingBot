@@ -58,8 +58,11 @@ opt-in and `starting_balance` in one payload (partial updates).
 
 ## Requirements & honest limits
 
-- The app must stay **open** — the daemon lives in the desktop process
-  (laptop asleep = no scanning, no entries, no management).
+- The app must stay **open** — the daemon lives in the desktop process.
+  **Automation Mode** (see `docs/AUTOMATION.md`) prevents *system sleep*
+  while Auto Pilot runs (display sleep stays allowed), gates the start on a
+  seven-subsystem preflight, and recovers from unexpected restarts with a
+  downtime + missed-scan report.
 - Entry prices are the scan's freshest price (daily bar / intraday print),
   filled on the paper journal — not a live order book.
 - Premarket scans run on the freshest daily bars, so the meaningful entry
