@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, sessionmaker
 
 from momentum.api import brokerage_service
-from momentum.brokerage import PaperBrokerage
+from momentum.brokerage import OrderRouter, PaperBrokerage
 from momentum.brokerage.types import BracketSpec, ModifyTicket, OrderTicket
 from momentum.core.enums import InstrumentType, OrderType, Side, TimeInForce
 from momentum.core.exceptions import InvalidOrderStateError
@@ -32,6 +32,16 @@ def _session_factory(request: Request) -> sessionmaker[Session]:
 
 def _brokerage(request: Request) -> PaperBrokerage:
     return brokerage_service.build_brokerage(_session_factory(request))
+
+
+def _router(request: Request) -> OrderRouter:
+    """The process-wide order router (cached — keeps the routing log alive)."""
+    cached = getattr(request.app.state, "order_router", None)
+    if isinstance(cached, OrderRouter):
+        return cached
+    built = brokerage_service.build_router(_session_factory(request))
+    request.app.state.order_router = built
+    return built
 
 
 class BracketIn(BaseModel):
@@ -102,14 +112,19 @@ def place_order(body: PlaceOrderIn, request: Request) -> dict[str, Any]:
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    view = _brokerage(request).place_order(ticket)
-    return view.to_dict()
+    report = _router(request).submit(ticket)
+    if not report.accepted and report.order is None:  # refused by capabilities
+        raise HTTPException(status_code=422, detail=report.reason)
+    assert report.order is not None
+    return report.order.to_dict()
 
 
 @router.delete("/orders/{order_id}")
 def cancel_order(order_id: str, request: Request) -> dict[str, Any]:
     try:
-        return _brokerage(request).cancel_order(order_id).to_dict()
+        report = _router(request).cancel(order_id)
+        assert report.order is not None
+        return report.order.to_dict()
     except InvalidOrderStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -117,20 +132,18 @@ def cancel_order(order_id: str, request: Request) -> dict[str, Any]:
 @router.patch("/orders/{order_id}")
 def modify_order(order_id: str, body: ModifyOrderIn, request: Request) -> dict[str, Any]:
     try:
-        return (
-            _brokerage(request)
-            .modify_order(
-                ModifyTicket(
-                    order_id=order_id,
-                    quantity=body.quantity,
-                    limit_price=body.limit_price,
-                    stop_price=body.stop_price,
-                    trail_percent=body.trail_percent,
-                    trail_amount=body.trail_amount,
-                )
+        report = _router(request).modify(
+            ModifyTicket(
+                order_id=order_id,
+                quantity=body.quantity,
+                limit_price=body.limit_price,
+                stop_price=body.stop_price,
+                trail_percent=body.trail_percent,
+                trail_amount=body.trail_amount,
             )
-            .to_dict()
         )
+        assert report.order is not None
+        return report.order.to_dict()
     except InvalidOrderStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -141,13 +154,31 @@ def close_position(
 ) -> dict[str, Any]:
     payload = body or ClosePositionIn()
     try:
-        return (
-            _brokerage(request)
-            .close_position(payload.account_id, symbol.upper(), quantity=payload.quantity)
-            .to_dict()
+        report = _router(request).close(
+            payload.account_id, symbol.upper(), quantity=payload.quantity
         )
+        assert report.order is not None
+        return report.order.to_dict()
     except InvalidOrderStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/capabilities")
+def get_capabilities(request: Request) -> dict[str, Any]:
+    """Every registered broker's declared abilities + the routing default."""
+    order_router = _router(request)
+    return {
+        "default": order_router.default_broker,
+        "brokers": {
+            name: order_router.adapter(name).capabilities.to_dict() for name in order_router.brokers
+        },
+    }
+
+
+@router.get("/routing-log")
+def get_routing_log(request: Request, limit: int = 50) -> list[dict[str, Any]]:
+    """The most recent routing decisions (accepted and refused)."""
+    return _router(request).routing_log(limit)
 
 
 @router.post("/tick")

@@ -24,6 +24,39 @@ Reads: `get_account`, `get_portfolio`, `get_buying_power`, `get_positions`,
 `get_orders`, `get_fills`, `get_history`. **No UI shortcuts** — every mutation
 and every read flows through this surface (HTTP: `/brokerage/*`).
 
+## Live-integration architecture (adapter / capabilities / router / sync)
+
+The decision engine never knows whether it is trading paper, simulation or
+live — it emits an `OrderTicket` and everything else is routing:
+
+- **`BrokerAdapter`** (`adapter.py`) — a `Brokerage` implementation paired
+  with its declared `BrokerCapabilities`; the ONLY place venue-specific
+  knowledge may live. `PaperBrokerAdapter` wraps the internal venue by pure
+  delegation; a live adapter (IBKR, Alpaca live, …) implements the same
+  pair and **requires zero changes** to the scanner, trade manager, risk
+  manager or portfolio manager — enforced by
+  `test_decision_engines_never_import_a_concrete_broker` (source-level
+  check that those packages never name a concrete venue).
+- **`BrokerCapabilities`** (`capabilities.py`) — immutable declaration of
+  order types, time-in-forces, instruments, brackets/OCO/short/fractional
+  support and per-order limits, with `rejection_reason(ticket)`.
+- **`OrderRouter`** (`router.py`) — the single door every instruction walks
+  through: pick the configured adapter (multi-broker registry, named or
+  default), refuse capability-unsupported tickets with a named reason
+  **before the venue sees them**, delegate, and record every decision in a
+  bounded routing log. Wired behind `/brokerage/orders` (place / cancel /
+  modify / close) via `brokerage_service.build_router` — swapping venues is
+  configuration, not code.
+- **`ExecutionReport`** (`reports.py`) — the normalized answer
+  (action/broker/mode/accepted/reason/order/ts) whatever the venue.
+- **`PositionSync` / `AccountSync`** (`sync.py`) — read-only fetch +
+  normalize of venue positions/account into plain snapshots: the raw
+  material broker reconciliation compares against the local database.
+
+HTTP: `GET /brokerage/capabilities` (every registered broker + the routing
+default), `GET /brokerage/routing-log` (recent accepted/refused decisions).
+Tests: `tests/unit/brokerage/test_router.py`.
+
 ## Accounts (Prompt 2)
 
 Every account tracks cash, **settled vs unsettled** cash (T+n business-day

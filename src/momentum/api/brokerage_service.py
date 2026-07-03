@@ -16,11 +16,25 @@ from typing import Any
 from sqlalchemy.orm import Session, sessionmaker
 
 from momentum.brokerage import PaperBrokerage, Quote
+from momentum.brokerage.router import OrderRouter
 from momentum.brokerage.execution_sim import quote_from_bar
 from momentum.data.cache import BarCache
 from momentum.data.schema import Timeframe
 
 _log = logging.getLogger(__name__)
+
+
+def build_router(session_factory: sessionmaker[Session]) -> OrderRouter:
+    """The order router with the configured venue registered.
+
+    Today that is the internal paper venue; a live adapter registers here
+    (routing configuration), never in decision code.
+    """
+    from momentum.brokerage import PaperBrokerAdapter
+
+    router = OrderRouter()
+    router.register(PaperBrokerAdapter(build_brokerage(session_factory)), default=True)
+    return router
 
 
 def build_brokerage(session_factory: sessionmaker[Session]) -> PaperBrokerage:
