@@ -94,3 +94,39 @@ weekends, drawdown, Sharpe, metrics) and the venue end-to-end (bracket → OCO,
 trailing exit, day expiry, settlement reducing buying power, append-only
 history, idempotent placement). Route tests cover the HTTP surface. The venue
 clock is injectable — no real clock in tests.
+
+## Position engine (Prompt 4)
+
+Every position row tracks average cost, realized + unrealized P&L, today's
+gain (vs the day-roll baseline price), maximum favorable / adverse excursion
+(marked on every tick), the open R multiple (vs the initial stop distance),
+time in trade and the stop. Option structures ride the same abstraction via
+``instrument`` + ``multiplier`` (a contract is 100 units); future instruments
+add an ``InstrumentType`` and a multiplier, nothing else. Health, thesis and
+exit recommendation come from the trade-lifecycle engine, joined by symbol in
+the portfolio-manager service.
+
+## Portfolio Manager (Prompt 5)
+
+`brokerage/portfolio_manager.py` (pure) reads the whole book at once:
+portfolio exposure, cash allocation, maximum sector concentration, maximum
+single-position exposure, average pairwise correlation (from recent daily
+returns), value-weighted portfolio beta (vs SPY), open risk, expected
+downside (stops where defined; a 10% assumption where not) and capital
+efficiency (deployed $ per $ of defined risk). It then emits **justified
+suggestions** — Increase / Reduce / Close / Add / Diversify — each quoting
+the measurement that triggered it (never a black box).
+`GET /brokerage/portfolio-analysis`; inputs assembled by
+`api/portfolio_manager_service.py` (positions + tracked-trade health/sector +
+bar-cache returns + latest regime).
+
+## Desktop
+
+The **Brokerage** view (nav: Today → Brokerage) is the full venue UI:
+account strip (equity, settled/unsettled cash, buying power, daily/total
+P&L, drawdown, win rate / expectancy / sharpe), a place-order form (market /
+limit / stop / stop-limit / trailing-stop + bracket TP/SL), the positions
+table (value, unrealized, today, R, stop, close button), the order blotter
+(status chips, fills, cancel, and the **full persisted lifecycle** expandable
+per order) and the Portfolio Manager panel (measurements + suggestions).
+"Process market tick" advances the venue from the freshest cached bars.

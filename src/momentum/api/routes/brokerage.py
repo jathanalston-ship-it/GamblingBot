@@ -221,6 +221,15 @@ def get_fills(
     ]
 
 
+@router.get("/portfolio-analysis")
+def portfolio_analysis(request: Request, account_id: str = DEFAULT_ACCOUNT) -> dict[str, Any]:
+    """The Portfolio Manager's whole-book read: exposure, concentration,
+    correlation, beta, open risk, expected downside + justified suggestions."""
+    from momentum.api import portfolio_manager_service
+
+    return portfolio_manager_service.analysis_dict(_session_factory(request), account_id=account_id)
+
+
 @router.get("/history")
 def get_history(
     request: Request, account_id: str = DEFAULT_ACCOUNT, limit: int = 500

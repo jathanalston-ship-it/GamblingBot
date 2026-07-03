@@ -23,6 +23,7 @@ const SECTIONS: { title: string; items: Item[] }[] = [
       { to: "/watchlists", label: "Watchlists", icon: "list" },
       { to: "/trades", label: "My Trades", icon: "heart" },
       { to: "/paper", label: "Paper Account", icon: "briefcase", key: "7" },
+      { to: "/brokerage", label: "Brokerage", icon: "briefcase", key: "8" },
     ],
   },
   {

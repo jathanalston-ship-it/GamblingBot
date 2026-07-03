@@ -13,6 +13,7 @@ import CommandCenter from "./views/CommandCenter";
 const Analogs = lazy(() => import("./views/Analogs"));
 const Analytics = lazy(() => import("./views/Analytics"));
 const Backtesting = lazy(() => import("./views/Backtesting"));
+const Brokerage = lazy(() => import("./views/Brokerage"));
 const Conviction = lazy(() => import("./views/Conviction"));
 const DataHealth = lazy(() => import("./views/DataHealth"));
 const Developer = lazy(() => import("./views/Developer"));
@@ -55,6 +56,7 @@ export default function App() {
             <Route path="backtest" element={<Backtesting />} />
             <Route path="replay" element={<Replay />} />
             <Route path="paper" element={<Paper />} />
+            <Route path="brokerage" element={<Brokerage />} />
             <Route
               path="live"
               element={
