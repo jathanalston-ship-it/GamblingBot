@@ -219,6 +219,7 @@ class AuditEvent(str, Enum):
     RISK_ADJUSTMENT = "risk_adjustment"
     STRATEGY_CHANGE = "strategy_change"
     BACKTEST_RUN = "backtest_run"
+    RECONCILIATION = "reconciliation"
 
     @property
     def display(self) -> str:

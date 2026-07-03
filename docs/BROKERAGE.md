@@ -57,6 +57,36 @@ HTTP: `GET /brokerage/capabilities` (every registered broker + the routing
 default), `GET /brokerage/routing-log` (recent accepted/refused decisions).
 Tests: `tests/unit/brokerage/test_router.py`.
 
+## Broker reconciliation (`reconciliation.py`)
+
+The venue's word is verified, never assumed. A dedicated
+`ReconciliationLoop` (daemon thread, every 30s — `MRP_RECONCILE_INTERVAL_SECONDS`
+— started/stopped with the market daemon) plus a pass **after every venue
+tick** compares broker positions / cash / orders / fills / buying power
+(read through the Brokerage protocol) against the **local database's
+immutable fills trail** (the system of record):
+
+| Discrepancy | Detection | Resolution |
+| --- | --- | --- |
+| missing fills | order claims more filled quantity than its fills | flagged critical |
+| duplicate fills | identical execution recorded twice | flagged critical (trail never deleted) |
+| incorrect quantity | position row ≠ what fills imply | **auto-corrected to the fills trail**, recorded in the report + audit log |
+| incorrect avg price | position avg cost ≠ fills-implied | auto-corrected, recorded |
+| cancelled-order excess fills | terminal-cancelled order with unacknowledged fills | flagged critical |
+| unexpected execution | fill for an order the local DB never saw | flagged critical |
+| cash mismatch | account cash ≠ starting + fills-implied delta | **flagged, NEVER rewritten** — money mismatches always go to the operator |
+| buying-power mismatch | ≠ settled × margin | flagged critical |
+
+**Never silently overwrite**: only *derived* rows are corrected (to match
+the immutable trail), and every correction lands in the discrepancy report
+AND an append-only `audit_log` row (`event_type = "reconciliation"`).
+HTTP: `GET /brokerage/reconciliation` (freshest report + loop status),
+`POST /brokerage/reconcile` (run a pass now); every `/brokerage/tick`
+result carries a `reconciliation` summary.
+Tests: `tests/unit/brokerage/test_reconciliation.py` (7 — every
+discrepancy class induced and verified, corrections converge, money never
+rewritten, loop cadence + clean stop).
+
 ## Accounts (Prompt 2)
 
 Every account tracks cash, **settled vs unsettled** cash (T+n business-day

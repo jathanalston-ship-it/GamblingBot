@@ -232,6 +232,25 @@ class AuditLogger:
             )
         )
 
+    def reconciliation(
+        self,
+        *,
+        summary: str,
+        account_id: str,
+        ts: dt.datetime | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> AuditLog:
+        return self.record(
+            AuditRecord(
+                event=AuditEvent.RECONCILIATION,
+                summary=summary,
+                ts=ts or _now(),
+                entity_type="account",
+                entity_id=account_id,
+                payload=payload or {},
+            )
+        )
+
     def backtest_run(
         self,
         *,

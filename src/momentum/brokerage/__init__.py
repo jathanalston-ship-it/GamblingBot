@@ -21,6 +21,12 @@ from momentum.brokerage.execution_sim import ExecutionSimulator, Quote, Simulate
 from momentum.brokerage.interface import Brokerage
 from momentum.brokerage.oms import BrokerOrder, OrderLink
 from momentum.brokerage.paper import PaperBrokerage
+from momentum.brokerage.reconciliation import (
+    Discrepancy,
+    ReconciliationLoop,
+    ReconciliationReport,
+    Reconciler,
+)
 from momentum.brokerage.reports import ExecutionReport
 from momentum.brokerage.router import OrderRouter
 from momentum.brokerage.sync import AccountSnapshot, AccountSync, PositionSnapshot, PositionSync
@@ -43,6 +49,7 @@ __all__ = [
     "BrokerOrder",
     "Brokerage",
     "BrokerageConfig",
+    "Discrepancy",
     "ExecutionReport",
     "ExecutionSimulator",
     "ModifyTicket",
@@ -57,6 +64,9 @@ __all__ = [
     "PositionSync",
     "PositionView",
     "Quote",
+    "ReconciliationLoop",
+    "ReconciliationReport",
+    "Reconciler",
     "SimulatedExecution",
     "compute_account_metrics",
     "default_config",

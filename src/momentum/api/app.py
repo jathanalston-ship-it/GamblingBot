@@ -207,13 +207,24 @@ def create_app(session_factory: sessionmaker[Session] | None = None) -> FastAPI:
         app.state.market_daemon = market_daemon
         app.state.daemon_cache = daemon_cache
 
+        from momentum.api import brokerage_service
+        from momentum.brokerage import ReconciliationLoop, Reconciler
+
+        reconciliation_loop = ReconciliationLoop(
+            Reconciler(session_factory, brokerage_service.build_brokerage(session_factory)),
+            interval_seconds=float(os.environ.get("MRP_RECONCILE_INTERVAL_SECONDS", "30")),
+        )
+        app.state.reconciliation_loop = reconciliation_loop
+
         @app.on_event("startup")
         def _start_daemon() -> None:
             market_daemon.start()
+            reconciliation_loop.start()
 
         @app.on_event("shutdown")
         def _stop_daemon() -> None:
             market_daemon.stop()
+            reconciliation_loop.stop()
 
     for module in _ROUTERS:
         app.include_router(module.router)

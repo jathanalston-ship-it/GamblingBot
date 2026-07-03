@@ -175,6 +175,34 @@ def get_capabilities(request: Request) -> dict[str, Any]:
     }
 
 
+@router.get("/reconciliation")
+def get_reconciliation(request: Request, account_id: str = DEFAULT_ACCOUNT) -> dict[str, Any]:
+    """The freshest reconciliation report (runs a pass when none exists yet)."""
+    loop = getattr(request.app.state, "reconciliation_loop", None)
+    if loop is not None and loop.last_report is not None:
+        payload: dict[str, Any] = loop.last_report.to_dict()
+        payload["loop_running"] = bool(loop.running)
+        payload["interval_seconds"] = loop.interval_seconds
+        payload["passes"] = loop.passes
+        return payload
+    from momentum.brokerage import Reconciler
+
+    sf = _session_factory(request)
+    report = Reconciler(sf, brokerage_service.build_brokerage(sf)).reconcile(account_id)
+    payload = report.to_dict()
+    payload["loop_running"] = False
+    return payload
+
+
+@router.post("/reconcile")
+def run_reconcile(request: Request, account_id: str = DEFAULT_ACCOUNT) -> dict[str, Any]:
+    """Run one reconciliation pass now and return the report."""
+    from momentum.brokerage import Reconciler
+
+    sf = _session_factory(request)
+    return Reconciler(sf, brokerage_service.build_brokerage(sf)).reconcile(account_id).to_dict()
+
+
 @router.get("/routing-log")
 def get_routing_log(request: Request, limit: int = 50) -> list[dict[str, Any]]:
     """The most recent routing decisions (accepted and refused)."""

@@ -140,4 +140,18 @@ def tick(
 
     result = brokerage.process_tick(quotes, ts=when)
     result["symbols"] = sorted(quotes)
+
+    # Verify the venue's word against the immutable fills trail while the
+    # book is warm — discrepancies surface immediately, not at end of day.
+    try:
+        from momentum.brokerage import Reconciler
+
+        report = Reconciler(session_factory, brokerage).reconcile(ts=when)
+        result["reconciliation"] = {
+            "clean": report.clean,
+            "discrepancies": len(report.discrepancies),
+            "corrections": report.corrections,
+        }
+    except Exception:  # noqa: BLE001 — reconciliation must never break a tick
+        _log.warning("post-tick reconciliation failed", exc_info=True)
     return result
