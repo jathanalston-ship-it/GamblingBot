@@ -49,6 +49,7 @@ class MarketDaemon:
         config: DaemonConfig | None = None,
         clock: Clock | None = None,
         heartbeat: Heartbeat | None = None,
+        phase_source: Callable[[], str | None] | None = None,
     ) -> None:
         self.config = config or DaemonConfig()
         self._cycle = cycle
@@ -56,6 +57,9 @@ class MarketDaemon:
         # Automation-resilience hook: called once per loop iteration (scan or
         # idle) so a crash/restart can measure the gap it left. Best-effort.
         self._heartbeat = heartbeat
+        # Live sub-phase of an in-flight scan (the cycle's progress messages);
+        # lets the UI say ENTERING/EXITING instead of a generic SCANNING.
+        self._phase_source = phase_source
 
         self._thread: threading.Thread | None = None
         self._wake = threading.Event()  # interrupts any sleep
@@ -216,6 +220,11 @@ class MarketDaemon:
                 "running": self.running,
                 "paused": self.paused,
                 "scanning_now": self._scanning_now,
+                "scan_phase": (
+                    self._phase_source()
+                    if self._scanning_now and self._phase_source is not None
+                    else None
+                ),
                 "market_state": (self._current_state or market_state(now)).value,
                 "scan_interval_seconds": self.config.scan_interval_seconds,
                 "closed_interval_seconds": self.config.closed_interval_seconds,

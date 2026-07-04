@@ -146,3 +146,31 @@ def test_start_is_idempotent() -> None:
     daemon.start()
     daemon.start()
     daemon.stop(timeout=2.0)
+
+
+def test_scan_phase_surfaces_only_while_scanning() -> None:
+    """The live sub-phase (ENTERING/EXITING in the UI) is visible during a
+    cycle and never leaks into an idle status."""
+    phase: list[str | None] = [None]
+    entered = threading.Event()
+    release = threading.Event()
+
+    def cycle(state: MarketState, manual: bool) -> dict[str, Any]:
+        phase[0] = "autopilot — evaluating entries"
+        entered.set()
+        release.wait(timeout=3.0)
+        phase[0] = None
+        return {"cycle": 1}
+
+    daemon = MarketDaemon(
+        cycle, config=FAST, clock=lambda: OPEN_HOURS, phase_source=lambda: phase[0]
+    )
+    daemon.start()
+    assert entered.wait(timeout=3.0)
+    status = daemon.status()
+    assert status["scanning_now"] is True
+    assert status["scan_phase"] == "autopilot — evaluating entries"
+    release.set()
+    assert _wait(lambda: daemon.status()["scanning_now"] is False)
+    assert daemon.status()["scan_phase"] is None
+    daemon.stop(timeout=2.0)

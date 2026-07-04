@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from momentum.daemon import MarketState, interval_seconds, market_state
+from momentum.daemon.market_state import closed_reason, market_clock
 
 ET = ZoneInfo("America/New_York")
 
@@ -45,6 +46,49 @@ def test_weekend_closed() -> None:
 def test_holiday_closed() -> None:
     # Independence Day 2026 falls on Saturday; observed Friday 2026-07-03.
     assert market_state(_at(12, 0, day=dt.date(2026, 7, 3))) is MarketState.CLOSED
+
+
+def test_half_day_regular_ends_at_1pm_et() -> None:
+    # 2026-11-27 is the Friday after Thanksgiving — a 13:00 ET early close.
+    half = dt.date(2026, 11, 27)
+    assert market_state(_at(12, 59, day=half)) is MarketState.REGULAR
+    assert market_state(_at(13, 0, day=half)) is MarketState.AFTER_HOURS
+    assert market_state(_at(16, 59, day=half)) is MarketState.AFTER_HOURS
+    assert market_state(_at(17, 0, day=half)) is MarketState.CLOSED
+
+
+def test_half_day_christmas_eve() -> None:
+    # 2026-12-25 is a Friday, so Thursday 2026-12-24 is a half day.
+    assert market_state(_at(14, 0, day=dt.date(2026, 12, 24))) is MarketState.AFTER_HOURS
+
+
+def test_july_3_full_holiday_is_not_a_half_day() -> None:
+    # July 4 2026 is a Saturday: July 3 is the observed FULL holiday, never a
+    # half day — the observance rule must win over the early-close rule.
+    assert market_state(_at(12, 0, day=dt.date(2026, 7, 3))) is MarketState.CLOSED
+
+
+def test_closed_reason_weekend_holiday_overnight() -> None:
+    assert closed_reason(_at(12, 0, day=dt.date(2026, 7, 4))) == "weekend"  # Saturday
+    assert closed_reason(_at(12, 0, day=dt.date(2026, 7, 3))) == "holiday"  # observed July 4th
+    assert closed_reason(_at(22, 0)) == "overnight"  # Wednesday night
+    assert closed_reason(_at(12, 0)) is None  # market open
+
+
+def test_clock_reports_early_close_and_reason() -> None:
+    half = dt.date(2026, 11, 27)
+    clock = market_clock(_at(10, 0, day=half))
+    assert clock.early_close_today is True
+    assert clock.closed_reason is None
+    # The close countdown targets 13:00 ET, not 16:00.
+    assert clock.seconds_to_market_close == pytest.approx(3 * 3600.0)
+
+    weekend = market_clock(_at(12, 0, day=dt.date(2026, 7, 4)))
+    assert weekend.closed_reason == "weekend"
+    assert weekend.early_close_today is False
+    payload = weekend.to_dict()
+    assert payload["closed_reason"] == "weekend"
+    assert payload["early_close_today"] is False
 
 
 def test_naive_datetime_rejected() -> None:

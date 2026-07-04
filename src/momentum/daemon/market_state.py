@@ -23,6 +23,9 @@ PREMARKET_OPEN = dt.time(4, 0)
 REGULAR_OPEN = dt.time(9, 30)
 REGULAR_CLOSE = dt.time(16, 0)
 AFTER_HOURS_CLOSE = dt.time(20, 0)
+# Early-close (half-day) sessions: regular ends 13:00 ET, after-hours 17:00 ET.
+EARLY_CLOSE = dt.time(13, 0)
+EARLY_AFTER_HOURS_CLOSE = dt.time(17, 0)
 
 
 class MarketState(str, Enum):
@@ -46,14 +49,30 @@ def market_state(now: dt.datetime, *, calendar: TradingCalendar | None = None) -
     cal = calendar or _CALENDAR
     if not cal.is_session(eastern.date()):
         return MarketState.CLOSED
+    half = cal.is_half_day(eastern.date())
+    regular_close = EARLY_CLOSE if half else REGULAR_CLOSE
+    after_hours_close = EARLY_AFTER_HOURS_CLOSE if half else AFTER_HOURS_CLOSE
     t = eastern.time()
     if PREMARKET_OPEN <= t < REGULAR_OPEN:
         return MarketState.PREMARKET
-    if REGULAR_OPEN <= t < REGULAR_CLOSE:
+    if REGULAR_OPEN <= t < regular_close:
         return MarketState.REGULAR
-    if REGULAR_CLOSE <= t < AFTER_HOURS_CLOSE:
+    if regular_close <= t < after_hours_close:
         return MarketState.AFTER_HOURS
     return MarketState.CLOSED
+
+
+def closed_reason(now: dt.datetime, *, calendar: TradingCalendar | None = None) -> str | None:
+    """Why the market is closed at ``now``: ``weekend`` / ``holiday`` /
+    ``overnight`` (outside hours on a trading day), or ``None`` when open."""
+    if market_state(now, calendar=calendar) is not MarketState.CLOSED:
+        return None
+    eastern = now.astimezone(EASTERN)
+    if eastern.weekday() >= 5:
+        return "weekend"
+    if not (calendar or _CALENDAR).is_session(eastern.date()):
+        return "holiday"
+    return "overnight"
 
 
 def interval_seconds(
@@ -87,6 +106,8 @@ class MarketClock:
     seconds_to_market_open: float
     seconds_to_market_close: float
     seconds_to_premarket: float
+    closed_reason: str | None = None  # weekend / holiday / overnight (when CLOSED)
+    early_close_today: bool = False  # today is a 13:00-ET half-day session
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -100,6 +121,8 @@ class MarketClock:
             "seconds_to_market_open": round(self.seconds_to_market_open, 1),
             "seconds_to_market_close": round(self.seconds_to_market_close, 1),
             "seconds_to_premarket": round(self.seconds_to_premarket, 1),
+            "closed_reason": self.closed_reason,
+            "early_close_today": self.early_close_today,
         }
 
 
@@ -122,6 +145,20 @@ def _next_session_boundary(
     raise RuntimeError("no trading session found within 30 days")
 
 
+def _next_close_boundary(now: dt.datetime, cal: TradingCalendar) -> dt.datetime:
+    """The next regular-session close — 13:00 ET on half days, 16:00 otherwise."""
+    eastern = now.astimezone(EASTERN)
+    day = eastern.date()
+    for _ in range(30):  # bounded: covers any holiday stretch
+        if cal.is_session(day):
+            boundary = EARLY_CLOSE if cal.is_half_day(day) else REGULAR_CLOSE
+            candidate = dt.datetime.combine(day, boundary, tzinfo=EASTERN)
+            if candidate > now:
+                return candidate
+        day += dt.timedelta(days=1)
+    raise RuntimeError("no trading session found within 30 days")
+
+
 def market_clock(now: dt.datetime, *, calendar: TradingCalendar | None = None) -> MarketClock:
     """Everything a clock widget needs, for the aware instant ``now``."""
     if now.tzinfo is None:
@@ -129,7 +166,7 @@ def market_clock(now: dt.datetime, *, calendar: TradingCalendar | None = None) -
     cal = calendar or _CALENDAR
     eastern = now.astimezone(EASTERN)
     next_open = _next_session_boundary(now, REGULAR_OPEN, cal)
-    next_close = _next_session_boundary(now, REGULAR_CLOSE, cal)
+    next_close = _next_close_boundary(now, cal)
     next_premarket = _next_session_boundary(now, PREMARKET_OPEN, cal)
     return MarketClock(
         state=market_state(now, calendar=cal),
@@ -142,4 +179,6 @@ def market_clock(now: dt.datetime, *, calendar: TradingCalendar | None = None) -
         seconds_to_market_open=(next_open - now).total_seconds(),
         seconds_to_market_close=(next_close - now).total_seconds(),
         seconds_to_premarket=(next_premarket - now).total_seconds(),
+        closed_reason=closed_reason(now, calendar=cal),
+        early_close_today=cal.is_session(eastern.date()) and cal.is_half_day(eastern.date()),
     )

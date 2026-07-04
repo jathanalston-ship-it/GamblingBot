@@ -77,3 +77,25 @@ def test_inclusive_flag() -> None:
 def test_count_sessions() -> None:
     cal = TradingCalendar()
     assert cal.count_sessions("2023-01-01", "2023-01-31") == 20
+
+
+def test_half_days_thanksgiving_friday_and_christmas_eve() -> None:
+    cal = TradingCalendar()
+    # 2024: Thanksgiving is Thu Nov 28 -> Fri Nov 29 is a half day; Dec 25 is a
+    # Wednesday so Dec 24 (Tue) is a half day.
+    assert cal.is_half_day("2024-11-29")
+    assert cal.is_half_day("2024-12-24")
+    # A half day is still a full trading session (just an early close).
+    assert cal.is_session("2024-11-29")
+    # An ordinary session is not a half day.
+    assert not cal.is_half_day("2024-11-27")
+
+
+def test_july_3_half_day_only_when_july_4_is_a_weekday() -> None:
+    cal = TradingCalendar()
+    # 2024: July 4 is a Thursday -> July 3 is a half day.
+    assert cal.is_half_day("2024-07-03")
+    # 2026: July 4 is a Saturday -> July 3 is the OBSERVED full holiday, so it
+    # is neither a session nor a half day.
+    assert not cal.is_session("2026-07-03")
+    assert not cal.is_half_day("2026-07-03")

@@ -32,23 +32,37 @@ as `—`.
 
 ### Top status bar
 Local + market time (LiveClock, OS timezone/locale), market status chip
-(PREMARKET / MARKET OPEN / AFTER HOURS / CLOSED) with the countdown to the
-next open/close boundary, latest **data / scan / portfolio** timestamps, and
-**five health lights** (backend, scheduler, automation, broker, data
-provider) — each green/yellow/red with the exact reason in the tooltip
-(`hud_service._health_lights`, derived from the daemon thread state, autopilot
-settings, a live paper-venue account read, and the data-health service).
+(PREMARKET / MARKET OPEN / AFTER HOURS / CLOSED / **WEEKEND** / **HOLIDAY**)
+with the countdown to the next open/close boundary, latest
+**data / scan / portfolio** timestamps, and **five health lights** (backend,
+scheduler, automation, broker, data provider) — each green/yellow/red with
+the exact reason in the tooltip (`hud_service._health_lights`, derived from
+the daemon thread state, autopilot settings, a live paper-venue account read,
+and the data-health service).
+
+The market state comes from `daemon.market_state` / `market_clock`, which is
+**early-close aware**: on an NYSE half day (July 3 when the 4th is a weekday,
+the Friday after Thanksgiving, Christmas Eve) the regular session ends 13:00
+ET (after-hours 17:00 ET), the close countdown targets 13:00, and an
+**EARLY CLOSE 1PM ET** chip is shown (`clock.early_close_today`). When closed,
+`clock.closed_reason` distinguishes **weekend / holiday / overnight** so the
+chip reads WEEKEND or HOLIDAY rather than a bare CLOSED.
 
 ### Auto Pilot hero — what is the bot doing RIGHT NOW
 `autopilot_service.status()` derives one state from live facts (daemon
-running/paused/scanning flag, ET market clock, open managed book, autopilot
-setting): `STOPPED / PAUSED / SCANNING / WAITING / MANAGING / RUNNING / IDLE`,
-plus a plain-language activity line ("Managing 2 positions. Next scan in
-42s."), the next scheduled action with countdown, the last completed cycle
-(candidates / managed / entered / closed) and the last completed action from
-the activity feed. Controls: **Pause / Resume** (`/daemon/pause|resume`),
-**Scan now** (`/daemon/scan-now`), and the ticker search that opens the Trade
-Plan Generator.
+running/paused/scanning flag, **the in-flight scan's live sub-phase**, ET
+market clock, open managed book, autopilot setting):
+`STOPPED / PAUSED / SCANNING / ENTERING / EXITING / WAITING / MANAGING /
+RUNNING / IDLE`, plus a plain-language activity line ("Managing 2 positions.
+Next scan in 42s."), the next scheduled action with countdown, the last
+completed cycle (candidates / managed / entered / closed) and the last
+completed action from the activity feed. During a scan the pipeline's own
+progress messages flow through the daemon (`worker.scan_phase`, fed by
+`daemon_service`'s `phase` hook) so the UI refines a generic SCANNING into
+**EXITING** (managing open trades — stops/targets/scale-outs) and **ENTERING**
+(autopilot evaluating entries). Controls: **Pause / Resume**
+(`/daemon/pause|resume`), **Scan now** (`/daemon/scan-now`), and the ticker
+search that opens the Trade Plan Generator.
 
 ### Account summary — what is my money doing
 `hud_service._account` derives every number from the paper journal + tracked
@@ -62,9 +76,14 @@ recommendation-only rows carry no money and are excluded.
 
 ### Active Trade Manager — do I need to intervene
 One card per open position (`TradeCard`): ticker, health battery + score,
-conviction, MANAGED/MANUAL badge, entry vs price, size, P/L, stop, next
+conviction with a **confidence-trend arrow** (▲ rising / ▼ falling / →
+flat — the measured conviction change between the last two evaluations, in
+the tooltip), MANAGED/MANUAL badge, entry vs price, size, P/L, stop, next
 target, **risk remaining**, unrealized R, days held, the current management
-state and the **WHY** line (latest evaluation's action + first reason).
+state and the **WHY** line (latest evaluation's action + first reason). The
+trend is derived in `trade_lifecycle_service._conviction_trend` from the two
+newest evaluation rows — never invented; a trade with a single evaluation
+shows no arrow.
 
 **User control surface** — every action posts to
 `POST /trade-lifecycle/{uid}/override` (serialized by the trading mutex,
@@ -140,12 +159,19 @@ Persistence: `tracked_trades.management_mode` (`managed`/`manual`, migration
 
 - `tests/unit/api/test_command_center_hud.py` — the HUD derives every block
   from live rows (real scan through a stub provider), account reflects an
-  open position, all bot states, search, verdict completeness ("never a bare
-  no"), HTTP round trips.
+  open position, all bot states (incl. **ENTERING/EXITING** from the scan
+  sub-phase), search, verdict completeness ("never a bare no"), the measured
+  **conviction trend** end to end, HTTP round trips.
 - `tests/unit/api/test_overrides.py` — move_stop applied + audited + respected
   exactly by the management engine (including a *lowered* stop), manual mode
   survives a 40 % adverse gap untouched then resumes on convert back,
   reduce/add/close, garbage refused (nothing changed, nothing logged), HTTP.
+- `tests/unit/daemon/test_market_state.py` — half-day sessions close 13:00 ET
+  (Thanksgiving Friday, Christmas Eve), July 3 stays a **full** observed
+  holiday, `closed_reason` weekend/holiday/overnight, and `market_clock`
+  reports `early_close_today` + a 13:00-ET close countdown.
+- `tests/unit/daemon/test_worker.py` — the live `scan_phase` is visible only
+  while a cycle runs and never leaks into an idle status.
 - `GET /health/routes` passes with the new routes (search accepts an empty
   query so the in-process probe stays green).
 - Screenshots generated in real Chromium against the built bundle with

@@ -820,12 +820,30 @@ def advice_report(session: Session, *, recent_limit: int = 50) -> AdviceReportOu
 # --------------------------------------------------------------------------- #
 # Reads (the /trade-lifecycle routes)
 # --------------------------------------------------------------------------- #
+def _conviction_trend(
+    latest: TradeEvaluation | None, previous: TradeEvaluation | None
+) -> dict[str, Any]:
+    """Confidence direction between the last two evaluations (both measured)."""
+    if (
+        latest is None
+        or previous is None
+        or latest.current_conviction is None
+        or previous.current_conviction is None
+    ):
+        return {"conviction_trend": None, "conviction_change": None}
+    delta = latest.current_conviction - previous.current_conviction
+    trend = "rising" if delta >= 1.0 else "falling" if delta <= -1.0 else "flat"
+    return {"conviction_trend": trend, "conviction_change": round(delta, 1)}
+
+
 def _mark_to_market(session: Session, row: TrackedTrade) -> dict[str, Any]:
     """Live-ish valuation from the last known price (the latest evaluation's
     price — scan-fresh, not a realtime quote; labeled as such in the UI)."""
     if row.status != "open":
         return {}
-    latest = TradeEvaluationRepository(session).latest_for(row.trade_uid)
+    recent = TradeEvaluationRepository(session).for_trade(row.trade_uid, limit=2)
+    latest = recent[0] if recent else None
+    previous = recent[1] if len(recent) > 1 else None
     price = latest.price if latest is not None else None
     if price is None:
         return {}
@@ -840,6 +858,7 @@ def _mark_to_market(session: Session, row: TrackedTrade) -> dict[str, Any]:
         "unrealized_r": round(unrealized_r, 3) if unrealized_r is not None else None,
         "unrealized_pnl": (round((price - row.entry_price) * quantity, 2) if quantity else None),
         "distance_to_stop_pct": (round((price - row.stop_price) / price, 4) if price > 0 else None),
+        **_conviction_trend(latest, previous),
     }
 
 

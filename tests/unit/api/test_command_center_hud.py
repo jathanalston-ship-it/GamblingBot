@@ -146,6 +146,64 @@ def test_autopilot_status_states(factory: sessionmaker[Session]) -> None:
         assert idle["last_cycle"]["entered"] == 1
 
 
+def test_autopilot_status_entering_and_exiting_from_scan_phase(
+    factory: sessionmaker[Session],
+) -> None:
+    """During a scan, the live pipeline phase refines SCANNING into
+    ENTERING (autopilot entries) / EXITING (managing open trades)."""
+    _scan(factory)
+    with factory() as session:
+        entering = autopilot_service.status(
+            session,
+            daemon=FakeDaemon(scanning_now=True, scan_phase="autopilot — evaluating entries"),
+        )
+        assert entering["state"] == "entering"
+        assert entering["state_label"] == "ENTERING"
+        assert "entries" in entering["activity"].lower()
+
+        exiting = autopilot_service.status(
+            session,
+            daemon=FakeDaemon(scanning_now=True, scan_phase="reevaluating + managing open trades"),
+        )
+        assert exiting["state"] == "exiting"
+        assert exiting["state_label"] == "EXITING"
+        assert "stops" in exiting["activity"].lower()
+
+        early = autopilot_service.status(
+            session, daemon=FakeDaemon(scanning_now=True, scan_phase="pulling market data")
+        )
+        assert early["state"] == "scanning"  # unknown/early phases stay SCANNING
+
+
+def test_conviction_trend_between_evaluations(factory: sessionmaker[Session]) -> None:
+    from momentum.api import trade_lifecycle_service
+    from momentum.api.trade_lifecycle_service import _conviction_trend
+    from momentum.persistence.models.trade_evaluation import TradeEvaluation
+
+    up = TradeEvaluation(trade_uid="u", symbol="AAA", current_conviction=70.0)
+    down = TradeEvaluation(trade_uid="u", symbol="AAA", current_conviction=64.0)
+    assert _conviction_trend(up, down) == {"conviction_trend": "rising", "conviction_change": 6.0}
+    assert _conviction_trend(down, up)["conviction_trend"] == "falling"
+    assert _conviction_trend(up, up)["conviction_trend"] == "flat"
+    assert _conviction_trend(up, None)["conviction_trend"] is None  # one eval = no trend
+
+    # End to end: take a position, run further scans (fresh evaluations), and
+    # the mark carries a measured trend — never invented.
+    _scan(factory)
+    with factory() as session:
+        take = trade_lifecycle_service.take_trade(session, "AAA", ts=dt.datetime.now(tz=dt.UTC))
+        assert take["ok"], take.get("error")
+    _scan(factory)
+    _scan(factory)
+    with factory() as session:
+        trade = next(
+            t
+            for t in trade_lifecycle_service.list_trades(session, status="open")
+            if t.symbol == "AAA"
+        )
+    assert trade.conviction_trend in ("rising", "falling", "flat")
+
+
 def test_autopilot_status_managing_when_positions_open(
     factory: sessionmaker[Session], user_dir: Path
 ) -> None:
@@ -221,6 +279,8 @@ def test_hud_endpoint_over_http(factory: sessionmaker[Session]) -> None:
         "STOPPED",
         "WAITING",
         "SCANNING",
+        "ENTERING",
+        "EXITING",
         "MANAGING",
         "IDLE",
     )

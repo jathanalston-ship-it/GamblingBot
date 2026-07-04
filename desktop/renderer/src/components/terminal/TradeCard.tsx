@@ -36,7 +36,15 @@ export interface TrackedTradeRow {
   journal_trade_id: number | null;
   latest_action?: string | null;
   latest_reason?: string | null;
+  conviction_trend?: string | null;
+  conviction_change?: number | null;
 }
+
+const TREND_GLYPH: Record<string, { glyph: string; tone: string; label: string }> = {
+  rising: { glyph: "▲", tone: "text-emerald-400", label: "conviction rising" },
+  falling: { glyph: "▼", tone: "text-rose-400", label: "conviction falling" },
+  flat: { glyph: "→", tone: "text-slate-500", label: "conviction flat" },
+};
 
 const HEALTH_TONE: Record<string, string> = {
   Strong: "text-emerald-400 border-emerald-500/40 bg-emerald-500/10",
@@ -123,6 +131,18 @@ export function TradeCard({
         <span className="text-[11px] text-slate-500">
           conviction {trade.conviction_score != null ? Math.round(trade.conviction_score) : "—"}
           {trade.conviction_band ? ` (${trade.conviction_band})` : ""}
+          {trade.conviction_trend && TREND_GLYPH[trade.conviction_trend] ? (
+            <span
+              className={`ml-1 ${TREND_GLYPH[trade.conviction_trend].tone}`}
+              title={`${TREND_GLYPH[trade.conviction_trend].label}${
+                trade.conviction_change != null
+                  ? ` (${trade.conviction_change > 0 ? "+" : ""}${trade.conviction_change} since last scan)`
+                  : ""
+              }`}
+            >
+              {TREND_GLYPH[trade.conviction_trend].glyph}
+            </span>
+          ) : null}
         </span>
         <span
           className={`ml-auto rounded px-2 py-0.5 text-[11px] font-medium ${

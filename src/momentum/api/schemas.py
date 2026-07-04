@@ -971,6 +971,9 @@ class TrackedTradeOut(BaseModel):
     unrealized_r: float | None = None
     unrealized_pnl: float | None = None
     distance_to_stop_pct: float | None = None
+    # Confidence trend between the last two evaluations (rising/falling/flat)
+    conviction_trend: str | None = None
+    conviction_change: float | None = None
 
 
 class TradeEvaluationOut(BaseModel):
@@ -1236,6 +1239,8 @@ class ClockOut(BaseModel):
     seconds_to_premarket: float
     seconds_to_next_scan: float | None
     daemon_running: bool
+    closed_reason: str | None = None  # weekend / holiday / overnight (when closed)
+    early_close_today: bool = False  # 13:00-ET half-day session
 
 
 class BarOut(BaseModel):

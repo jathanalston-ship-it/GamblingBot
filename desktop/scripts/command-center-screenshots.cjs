@@ -90,6 +90,8 @@ const CLOCK = {
   seconds_to_premarket: 12 * 3600,
   seconds_to_next_scan: 42,
   daemon_running: true,
+  closed_reason: null,
+  early_close_today: false,
 };
 
 const HUD = {
@@ -205,13 +207,15 @@ const trade = (over) => ({
   unrealized_r: 1.03,
   unrealized_pnl: 744,
   distance_to_stop_pct: 11.5,
+  conviction_trend: "rising",
+  conviction_change: 3.0,
   ...over,
 });
 
 const TRADES = [
-  trade({ symbol: "NVDA", entry_price: 172.4, stop_price: 164.1, last_price: 183.9, quantity: 55, journal_trade_id: 1, unrealized_pnl: 632.5, unrealized_r: 1.39, targets: [{ label: "T1", price: 189.2, hit: false }, { label: "T2", price: 205.9, hit: false }] }),
-  trade({ symbol: "PLTR", entry_price: 148.7, stop_price: 139.2, last_price: 161.1, quantity: 100, journal_trade_id: 2, conviction_score: 84, conviction_band: "EXTREME", unrealized_pnl: 1240, unrealized_r: 1.31, current_health_score: 68, trade_health: "Stable", management_mode: "manual", latest_action: "Scale Out", latest_reason: "ATR expanded 1.8×; consider taking a third off into strength at 1.3R." }),
-  trade({ symbol: "AVGO", journal_trade_id: null, quantity: null, entry_price: 289.5, stop_price: 274.6, conviction_score: 71, trade_health: "Stable", latest_action: "Ready — awaiting breakout over 295.20", last_price: null, unrealized_pnl: null, unrealized_r: null }),
+  trade({ symbol: "NVDA", entry_price: 172.4, stop_price: 164.1, last_price: 183.9, quantity: 55, journal_trade_id: 1, unrealized_pnl: 632.5, unrealized_r: 1.39, conviction_trend: "rising", conviction_change: 4.0, targets: [{ label: "T1", price: 189.2, hit: false }, { label: "T2", price: 205.9, hit: false }] }),
+  trade({ symbol: "PLTR", entry_price: 148.7, stop_price: 139.2, last_price: 161.1, quantity: 100, journal_trade_id: 2, conviction_score: 84, conviction_band: "EXTREME", unrealized_pnl: 1240, unrealized_r: 1.31, current_health_score: 68, trade_health: "Stable", management_mode: "manual", latest_action: "Scale Out", conviction_trend: "falling", conviction_change: -5.0, latest_reason: "ATR expanded 1.8×; consider taking a third off into strength at 1.3R." }),
+  trade({ symbol: "AVGO", journal_trade_id: null, quantity: null, entry_price: 289.5, stop_price: 274.6, conviction_score: 71, trade_health: "Stable", latest_action: "Ready — awaiting breakout over 295.20", conviction_trend: "flat", conviction_change: 0.0, last_price: null, unrealized_pnl: null, unrealized_r: null }),
 ];
 
 const ALERTS = [

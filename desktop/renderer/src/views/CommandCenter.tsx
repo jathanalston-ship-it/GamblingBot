@@ -37,6 +37,8 @@ interface Hud {
     next_market_close: string;
     seconds_to_market_open: number;
     seconds_to_market_close: number;
+    closed_reason: string | null;
+    early_close_today: boolean;
   };
   health: Record<string, HealthLight>;
   timestamps: {
@@ -153,9 +155,20 @@ const MARKET_LABEL: Record<string, string> = {
   closed: "CLOSED",
 };
 
+function marketLabel(clock: Hud["clock"] | undefined): string {
+  if (!clock) return "CLOSED";
+  if (clock.state === "closed") {
+    if (clock.closed_reason === "weekend") return "WEEKEND";
+    if (clock.closed_reason === "holiday") return "HOLIDAY";
+  }
+  return MARKET_LABEL[clock.state] ?? clock.state.toUpperCase();
+}
+
 const BOT_TONE: Record<string, string> = {
   RUNNING: "bg-emerald-500/15 text-emerald-300 border-emerald-500/50",
   MANAGING: "bg-emerald-500/15 text-emerald-300 border-emerald-500/50",
+  ENTERING: "bg-emerald-500/15 text-emerald-300 border-emerald-500/50",
+  EXITING: "bg-amber-400/15 text-amber-200 border-amber-400/50",
   SCANNING: "bg-sky-500/15 text-sky-300 border-sky-500/50",
   WAITING: "bg-slate-600/20 text-slate-300 border-slate-500/50",
   IDLE: "bg-slate-600/20 text-slate-300 border-slate-500/50",
@@ -249,8 +262,13 @@ function TopStatusBar({ hud, error }: { hud: Hud | null; error: string | null })
       <span
         className={`rounded px-2.5 py-1 text-xs font-bold tracking-wider ${MARKET_CHIP[state] ?? MARKET_CHIP.closed}`}
       >
-        {MARKET_LABEL[state] ?? state.toUpperCase()}
+        {marketLabel(clock)}
       </span>
+      {clock?.early_close_today ? (
+        <span className="rounded bg-amber-400/15 px-2 py-0.5 text-[10px] font-bold tracking-wider text-amber-300">
+          EARLY CLOSE 1PM ET
+        </span>
+      ) : null}
       <span className="text-xs tabular-nums text-slate-400">
         {nextIsOpen ? "opens in" : "closes in"}{" "}
         <span className="font-medium text-slate-200">{countdown(seconds)}</span>

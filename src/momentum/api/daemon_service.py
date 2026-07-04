@@ -35,19 +35,25 @@ DEFAULT_LOOKBACK_DAYS = 400
 ProviderFactory = Callable[[], MarketDataProvider]
 
 
-def _noop_progress(_fraction: float, _message: str) -> None:
-    return None
-
-
 def build_cycle(
     session_factory: sessionmaker[Session],
     provider_factory: ProviderFactory,
     *,
     config: DaemonConfig,
     cache: IncrementalCache | None = None,
+    phase: Callable[[str | None], None] | None = None,
 ) -> tuple[Callable[[MarketState, bool], dict[str, Any]], IncrementalCache]:
-    """The daemon's cycle callable + the incremental cache it shares across ticks."""
+    """The daemon's cycle callable + the incremental cache it shares across ticks.
+
+    ``phase`` (optional) receives every pipeline progress message while a scan
+    is running (and ``None`` when it finishes) so the daemon can surface the
+    live sub-phase — scanning / managing exits / autopilot entries.
+    """
     shared_cache = cache or IncrementalCache(price_change_threshold=config.price_change_threshold)
+    set_phase = phase or (lambda _msg: None)
+
+    def _progress(_fraction: float, message: str) -> None:
+        set_phase(message)
 
     def cycle(state: MarketState, manual: bool) -> dict[str, Any]:
         from momentum.api import actions, universe_service, user_settings
@@ -85,19 +91,22 @@ def build_cycle(
                     **caching.metrics(),
                 }
 
-        result = actions.run_scan(
-            session_factory=session_factory,
-            provider=caching,
-            scanner=MomentumScanner(),
-            symbols=symbols,
-            sectors=sectors,
-            lookback_days=DEFAULT_LOOKBACK_DAYS,
-            progress=_noop_progress,
-            universe_key=universe.key,
-            universe_label=universe.label,
-            provider_name=f"{provider_name}",
-            market_state=state.value,
-        )
+        try:
+            result = actions.run_scan(
+                session_factory=session_factory,
+                provider=caching,
+                scanner=MomentumScanner(),
+                symbols=symbols,
+                sectors=sectors,
+                lookback_days=DEFAULT_LOOKBACK_DAYS,
+                progress=_progress,
+                universe_key=universe.key,
+                universe_label=universe.label,
+                provider_name=f"{provider_name}",
+                market_state=state.value,
+            )
+        finally:
+            set_phase(None)
         report = caching.report()
         result["skipped_pipeline"] = False
         result["market_state"] = state.value
@@ -116,14 +125,22 @@ def create_daemon(
     config: DaemonConfig | None = None,
 ) -> tuple[MarketDaemon, IncrementalCache]:
     cfg = config or DaemonConfig()
-    cycle, cache = build_cycle(session_factory, provider_factory, config=cfg)
+    phase_box: list[str | None] = [None]
+
+    def _set_phase(message: str | None) -> None:
+        phase_box[0] = message
+
+    cycle, cache = build_cycle(session_factory, provider_factory, config=cfg, phase=_set_phase)
 
     def _heartbeat(now: dt.datetime, last_scan: dt.datetime | None, delay: float) -> None:
         from momentum.api import automation_state
 
         automation_state.record_heartbeat(ts=now, last_scan=last_scan, interval_seconds=delay)
 
-    return MarketDaemon(cycle, config=cfg, heartbeat=_heartbeat), cache
+    daemon = MarketDaemon(
+        cycle, config=cfg, heartbeat=_heartbeat, phase_source=lambda: phase_box[0]
+    )
+    return daemon, cache
 
 
 def default_provider_factory() -> MarketDataProvider:

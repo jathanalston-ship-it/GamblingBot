@@ -19,6 +19,8 @@ interface Clock {
   seconds_to_premarket: number;
   seconds_to_next_scan: number | null;
   daemon_running: boolean;
+  closed_reason?: string | null;
+  early_close_today?: boolean;
 }
 
 const STATE_LABEL: Record<string, string> = {
@@ -69,8 +71,17 @@ export function LiveClock() {
       <span
         className={`rounded px-1.5 py-0.5 font-medium ${STATE_CLASS[state] ?? STATE_CLASS["closed"]}`}
       >
-        {STATE_LABEL[state] ?? state}
+        {state === "closed" && data?.closed_reason === "weekend"
+          ? "Weekend"
+          : state === "closed" && data?.closed_reason === "holiday"
+            ? "Holiday"
+            : (STATE_LABEL[state] ?? state)}
       </span>
+      {data?.early_close_today ? (
+        <span className="rounded bg-amber-500/20 px-1.5 py-0.5 font-medium text-amber-300">
+          Early close 1PM ET
+        </span>
+      ) : null}
       <span className="text-slate-400">
         Local{" "}
         <span className="font-medium tabular-nums text-slate-100">

@@ -158,11 +158,36 @@ _STATE_LABELS = {
     "stopped": "STOPPED",
     "paused": "PAUSED",
     "scanning": "SCANNING",
+    "entering": "ENTERING",
+    "exiting": "EXITING",
     "waiting": "WAITING",
     "managing": "MANAGING",
     "running": "RUNNING",
     "idle": "IDLE",
 }
+
+
+def _scan_state(phase: str | None) -> tuple[str, str]:
+    """Map an in-flight scan's live sub-phase (the pipeline's own progress
+    message) to a state + activity line. Unknown/early phases are SCANNING."""
+    p = (phase or "").lower()
+    if "autopilot" in p:
+        return (
+            "entering",
+            "Evaluating entries — ranking this scan's conviction and routing "
+            "qualified setups through the take-trade path…",
+        )
+    if "managing open trades" in p or "reevaluating" in p:
+        return (
+            "exiting",
+            "Managing open trades — checking stops, targets and scale-outs "
+            "against this scan's fresh prices…",
+        )
+    detail = f" ({phase})" if phase else ""
+    return (
+        "scanning",
+        f"Scanning the universe — pulling fresh bars, ranking momentum, regrading theses…{detail}",
+    )
 
 
 def status(
@@ -205,8 +230,7 @@ def status(
     elif paused:
         state, activity = "paused", "Automation paused by user — resume from the Command Center."
     elif scanning_now:
-        state = "scanning"
-        activity = "Scanning the universe — pulling fresh bars, ranking momentum, regrading theses…"
+        state, activity = _scan_state(d.get("scan_phase"))
     elif not scanning_session:
         state = "waiting"
         activity = (

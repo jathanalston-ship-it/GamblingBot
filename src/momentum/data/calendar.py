@@ -5,10 +5,12 @@ weekend-observance rules (Saturday holiday -> observed Friday; Sunday ->
 Monday). Good Friday is computed from the Gregorian Easter algorithm.
 
 This avoids a hard dependency on ``pandas-market-calendars`` for the common
-case; if exact early-close handling is later required, swap in that library
-behind this same surface (``is_session`` / ``sessions`` / ``next_session`` /
-``previous_session``). Dates are handled as calendar dates (UTC-naive at the
-day level); returned indexes are tz-aware UTC for consistency with bar frames.
+case. Early-close (13:00 ET half-day) sessions are handled here too
+(``is_half_day`` / ``half_days``); swap in that library behind this same
+surface (``is_session`` / ``is_half_day`` / ``sessions`` / ``next_session`` /
+``previous_session``) if a fuller holiday set is later required. Dates are
+handled as calendar dates (UTC-naive at the day level); returned indexes are
+tz-aware UTC for consistency with bar frames.
 """
 
 from __future__ import annotations
@@ -83,6 +85,29 @@ class TradingCalendar:
         h.add(_nth_weekday(year, 11, 3, 4))  # Thanksgiving (4th Thu Nov)
         h.add(_observed(dt.date(year, 12, 25)))  # Christmas
         return frozenset(h)
+
+    @functools.lru_cache(maxsize=64)  # noqa: B019 - bounded, per-instance is fine
+    def half_days(self, year: int) -> frozenset[dt.date]:
+        """The early-close (13:00 ET) sessions for ``year``.
+
+        NYSE early closes: July 3 (when July 4 is a weekday), the day after
+        Thanksgiving, and Christmas Eve (when December 25 is a weekday) —
+        each only when the date is itself a trading session.
+        """
+        candidates: set[dt.date] = set()
+        if dt.date(year, 7, 4).weekday() < 5:
+            candidates.add(dt.date(year, 7, 3))
+        candidates.add(
+            _nth_weekday(year, 11, 3, 4) + dt.timedelta(days=1)
+        )  # Fri after Thanksgiving
+        if dt.date(year, 12, 25).weekday() < 5:
+            candidates.add(dt.date(year, 12, 24))
+        return frozenset(d for d in candidates if self.is_session(d))
+
+    def is_half_day(self, day: object) -> bool:
+        """True if ``day`` is an early-close (13:00 ET) trading session."""
+        d = pd.Timestamp(day).date()
+        return d in self.half_days(d.year)
 
     def is_session(self, day: object) -> bool:
         """True if ``day`` is a trading session (weekday and not a holiday)."""

@@ -681,6 +681,7 @@ def run_scan(
         # 11a-3. Autopilot (opt-in, OFF by default): take this cycle's best
         #        committee-approved entries through the exact take-trade path.
         #        Runs AFTER management so freed slots/heat are already known.
+        progress(0.985, "autopilot — evaluating entries")
         try:
             from momentum.api import autopilot_service
 
