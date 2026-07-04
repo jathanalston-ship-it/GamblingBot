@@ -163,6 +163,19 @@ def create_app(session_factory: sessionmaker[Session] | None = None) -> FastAPI:
     from momentum.api import data_mode
 
     data_mode.load_from_settings()
+    # Install the operator-override trading calendar (ad-hoc closures / early
+    # closes) as the process-wide default so scheduling + the live clock honour
+    # any declared closure. Best-effort: a bad config keeps the built-in one.
+    try:
+        from momentum.daemon.market_state import set_active_calendar
+        from momentum.data.calendar_config import build_calendar
+
+        set_active_calendar(build_calendar())
+    except Exception:  # noqa: BLE001 — a bad calendar override must not block startup
+        logging.getLogger("momentum.api").warning(
+            "market-calendar override failed to load; using the built-in calendar",
+            exc_info=True,
+        )
     # Production startup assertion: a live database must contain ZERO demo rows.
     # Purge any that exist (e.g. a DB created in demo mode then switched), then
     # assert none remain — so no production screen can ever receive demo data.

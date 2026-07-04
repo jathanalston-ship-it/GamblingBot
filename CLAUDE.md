@@ -468,7 +468,16 @@ trading platform for US equities. Python 3.12, strictly typed. See
   local + market time w/ derived EST/EDT, status, next scan/open/close/
   premarket countdowns. **Audit gates** (`test_time_audit.py`): no naive
   `now()`, no `utcnow()`, no hardcoded EST/EDT/US-Eastern literals, UTC
-  round-trip contract; DST-transition tests both directions. See `docs/TIME.md`.
+  round-trip contract; DST-transition tests both directions. **Airtight
+  calendar** (`data/calendar.py`, `data/calendar_config.py`,
+  `config/market_calendar.example.yaml`): recurring holidays + 13:00-ET early
+  closes (half-day aware: `is_half_day`, `closed_reason` weekend/holiday/
+  overnight, `early_close_today`) **plus** curated historical unscheduled
+  closures baked in as facts (9/11, Sandy, the mourning days) **plus** an
+  operator override YAML (`closures`/`early_closes`) for future ad-hoc dates,
+  installed process-wide at startup via `market_state.set_active_calendar`
+  (closure beats early-close; stale-data guard backs up undeclared closures).
+  See `docs/TIME.md`.
 
 - **Trade-plan generation** (`src/momentum/tradeplan/`, `api/tradeplan_service.py`)
   — read-only, **no persistence**: derives entry / stop / three scale-out targets /

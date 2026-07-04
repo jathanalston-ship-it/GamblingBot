@@ -63,15 +63,57 @@ def _observed(holiday: dt.date) -> dt.date:
     return holiday
 
 
-class TradingCalendar:
-    """NYSE-style session calendar."""
+# Unscheduled NYSE full-day closures that no algorithm can derive — national
+# days of mourning, disasters. These are historical FACTS (curated, not config)
+# so backtests and replays over these dates are correct without any setup. A
+# *future* ad-hoc closure the exchange announces is declared via the operator
+# override config (``data.calendar_config``) — one line, effective on restart.
+_AD_HOC_CLOSURES: frozenset[dt.date] = frozenset(
+    {
+        dt.date(2001, 9, 11),  # September 11 attacks — closed 11th–14th,
+        dt.date(2001, 9, 12),  # reopened the 17th
+        dt.date(2001, 9, 13),
+        dt.date(2001, 9, 14),
+        dt.date(2004, 6, 11),  # Ronald Reagan — National Day of Mourning
+        dt.date(2007, 1, 2),  # Gerald Ford — National Day of Mourning
+        dt.date(2012, 10, 29),  # Hurricane Sandy — closed 29th–30th
+        dt.date(2012, 10, 30),
+        dt.date(2018, 12, 5),  # George H. W. Bush — National Day of Mourning
+        dt.date(2025, 1, 9),  # Jimmy Carter — National Day of Mourning
+    }
+)
 
-    def __init__(self, name: str = "XNYS") -> None:
+# Curated one-off early closes (13:00 ET) outside the recurring rule. Kept
+# empty by default — the recurring rule covers the common half days and future
+# one-offs are declared via config; only add a date here when it is certain.
+_AD_HOC_EARLY_CLOSES: frozenset[dt.date] = frozenset()
+
+
+class TradingCalendar:
+    """NYSE-style session calendar.
+
+    ``extra_closures`` / ``extra_early_closes`` are operator-declared overrides
+    (see :mod:`momentum.data.calendar_config`) merged on top of the algorithmic
+    holidays and the curated historical ad-hoc closures — so an unscheduled
+    closure the exchange announces is honoured everywhere (scheduling, the live
+    clock, backtests) after a restart, with no code change.
+    """
+
+    def __init__(
+        self,
+        name: str = "XNYS",
+        *,
+        extra_closures: frozenset[dt.date] | None = None,
+        extra_early_closes: frozenset[dt.date] | None = None,
+    ) -> None:
         self.name = name
+        self._extra_closures = extra_closures or frozenset()
+        self._extra_early_closes = extra_early_closes or frozenset()
 
     @functools.lru_cache(maxsize=64)  # noqa: B019 - bounded, per-instance is fine
     def holidays(self, year: int) -> frozenset[dt.date]:
-        """The observed full-day market holidays for ``year``."""
+        """The observed full-day market closures for ``year`` — the algorithmic
+        holidays plus curated historical ad-hoc closures plus operator overrides."""
         h: set[dt.date] = set()
         h.add(_observed(dt.date(year, 1, 1)))  # New Year's Day
         h.add(_nth_weekday(year, 1, 0, 3))  # MLK Jr. Day (3rd Mon Jan)
@@ -84,6 +126,8 @@ class TradingCalendar:
         h.add(_nth_weekday(year, 9, 0, 1))  # Labor Day (1st Mon Sep)
         h.add(_nth_weekday(year, 11, 3, 4))  # Thanksgiving (4th Thu Nov)
         h.add(_observed(dt.date(year, 12, 25)))  # Christmas
+        h |= {d for d in _AD_HOC_CLOSURES if d.year == year}  # curated facts
+        h |= {d for d in self._extra_closures if d.year == year}  # operator overrides
         return frozenset(h)
 
     @functools.lru_cache(maxsize=64)  # noqa: B019 - bounded, per-instance is fine
@@ -91,8 +135,9 @@ class TradingCalendar:
         """The early-close (13:00 ET) sessions for ``year``.
 
         NYSE early closes: July 3 (when July 4 is a weekday), the day after
-        Thanksgiving, and Christmas Eve (when December 25 is a weekday) —
-        each only when the date is itself a trading session.
+        Thanksgiving, and Christmas Eve (when December 25 is a weekday), plus
+        any curated/operator-declared one-offs — each only when the date is
+        still a trading session (a full closure always wins over an early one).
         """
         candidates: set[dt.date] = set()
         if dt.date(year, 7, 4).weekday() < 5:
@@ -102,6 +147,8 @@ class TradingCalendar:
         )  # Fri after Thanksgiving
         if dt.date(year, 12, 25).weekday() < 5:
             candidates.add(dt.date(year, 12, 24))
+        candidates |= {d for d in _AD_HOC_EARLY_CLOSES if d.year == year}
+        candidates |= {d for d in self._extra_early_closes if d.year == year}
         return frozenset(d for d in candidates if self.is_session(d))
 
     def is_half_day(self, day: object) -> bool:

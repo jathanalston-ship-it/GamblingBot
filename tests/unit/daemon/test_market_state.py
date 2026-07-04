@@ -8,7 +8,14 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from momentum.daemon import MarketState, interval_seconds, market_state
-from momentum.daemon.market_state import closed_reason, market_clock
+from momentum.daemon.market_state import (
+    active_calendar,
+    closed_reason,
+    market_clock,
+    reset_active_calendar,
+    set_active_calendar,
+)
+from momentum.data.calendar import TradingCalendar
 
 ET = ZoneInfo("America/New_York")
 
@@ -89,6 +96,29 @@ def test_clock_reports_early_close_and_reason() -> None:
     payload = weekend.to_dict()
     assert payload["closed_reason"] == "weekend"
     assert payload["early_close_today"] is False
+
+
+def test_curated_ad_hoc_closure_reads_as_holiday() -> None:
+    # Jimmy Carter National Day of Mourning — a Thursday, market fully closed.
+    carter = _at(12, 0, day=dt.date(2025, 1, 9))
+    assert market_state(carter) is MarketState.CLOSED
+    assert closed_reason(carter) == "holiday"  # a weekday closure, not a weekend
+
+
+def test_active_calendar_honours_operator_declared_closure() -> None:
+    # An operator declares an unscheduled closure the algorithm can't derive.
+    declared = TradingCalendar(extra_closures=frozenset({dt.date(2027, 3, 15)}))
+    noon = _at(12, 0, day=dt.date(2027, 3, 15))  # a Monday
+    assert market_state(noon) is MarketState.REGULAR  # default calendar: open
+    try:
+        set_active_calendar(declared)
+        assert active_calendar() is declared
+        assert market_state(noon) is MarketState.CLOSED  # now honoured everywhere
+        assert closed_reason(noon) == "holiday"
+        assert market_clock(noon).state is MarketState.CLOSED
+    finally:
+        reset_active_calendar()
+    assert market_state(noon) is MarketState.REGULAR  # cleanly restored
 
 
 def test_naive_datetime_rejected() -> None:

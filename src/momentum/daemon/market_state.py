@@ -17,7 +17,31 @@ from momentum.data.calendar import TradingCalendar
 
 EASTERN = ZoneInfo("America/New_York")
 
+# The process-wide active calendar. Defaults to the built-in NYSE calendar
+# (algorithmic holidays + curated historical ad-hoc closures); startup replaces
+# it with one that also carries the operator override config
+# (``set_active_calendar``), so a declared ad-hoc closure is honoured by every
+# schedule/clock call that doesn't pass an explicit ``calendar=``. Tests stay
+# hermetic by passing their own calendar or calling ``reset_active_calendar``.
 _CALENDAR = TradingCalendar()
+
+
+def set_active_calendar(calendar: TradingCalendar) -> None:
+    """Install the process-wide calendar used when a call omits ``calendar=``."""
+    global _CALENDAR
+    _CALENDAR = calendar
+
+
+def reset_active_calendar() -> None:
+    """Restore the built-in default calendar (test hygiene)."""
+    global _CALENDAR
+    _CALENDAR = TradingCalendar()
+
+
+def active_calendar() -> TradingCalendar:
+    """The process-wide active calendar."""
+    return _CALENDAR
+
 
 PREMARKET_OPEN = dt.time(4, 0)
 REGULAR_OPEN = dt.time(9, 30)

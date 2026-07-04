@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime as dt
+
 import pandas as pd
 
 from momentum.data.calendar import TradingCalendar
@@ -99,3 +101,35 @@ def test_july_3_half_day_only_when_july_4_is_a_weekday() -> None:
     # is neither a session nor a half day.
     assert not cal.is_session("2026-07-03")
     assert not cal.is_half_day("2026-07-03")
+
+
+def test_curated_ad_hoc_closures_are_not_sessions() -> None:
+    cal = TradingCalendar()
+    # Historical unscheduled NYSE full-day closures (facts, baked in).
+    for closed in (
+        "2001-09-11",  # September 11 attacks
+        "2001-09-14",
+        "2004-06-11",  # Reagan National Day of Mourning
+        "2007-01-02",  # Ford National Day of Mourning
+        "2012-10-29",  # Hurricane Sandy
+        "2012-10-30",
+        "2018-12-05",  # George H. W. Bush National Day of Mourning
+        "2025-01-09",  # Jimmy Carter National Day of Mourning
+    ):
+        assert not cal.is_session(closed), f"{closed} was an ad-hoc closure"
+    # The surrounding weekdays are still ordinary sessions.
+    assert cal.is_session("2012-10-31")  # Wed after Sandy
+    assert cal.is_session("2025-01-08")  # day before the Carter closure
+
+
+def test_operator_overrides_merge_into_holidays_and_half_days() -> None:
+    cal = TradingCalendar(
+        extra_closures=frozenset({dt.date(2027, 3, 15)}),
+        extra_early_closes=frozenset({dt.date(2027, 7, 6)}),
+    )
+    assert not cal.is_session(dt.date(2027, 3, 15))  # declared closure
+    assert cal.is_half_day(dt.date(2027, 7, 6))  # declared early close
+    # A plain calendar without the overrides treats them as ordinary sessions.
+    plain = TradingCalendar()
+    assert plain.is_session(dt.date(2027, 3, 15))
+    assert not plain.is_half_day(dt.date(2027, 7, 6))

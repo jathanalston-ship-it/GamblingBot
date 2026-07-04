@@ -83,6 +83,15 @@ def _session_factory(ensure_schema: bool) -> sessionmaker[Session]:
     from momentum.api import data_mode
 
     data_mode.load_from_settings()
+    # Install the operator-override trading calendar (ad-hoc closures / early
+    # closes) so CLI scans/paper-runs honour any declared closure too.
+    try:
+        from momentum.daemon.market_state import set_active_calendar
+        from momentum.data.calendar_config import build_calendar
+
+        set_active_calendar(build_calendar())
+    except Exception:  # noqa: BLE001 — a bad override must not block the CLI
+        get_logger(__name__).warning("market-calendar override failed to load", exc_info=True)
     return create_session_factory(engine)
 
 

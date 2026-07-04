@@ -1,0 +1,21 @@
+# Operator overrides for ad-hoc NYSE schedule changes that no algorithm can
+# predict — national days of mourning, weather closures, one-off early closes.
+#
+# Declare a date the moment the exchange announces it and it takes effect on the
+# next restart (scheduling, the live clock, the Command Center status bar) with
+# no code change. Dates are calendar dates in America/New_York (YYYY-MM-DD).
+#
+# Known HISTORICAL ad-hoc closures (9/11, Hurricane Sandy, national days of
+# mourning) are already built in as facts — you do not need to list them here.
+model_version: v1
+
+# Full-day unscheduled closures, e.g.:
+#   closures:
+#     - 2025-01-09   # a National Day of Mourning
+closures: []
+
+# Unscheduled 13:00-ET early closes NOT covered by the recurring rule
+# (July 3 / Friday after Thanksgiving / Christmas Eve are automatic), e.g.:
+#   early_closes:
+#     - 2027-11-26
+early_closes: []

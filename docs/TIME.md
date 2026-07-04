@@ -40,7 +40,39 @@ persistence (SQLite)      backend (FastAPI)              renderer (Electron)
   literal in the package.
 - `market_clock(now)` (pure, DST-tested) returns the market state, market time
   + tz abbreviation, and the next premarket/open/close instants + countdown
-  seconds, holiday-aware via the shared `TradingCalendar`.
+  seconds, holiday-aware via the shared `TradingCalendar`. It also reports
+  `early_close_today` (a 13:00-ET half day) and, when closed, a `closed_reason`
+  of `weekend` / `holiday` / `overnight` — the status bar shows WEEKEND /
+  HOLIDAY / EARLY CLOSE accordingly and the close countdown targets 13:00 on a
+  half day.
+
+#### Airtight calendar (the "not just the algorithm" part)
+
+`TradingCalendar` covers three layers so no market-schedule surprise is a
+silent wrong decision:
+
+1. **Algorithmic** — the recurring NYSE holidays (weekend-observed) and the
+   recurring 13:00-ET early closes (July 3 when the 4th is a weekday, the
+   Friday after Thanksgiving, Christmas Eve).
+2. **Curated historical ad-hoc closures** (`calendar._AD_HOC_CLOSURES`) — the
+   unscheduled full-day closures no algorithm can derive, baked in as **facts**
+   (September 11 2001, Hurricane Sandy 2012, the Reagan/Ford/Bush/Carter
+   national days of mourning), so backtests and replays over those dates are
+   correct with zero setup.
+3. **Operator overrides** (`data/calendar_config.py`,
+   `config/market_calendar.example.yaml`) — a **future** closure or one-off
+   early close the exchange announces is declared as one YAML line
+   (`closures:` / `early_closes:`) and honoured everywhere (scheduling, the
+   live clock, `closed_reason`) on the next restart, no code change. A declared
+   full closure always wins over an early close. Startup installs the
+   config-built calendar as the process-wide default via
+   `market_state.set_active_calendar` (pure calls still accept an explicit
+   `calendar=`, keeping tests hermetic).
+
+The automatic backstop for an *undeclared* closure remains the stale-data
+guard: if the provider returns no fresh bar during a window the calendar
+thinks is open, the scan is flagged stale and **no trades are taken** — so a
+surprise closure degrades to "no action," never a bad fill.
 
 ### Frontend — the only place local time exists
 

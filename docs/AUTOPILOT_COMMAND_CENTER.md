@@ -46,7 +46,12 @@ the Friday after Thanksgiving, Christmas Eve) the regular session ends 13:00
 ET (after-hours 17:00 ET), the close countdown targets 13:00, and an
 **EARLY CLOSE 1PM ET** chip is shown (`clock.early_close_today`). When closed,
 `clock.closed_reason` distinguishes **weekend / holiday / overnight** so the
-chip reads WEEKEND or HOLIDAY rather than a bare CLOSED.
+chip reads WEEKEND or HOLIDAY rather than a bare CLOSED. The calendar is
+**airtight**: unscheduled historical closures (9/11, Hurricane Sandy, national
+days of mourning) are baked in as facts, and a *future* ad-hoc closure/early
+close the exchange announces is declared as one line in
+`config/market_calendar.yaml` and honoured on restart with no code change
+(`data/calendar_config.py`). See `docs/TIME.md` § Airtight calendar.
 
 ### Auto Pilot hero — what is the bot doing RIGHT NOW
 `autopilot_service.status()` derives one state from live facts (daemon
