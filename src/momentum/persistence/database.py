@@ -73,6 +73,23 @@ def create_all(engine: Engine) -> None:
     Base.metadata.create_all(engine)
 
 
+def _scalar_default_literal(column: object) -> str | None:
+    """A SQL literal for a column's *scalar* Python default (``default="managed"``
+    → ``'managed'``), or ``None`` when there is no such default (callables,
+    sequences and SQL-expression defaults are not back-fillable here)."""
+    default = getattr(column, "default", None)
+    if default is None or not getattr(default, "is_scalar", False):
+        return None
+    value = default.arg  # the constant passed to mapped_column(default=...)
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        return "'" + value.replace("'", "''") + "'"
+    return None
+
+
 def reconcile_schema(engine: Engine) -> None:
     """Idempotently bring an existing database up to the current ORM schema.
 
@@ -81,10 +98,14 @@ def reconcile_schema(engine: Engine) -> None:
     self-heal — otherwise a ``SELECT`` on a model whose table is missing a new
     column fails with "no such column" (a 500 on the first screen that reads it).
 
-    This creates any missing tables and ``ADD COLUMN``s any missing **nullable**
-    column declared on the ORM models. It is safe to run on every startup and is a
-    no-op once the schema is current. Non-nullable columns without a default are
-    left to a real migration (they cannot be added to a populated table safely).
+    This creates any missing tables and ``ADD COLUMN``s any missing column declared
+    on the ORM models. A **non-nullable** column with a scalar default (e.g.
+    ``default="managed"``) is added ``NOT NULL DEFAULT <value>`` so SQLite
+    back-fills existing rows — without that, an added-as-nullable column leaves old
+    rows ``NULL`` and a non-optional Pydantic field then 500s on read. Existing
+    non-nullable scalar-default columns are also back-filled where a prior run
+    added them as nullable. Non-nullable columns without any default are left to a
+    real migration. Safe to run on every startup; a no-op once current.
     """
     Base.metadata.create_all(engine)  # any brand-new tables
     inspector = inspect(engine)
@@ -95,9 +116,18 @@ def reconcile_schema(engine: Engine) -> None:
                 continue  # just created above with all its columns
             present = {c["name"] for c in inspector.get_columns(table.name)}
             for column in table.columns:
+                default_sql = _scalar_default_literal(column)
                 if column.name in present:
+                    # Heal rows a previous (nullable) reconcile left NULL.
+                    if not column.nullable and default_sql is not None:
+                        conn.execute(
+                            text(
+                                f'UPDATE "{table.name}" SET "{column.name}" = {default_sql} '
+                                f'WHERE "{column.name}" IS NULL'
+                            )
+                        )
                     continue
-                if not column.nullable and column.default is None and column.server_default is None:
+                if not column.nullable and default_sql is None and column.server_default is None:
                     _log.warning(
                         "skipping non-nullable column %s.%s with no default; needs a migration",
                         table.name,
@@ -105,9 +135,14 @@ def reconcile_schema(engine: Engine) -> None:
                     )
                     continue
                 col_type = column.type.compile(dialect=engine.dialect)
-                conn.execute(
-                    text(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {col_type}')
-                )
+                ddl = f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {col_type}'
+                # A DEFAULT lets SQLite back-fill existing rows, which in turn makes
+                # NOT NULL safe to add to a populated table.
+                if default_sql is not None:
+                    ddl += f" DEFAULT {default_sql}"
+                    if not column.nullable:
+                        ddl += " NOT NULL"
+                conn.execute(text(ddl))
                 _log.info("reconciled schema: added %s.%s", table.name, column.name)
 
 

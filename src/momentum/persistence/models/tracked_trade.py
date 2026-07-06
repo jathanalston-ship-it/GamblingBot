@@ -98,7 +98,9 @@ class TrackedTrade(IntPKMixin, TimestampMixin, Base):
             "current_health_score": self.current_health_score,
             "trade_health": self.trade_health,
             "status": self.status,
-            "management_mode": self.management_mode,
+            # Coerce a legacy NULL (a row from before this column existed, added
+            # nullable by an older self-heal) to the default so reads never 500.
+            "management_mode": self.management_mode or "managed",
             "last_evaluated_at": (
                 self.last_evaluated_at.isoformat() if self.last_evaluated_at else None
             ),
