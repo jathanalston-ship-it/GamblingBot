@@ -608,6 +608,29 @@ trading platform for US equities. Python 3.12, strictly typed. See
   **non-suppressed diagnostics**: the resolved feed URL + a live HTTP probe with the
   status code and interpretation (`mrp:update:diagnostics`). See `docs/AUTO_UPDATE_AUDIT.md`.
 
+- **Automatic-update overhaul** (`.github/workflows/release.yml`,
+  `desktop/electron/{auto-update,update-prefs,update-flow,main}.ts`,
+  `desktop/.../components/{AutoUpdatePrompt,UpdateOverlay}.tsx`,
+  `desktop/.../views/Updates.tsx`; `docs/AUTO_UPDATE.md`) — updates are now
+  automatic; the manual Check→Download→Restart sequence is only the **fallback**.
+  (1) **Auto-build on push**: the release workflow triggers on every push to the
+  default branch (`claude/vigilant-wozniak-oueczq`), auto-resolving the version
+  (pyproject's if its tag is free, else the next free patch bump above the highest
+  tag) and publishing; `[skip release]` opts out, and the tag it creates uses the
+  default `GITHUB_TOKEN` so it can't re-trigger the workflow (no loop). (2)
+  **Scan on startup** (existing silent launch check; the repo is now **public** so
+  the feed returns 200). (3) **Auto download + install after ONE confirmation**:
+  the launch check raises a single prompt (`AutoUpdatePrompt`) showing the new
+  version, the estimated **download size** and the **recommended free disk space**
+  (pure, tested sizing in `auto-update.ts`: `download + max(2×download,150MB) +
+  250MB`); on confirm it downloads → verifies → installs → restarts unattended.
+  `UpdateFlow` gained an **`unattended`** flag so the overlay also narrates the
+  download/verify phases for an auto update (a manual download stays inline).
+  App-side prefs (`update-prefs.ts`, `update-prefs.json`): `autoUpdate` master
+  switch + `skippedVersion` ("Later"), toggled from Settings→Updates or the prompt.
+  Tests: `scripts/{auto-update,update-prefs,update-flow}.test.cjs`. A downloaded
+  update still installs on next quit; `MRP_DISABLE_AUTOUPDATE=1` disables the check.
+
 - **Secret management** (`src/momentum/core/secrets.py`, `core/logging.py`,
   `api/__main__.py`, `.env.example`) — production-grade, env-only secrets. A single
   **registry** (`SECRET_REGISTRY`) declares every credential (env var + which

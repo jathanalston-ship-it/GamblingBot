@@ -35,7 +35,22 @@ function PackagedUpdates() {
   const [percent, setPercent] = useState(0);
   const [err, setErr] = useState<string | null>(null);
   const [diag, setDiag] = useState<UpdateDiagnostics | null>(null);
+  const [autoUpdate, setAutoUpdate] = useState<boolean | null>(null);
   const busy = useRef(false);
+
+  // The auto-update preference (default on): drives whether launch checks raise
+  // the confirmation prompt automatically, or leave updates fully manual.
+  useEffect(() => {
+    void window.mrp?.updater?.getPrefs?.().then((p) => setAutoUpdate(p.autoUpdate));
+  }, []);
+
+  const toggleAuto = (): void => {
+    const next = !(autoUpdate ?? true);
+    setAutoUpdate(next);
+    void window.mrp?.updater
+      ?.setPrefs?.({ autoUpdate: next })
+      .then((p) => setAutoUpdate(p.autoUpdate));
+  };
 
   // Pull the live feed diagnostics (config + a real probe of the release feed) so a
   // failure is explained, never suppressed.
@@ -182,6 +197,25 @@ function PackagedUpdates() {
             Updates download from the official GitHub release and verify their checksum before
             installing. A downloaded update also installs automatically the next time you quit.
           </p>
+        </Card>
+
+        <Card title="Automatic updates">
+          <label className="flex cursor-pointer items-start gap-3">
+            <input
+              type="checkbox"
+              checked={autoUpdate ?? true}
+              onChange={toggleAuto}
+              className="mt-0.5 h-4 w-4 accent-accent"
+            />
+            <span className="text-sm text-slate-300">
+              Check for updates on launch and offer to install them automatically
+              <span className="mt-1 block text-xs text-slate-500">
+                When on (the default), Momentum Lab finds new releases on startup and asks once —
+                showing the download size and recommended free space — before downloading and
+                installing on its own. When off, use the buttons above to update manually.
+              </span>
+            </span>
+          </label>
         </Card>
 
         {err ? (

@@ -151,4 +151,40 @@ test("a broken listener never breaks the flow", () => {
   assert.strictEqual(flow.state, "preparing-restart");
 });
 
+test("unattended flag: defaults false, emits on change, rides through snapshots", () => {
+  const flow = new UpdateFlow(clock().now);
+  assert.strictEqual(flow.unattended, false);
+  assert.strictEqual(flow.snapshot().unattended, false);
+
+  const events = [];
+  flow.onEvent((e) => events.push(e));
+  flow.setUnattended(true);
+  assert.strictEqual(flow.unattended, true);
+  assert.strictEqual(events.length, 1); // change emits
+  assert.strictEqual(events[0].unattended, true);
+
+  flow.setUnattended(true); // idempotent — no extra emit
+  assert.strictEqual(events.length, 1);
+
+  flow.transition("downloading-update");
+  assert.strictEqual(flow.snapshot().unattended, true);
+});
+
+test("unattended flag survives serialize/resume across the restart", () => {
+  const flow = new UpdateFlow(clock().now);
+  flow.setUnattended(true);
+  flow.transition("downloading-update");
+  const saved = JSON.parse(JSON.stringify(flow.serialize()));
+  assert.strictEqual(saved.unattended, true);
+
+  const resumed = UpdateFlow.resume(saved);
+  assert.strictEqual(resumed.unattended, true);
+  assert.strictEqual(resumed.snapshot().unattended, true);
+
+  // A legacy marker without the field resumes as attended (false), not undefined.
+  const legacy = { ...saved };
+  delete legacy.unattended;
+  assert.strictEqual(UpdateFlow.resume(legacy).unattended, false);
+});
+
 process.exit(process.exitCode ?? 0);

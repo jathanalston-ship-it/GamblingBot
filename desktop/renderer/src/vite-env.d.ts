@@ -26,6 +26,23 @@ export interface UpdateDiagnostics {
   probe: { url: string; status: number; ok: boolean; interpretation: string } | null;
 }
 
+/** The confirmation prompt raised when an automatic update is found on launch. */
+export interface UpdatePrompt {
+  version: string;
+  releaseName: string | null;
+  downloadBytes: number;
+  downloadLabel: string;
+  recommendedFreeBytes: number;
+  recommendedFreeLabel: string;
+  sizeKnown: boolean;
+}
+
+/** Persisted auto-update preferences (app-side, survive restarts). */
+export interface UpdatePreferences {
+  autoUpdate: boolean;
+  skippedVersion: string | null;
+}
+
 /** The live diagnostics shown in the Developer Panel (Development Mode only). */
 export interface DevDiagnostics {
   version: string;
@@ -103,8 +120,14 @@ export interface MrpBridge {
     download: () => Promise<boolean>;
     install: () => Promise<boolean>;
     diagnostics: () => Promise<UpdateDiagnostics>;
+    getPending: () => Promise<UpdatePrompt | null>;
+    getPrefs: () => Promise<UpdatePreferences>;
+    setPrefs: (patch: Partial<UpdatePreferences>) => Promise<UpdatePreferences>;
+    confirm: () => Promise<boolean>;
+    defer: (version: string | null) => Promise<boolean>;
     onEvent: (cb: (e: UpdaterEvent) => void) => () => void;
     onFlow?: (cb: (e: UpdateFlowEvent) => void) => () => void;
+    onPrompt?: (cb: (p: UpdatePrompt) => void) => () => void;
   };
   /** Startup-performance instrumentation (measured timings only). */
   perf?: {
@@ -130,6 +153,8 @@ declare global {
     sinceStartMs: number;
     inStateMs: number;
     error: string | null;
+    /** True for an unattended (automatic) update; drives the overlay's coverage. */
+    unattended: boolean;
   }
 
   /** Measured startup performance (history stats + the latest waterfall). */

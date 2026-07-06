@@ -1,5 +1,12 @@
 # Auto-Update Audit
 
+> **Status update (resolved):** the repository is now **public**, so
+> `releases.atom` returns 200 and the anonymous updater feed works — the root
+> cause below is fixed. The updater has since been overhauled into a fully
+> **automatic** flow (check on launch → one confirmation prompt with size + free
+> space → auto download & install); see **`docs/AUTO_UPDATE.md`**. This audit is
+> kept for the diagnosis and the (still-present) feed diagnostics.
+
 Audit of the in-app auto-update (electron-updater) after a **404** on:
 
 ```

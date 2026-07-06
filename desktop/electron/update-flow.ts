@@ -65,6 +65,14 @@ export interface UpdateFlowEvent {
   sinceStartMs: number;
   inStateMs: number;
   error: string | null;
+  /**
+   * True for an UNATTENDED (automatic) update — check → prompt-confirmed →
+   * download → install with no further clicks. The overlay uses this to narrate
+   * the download/verify phases too; a manual download (from the Updates screen,
+   * where the user watches inline progress) leaves this false so the overlay
+   * stays hidden until the restart sequence.
+   */
+  unattended: boolean;
 }
 
 export interface UpdateFlowLogEntry {
@@ -99,6 +107,8 @@ export interface SerializedUpdateFlow {
   log: UpdateFlowLogEntry[];
   progress: number | null;
   error: string | null;
+  /** Whether this is an unattended (automatic) update — see UpdateFlowEvent. */
+  unattended?: boolean;
 }
 
 export const SLOW_OPERATION_MS = 250;
@@ -117,6 +127,7 @@ export class UpdateFlow {
   private logEntries: UpdateFlowLogEntry[] = [];
   private progressValue: number | null = null;
   private errorMessage: string | null = null;
+  private unattendedFlag = false;
   private sequence = 0;
   private listeners: FlowListener[] = [];
 
@@ -142,6 +153,17 @@ export class UpdateFlow {
 
   get active(): boolean {
     return this.visits.length > 0 && this.state !== "ready" && this.state !== "failed";
+  }
+
+  get unattended(): boolean {
+    return this.unattendedFlag;
+  }
+
+  /** Mark this flow as an unattended (automatic) update; emits so the UI reacts. */
+  setUnattended(value: boolean): void {
+    if (this.unattendedFlag === value) return;
+    this.unattendedFlag = value;
+    this.emit();
   }
 
   /** Enter a state (idempotent for repeats), log it, notify listeners. */
@@ -193,6 +215,7 @@ export class UpdateFlow {
       sinceStartMs: this.startedAtEpoch === null ? 0 : at - this.startedAtEpoch,
       inStateMs: current === null ? 0 : at - current.enteredAtEpoch,
       error: this.errorMessage,
+      unattended: this.unattendedFlag,
     };
   }
 
@@ -236,6 +259,7 @@ export class UpdateFlow {
       log: [...this.logEntries],
       progress: this.progressValue,
       error: this.errorMessage,
+      unattended: this.unattendedFlag,
     };
   }
 
@@ -245,6 +269,7 @@ export class UpdateFlow {
     flow.logEntries = [...saved.log];
     flow.progressValue = saved.progress;
     flow.errorMessage = saved.error;
+    flow.unattendedFlag = saved.unattended ?? false;
     return flow;
   }
 

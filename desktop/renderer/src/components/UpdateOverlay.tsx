@@ -9,7 +9,8 @@ import { useEffect, useRef, useState } from "react";
  * recovery dialog instead of dying silently.
  */
 
-const OVERLAY_STATES = new Set([
+// The restart sequence is ALWAYS covered by the overlay (manual or automatic).
+const RESTART_STATES = new Set([
   "preparing-restart",
   "stopping-backend",
   "waiting-for-shutdown",
@@ -22,7 +23,20 @@ const OVERLAY_STATES = new Set([
   "failed",
 ]);
 
+// The download/verify phases are covered ONLY for an unattended (automatic)
+// update — during a manual download the user watches inline progress on the
+// Updates screen and the overlay stays hidden.
+const UNATTENDED_STATES = new Set(["downloading-update", "verifying-update"]);
+
+/** Whether the overlay should be visible for this flow event. */
+function isOverlayVisible(event: UpdateFlowEvent): boolean {
+  if (RESTART_STATES.has(event.state)) return true;
+  return event.unattended && UNATTENDED_STATES.has(event.state);
+}
+
 const STEPS: { state: string; label: string }[] = [
+  { state: "downloading-update", label: "Downloading update…" },
+  { state: "verifying-update", label: "Verifying update…" },
   { state: "preparing-restart", label: "Please wait…" },
   { state: "stopping-backend", label: "Backend shutting down…" },
   { state: "waiting-for-shutdown", label: "Waiting for shutdown…" },
@@ -72,7 +86,7 @@ export function UpdateOverlay() {
     return () => window.clearTimeout(timer);
   }, [event?.state]);
 
-  if (!event || dismissed || !OVERLAY_STATES.has(event.state)) return null;
+  if (!event || dismissed || !isOverlayVisible(event)) return null;
 
   const failed = event.state === "failed";
   const ready = event.state === "ready";
@@ -99,7 +113,7 @@ export function UpdateOverlay() {
               )}
               <div>
                 <div className="text-lg font-semibold text-slate-100">
-                  {ready ? "Update complete" : "Installing Update…"}
+                  {ready ? "Update complete" : "Updating Momentum Lab…"}
                 </div>
                 <div className="text-sm text-slate-400">
                   {event.label}

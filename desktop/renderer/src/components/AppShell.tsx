@@ -6,6 +6,7 @@ import { useSystemTimezone } from "../hooks/useSystemTimezone";
 import { useAlertNotifications } from "../hooks/useAlertNotifications";
 import { useGlobalKeys } from "../hooks/useGlobalKeys";
 import { UpdateStatusProvider } from "../state/updates";
+import { AutoUpdatePrompt } from "./AutoUpdatePrompt";
 import { CommandPalette } from "./CommandPalette";
 import { ContextBar } from "./ContextBar";
 import { DevBanner } from "./DevBanner";
@@ -46,6 +47,7 @@ export function AppShell() {
         {palette ? <CommandPalette onClose={() => setPalette(false)} /> : null}
         {shortcuts ? <ShortcutsOverlay onClose={() => setShortcuts(false)} /> : null}
         <OnboardingTour />
+        <AutoUpdatePrompt />
         <UpdateOverlay />
       </div>
     </UpdateStatusProvider>

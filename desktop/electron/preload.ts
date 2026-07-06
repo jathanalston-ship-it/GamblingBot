@@ -21,6 +21,8 @@ export interface UpdateFlowEvent {
   sinceStartMs: number;
   inStateMs: number;
   error: string | null;
+  /** True for an unattended (automatic) update; drives the overlay's coverage. */
+  unattended: boolean;
 }
 
 /** Measured startup performance (history stats + the latest waterfall). */
@@ -51,6 +53,23 @@ export interface UpdaterEvent {
     message?: string;
     statusCode?: number | null;
   } | null;
+}
+
+/** The confirmation prompt raised when an automatic update is found on launch. */
+export interface UpdatePrompt {
+  version: string;
+  releaseName: string | null;
+  downloadBytes: number;
+  downloadLabel: string;
+  recommendedFreeBytes: number;
+  recommendedFreeLabel: string;
+  sizeKnown: boolean;
+}
+
+/** Persisted auto-update preferences (app-side, survive restarts). */
+export interface UpdatePreferences {
+  autoUpdate: boolean;
+  skippedVersion: string | null;
 }
 
 /** Live diagnostics for the Updates screen: the release feed config + a probe. */
@@ -152,6 +171,18 @@ const bridge = {
     download: (): Promise<boolean> => ipcRenderer.invoke("mrp:update:download"),
     install: (): Promise<boolean> => ipcRenderer.invoke("mrp:update:install"),
     diagnostics: (): Promise<UpdateDiagnostics> => ipcRenderer.invoke("mrp:update:diagnostics"),
+    /** The pending automatic-update prompt (seed a late-mounting renderer). */
+    getPending: (): Promise<UpdatePrompt | null> => ipcRenderer.invoke("mrp:update:get-pending"),
+    /** Read the persisted auto-update preferences. */
+    getPrefs: (): Promise<UpdatePreferences> => ipcRenderer.invoke("mrp:update:get-prefs"),
+    /** Update the auto-update preferences (returns the merged result). */
+    setPrefs: (patch: Partial<UpdatePreferences>): Promise<UpdatePreferences> =>
+      ipcRenderer.invoke("mrp:update:set-prefs", patch),
+    /** "Update now" — download + install this update automatically. */
+    confirm: (): Promise<boolean> => ipcRenderer.invoke("mrp:update:confirm"),
+    /** "Later" — skip this version's prompt (auto-update stays on for future ones). */
+    defer: (version: string | null): Promise<boolean> =>
+      ipcRenderer.invoke("mrp:update:defer", version),
     onEvent(cb: (e: UpdaterEvent) => void): () => void {
       const listener = (_event: IpcRendererEvent, data: UpdaterEvent) => cb(data);
       ipcRenderer.on("mrp:update:event", listener);
@@ -162,6 +193,12 @@ const bridge = {
       const listener = (_event: IpcRendererEvent, data: UpdateFlowEvent) => cb(data);
       ipcRenderer.on("mrp:update:flow", listener);
       return () => ipcRenderer.removeListener("mrp:update:flow", listener);
+    },
+    /** The automatic-update confirmation prompt (version + size + free space). */
+    onPrompt(cb: (p: UpdatePrompt) => void): () => void {
+      const listener = (_event: IpcRendererEvent, data: UpdatePrompt) => cb(data);
+      ipcRenderer.on("mrp:update:prompt", listener);
+      return () => ipcRenderer.removeListener("mrp:update:prompt", listener);
     },
   },
   /** Startup-performance instrumentation (measured timings only). */

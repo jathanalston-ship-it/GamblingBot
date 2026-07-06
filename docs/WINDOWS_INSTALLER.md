@@ -156,9 +156,16 @@ After installing on a clean Windows 11 machine, verify:
 ## 10. Automated releases (GitHub Releases CI/CD)
 
 `.github/workflows/release.yml` builds and publishes the installer. Trigger it
-**either** way:
+**three** ways:
 
-**A — push a version tag** (creates the release for that tag):
+**A — push to the default branch** (`claude/vigilant-wozniak-oueczq`) → an
+**automatic** release. No tag needed: the version is `pyproject.toml`'s if its tag
+is free, otherwise the next free patch bump above the highest existing tag, and
+the tag + release are created for you. Put `[skip release]` in the commit message
+to push without releasing. (The tag is created with the default `GITHUB_TOKEN`,
+which by design does **not** re-trigger the workflow — no release loop.)
+
+**B — push a version tag** (creates the release for that tag):
 
 ```bash
 # bump the version first (pyproject.toml + desktop/package.json), commit, then:
@@ -166,7 +173,7 @@ git tag v0.0.23
 git push origin v0.0.23
 ```
 
-**B — run it from the Actions tab** (no tag needed): open **Actions → Release →
+**C — run it from the Actions tab** (no tag needed): open **Actions → Release →
 Run workflow**, pick the branch, and optionally enter a version (blank = use
 `pyproject.toml`). The workflow creates the `v<version>` tag and the release from
 that branch's latest commit. (This is the easy path if you're not working from a
@@ -191,15 +198,16 @@ The workflow:
   Signing is **opt-in and requires no config change** — set the encrypted CI
   secrets `CSC_LINK` (base64 `.pfx`) and `CSC_KEY_PASSWORD` and electron-builder
   signs automatically (placeholders documented in `electron-builder.yml`).
-- **Auto-updates:** the packaged app has **working in-app updates**.
-  `electron-builder.yml` declares a GitHub `publish` feed (generates `latest.yml`),
-  `electron/main.ts` wires `electron-updater` (checks the feed on launch + over
-  IPC), and the **Updates screen** drives it: it shows the installed/latest
-  versions and a *Check again* → *Download update* (with progress) → *Restart &
-  install* flow. When the launch check finds a newer version, a subtle badge
-  appears on the **Updates** nav item and in the **context bar** (click → Updates).
-  A downloaded update also installs on the next quit. In a source/dev install the
-  same screen falls back to the git-based self-update (`/update/*`). Updates work on
+- **Auto-updates:** the packaged app updates itself **automatically** — see
+  `docs/AUTO_UPDATE.md`. It checks the GitHub release feed on every launch and,
+  when a newer version is found, asks **once** (new version + estimated download
+  size + recommended free disk space) before downloading, verifying and installing
+  on its own (the full-screen overlay narrates it). The **Updates screen** is the
+  manual **fallback** (*Check again* → *Download update* with progress → *Restart &
+  install*), and hosts the **Automatic updates** toggle; a subtle badge on the
+  **Updates** nav item / **context bar** still flags an available update. A
+  downloaded update also installs on the next quit. In a source/dev install the
+  screen falls back to the git-based self-update (`/update/*`). Updates work on
   unsigned Windows builds (integrity is verified via the sha512 in `latest.yml`);
   signing is still recommended to avoid SmartScreen. Disable the launch check with
   `MRP_DISABLE_AUTOUPDATE=1`.

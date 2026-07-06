@@ -1,15 +1,21 @@
 name: Release
 
 # Build the Momentum Lab Windows 11 installer and publish a GitHub Release.
-# Two ways to trigger it:
-#   1. Push a version tag:        git tag v0.0.23 && git push origin v0.0.23
-#   2. Run it from the Actions tab ("Run workflow") on a branch — no tag needed;
-#      the version comes from the optional input or pyproject.toml, and the tag +
-#      release are created from the selected commit.
+# Three ways to trigger it:
+#   1. Push to the default branch  → an AUTOMATIC release. The version is
+#      pyproject.toml's if its tag is free, otherwise the next free patch bump
+#      above the highest existing tag; the tag + release are created for you.
+#      Put "[skip release]" in the commit message to push without releasing.
+#   2. Push a version tag:        git tag v0.0.23 && git push origin v0.0.23
+#   3. Run it from the Actions tab ("Run workflow") — the version comes from the
+#      optional input or pyproject.toml, and the tag + release are created.
 # The quality gate (ruff + mypy + tests + desktop build) must pass first; if it
-# fails, no release is created.
+# fails, no release is created. (The tag created by the automatic path uses the
+# default GITHUB_TOKEN, so it does NOT re-trigger this workflow — no loop.)
 on:
   push:
+    branches:
+      - claude/vigilant-wozniak-oueczq # the repo's default branch → auto-release
     tags:
       - "v*"
   workflow_dispatch:
@@ -35,6 +41,12 @@ jobs:
   quality:
     name: Quality gate (ruff · mypy · tests · desktop build)
     runs-on: ubuntu-latest
+    # An automatic (branch-push) release can be skipped with "[skip release]" in
+    # the commit message. Tag pushes and manual runs are always honoured. When
+    # this job is skipped, the release job (needs: quality) is skipped too.
+    if: >-
+      ${{ !(github.event_name == 'push' && github.ref_type == 'branch'
+            && contains(github.event.head_commit.message, '[skip release]')) }}
     permissions:
       contents: read # only needs to read the code
     steps:
@@ -119,18 +131,48 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
           INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
-          if [ "$EVENT_NAME" = "push" ]; then
+          set -euo pipefail
+
+          tag_exists() { git rev-parse -q --verify "refs/tags/$1" >/dev/null 2>&1; }
+          pyproject_version() { grep -m1 '^version = ' pyproject.toml | sed -E 's/.*"([^"]+)".*/\1/'; }
+          # Highest existing vX.Y.Z tag, without the leading v (empty if none).
+          highest_tag_version() {
+            git tag -l 'v*' | sed 's/^v//' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+              | sort -V | tail -1 || true
+          }
+          bump_patch() {  # echo X.Y.(Z+1)
+            local major minor patch
+            IFS=. read -r major minor patch <<<"$1"
+            echo "${major}.${minor}.$((patch + 1))"
+          }
+
+          if [ "$EVENT_NAME" = "push" ] && [ "$REF_TYPE" = "tag" ]; then
             TAG="$REF_NAME"                       # e.g. v0.0.23
             VERSION="${TAG#v}"
-          else
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             VERSION="$INPUT_VERSION"
-            if [ -z "$VERSION" ]; then
-              VERSION="$(grep -m1 '^version = ' pyproject.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+            if [ -z "$VERSION" ]; then VERSION="$(pyproject_version)"; fi
+            TAG="v${VERSION}"
+          else
+            # Automatic release on a branch push: use pyproject.toml's version if
+            # its tag is free, otherwise the next free patch bump above the higher
+            # of {pyproject, highest existing tag} (so the version never regresses
+            # and electron-updater always sees a newer release).
+            PY="$(pyproject_version)"
+            if ! tag_exists "v${PY}"; then
+              VERSION="$PY"
+            else
+              HI="$(highest_tag_version)"; [ -z "$HI" ] && HI="$PY"
+              BASE="$(printf '%s\n%s\n' "$PY" "$HI" | sort -V | tail -1)"
+              VERSION="$(bump_patch "$BASE")"
+              while tag_exists "v${VERSION}"; do VERSION="$(bump_patch "$VERSION")"; done
             fi
             TAG="v${VERSION}"
           fi
+
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Releasing $TAG (version $VERSION) from ${GITHUB_SHA}"

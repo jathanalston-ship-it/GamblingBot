@@ -32,6 +32,13 @@ import {
   type StageSample,
 } from "./startup-metrics";
 import { UpdateFlow, type SerializedUpdateFlow, type UpdateFlowEvent } from "./update-flow";
+import { buildUpdatePrompt, type UpdateInfoLike, type UpdatePrompt } from "./auto-update";
+import {
+  readPreferences,
+  shouldPrompt,
+  writePreferences,
+  type UpdatePreferences,
+} from "./update-prefs";
 import { dirname, join } from "node:path";
 
 import {
@@ -625,6 +632,53 @@ function clearUpdateMarker(): void {
   }
 }
 
+/* ── Auto-update preferences (app-side JSON; readable with the backend down) ── */
+
+function updatePrefsPath(): string {
+  return join(userPaths().root, "update-prefs.json");
+}
+
+function loadUpdatePrefs(): UpdatePreferences {
+  return readPreferences(updatePrefsPath());
+}
+
+function saveUpdatePrefs(prefs: UpdatePreferences): void {
+  try {
+    writePreferences(updatePrefsPath(), prefs);
+  } catch (err) {
+    console.error("[auto-update] could not persist preferences:", err);
+  }
+}
+
+/**
+ * The seamless install → restart sequence, shared by the AUTOMATIC path (after
+ * an auto-download completes) and the manual "Restart & install" button. Each
+ * step is an explicit UpdateFlow state streamed to the overlay so the window can
+ * never appear frozen: preparing-restart → stopping-backend (awaited HERE so the
+ * will-quit hook has nothing left to wait on) → launching-installer (marker
+ * persisted) → quitAndInstall on the next tick.
+ */
+async function runInstallSequence(): Promise<void> {
+  updateFlow.transition("preparing-restart", "buttons disabled — saving state");
+  updateFlow.transition("stopping-backend");
+  try {
+    await (manager?.stop() ?? Promise.resolve());
+    updateFlow.transition("waiting-for-shutdown", "backend tree stopped cleanly");
+  } catch (err) {
+    // A stuck backend must not strand the update — will-quit force-kills.
+    updateFlow.log(`backend stop errored (will-quit will force-kill): ${String(err)}`);
+    updateFlow.transition("waiting-for-shutdown", "backend stop errored — forcing at quit");
+  }
+  updateFlow.transition("launching-installer", "handing off to the installer");
+  try {
+    writeFileSync(updateMarkerPath(), JSON.stringify(updateFlow.serialize()), "utf-8");
+  } catch (err) {
+    console.error("[update-flow] could not persist marker:", err);
+  }
+  // Defer so the IPC reply + the last flow event are flushed before quitting.
+  setImmediate(() => autoUpdater.quitAndInstall());
+}
+
 /* ── Startup performance history: measured timings only ─────────────────────
  * Every launch's stage timeline (Electron trace + the backend's own boot
  * timings + the renderer's hydration/first-API marks) is appended to a rolling
@@ -678,6 +732,13 @@ function persistStartupHistory(): void {
 }
 
 let updaterReady = false;
+// An update found on launch, awaiting the user's OK in the confirmation prompt
+// (version + download size + recommended free space). Seeded to a late-mounting
+// renderer via `mrp:update:get-pending`.
+let pendingPrompt: UpdatePrompt | null = null;
+// The user approved the prompt → after the auto-download finishes, install
+// immediately (no second click). Distinguishes auto from manual downloads.
+let autoInstallPending = false;
 
 /** The GitHub release feed electron-updater is configured to use. */
 interface UpdateFeed {
@@ -772,12 +833,15 @@ async function updateDiagnostics(): Promise<Record<string, unknown>> {
  * In-app auto-update (electron-updater), surfaced in the Updates screen.
  *
  * No-op in dev / smoke / unpackaged runs. In a packaged build it registers IPC
- * handlers (check / download / install) and forwards updater events to the
- * renderer, then does one silent check on launch. Downloads are user-driven from
- * the Updates screen (`autoDownload = false`); a downloaded update installs on the
- * next quit, or immediately via "Restart & install". Failures (no release yet,
- * offline, unsigned-build quirks) are surfaced as events, never fatal. Disable the
- * launch check with MRP_DISABLE_AUTOUPDATE=1.
+ * handlers and forwards updater events to the renderer, then does one silent
+ * check on launch. The OVERHAULED flow is automatic: when the launch check finds
+ * a newer release it asks the user ONCE (version + download size + recommended
+ * free disk space); on confirm it downloads and installs seamlessly (no further
+ * clicks). The manual Updates screen (check → download → Restart & install) stays
+ * as the fallback, and is what runs when auto-update is turned off. A downloaded
+ * update also installs on the next quit (`autoInstallOnAppQuit`). Failures (no
+ * release yet, offline, unsigned-build quirks) are surfaced as events, never
+ * fatal. Disable the launch check entirely with MRP_DISABLE_AUTOUPDATE=1.
  */
 function initAutoUpdates(): void {
   if (isDev || isSmoke || !app.isPackaged || updaterReady) return;
@@ -796,34 +860,61 @@ function initAutoUpdates(): void {
     return true;
   });
   ipcMain.handle("mrp:update:install", async () => {
-    // The seamless-update sequence. Each step is an explicit UpdateFlow state
-    // streamed to the renderer's Update overlay, so the window shows exactly
-    // what is happening instead of appearing frozen:
-    //   preparing-restart -> stopping-backend (async, awaited HERE so the
-    //   will-quit hook has nothing left to wait on) -> launching-installer
-    //   (marker persisted) -> quitAndInstall on the next tick.
-    updateFlow.transition("preparing-restart", "buttons disabled — saving state");
-    updateFlow.transition("stopping-backend");
-    try {
-      await (manager?.stop() ?? Promise.resolve());
-      updateFlow.transition("waiting-for-shutdown", "backend tree stopped cleanly");
-    } catch (err) {
-      // A stuck backend must not strand the update — will-quit force-kills.
-      updateFlow.log(`backend stop errored (will-quit will force-kill): ${String(err)}`);
-      updateFlow.transition("waiting-for-shutdown", "backend stop errored — forcing at quit");
-    }
-    updateFlow.transition("launching-installer", "handing off to the installer");
-    try {
-      writeFileSync(updateMarkerPath(), JSON.stringify(updateFlow.serialize()), "utf-8");
-    } catch (err) {
-      console.error("[update-flow] could not persist marker:", err);
-    }
-    // Defer so the IPC reply + the last flow event are flushed before quitting.
-    setImmediate(() => autoUpdater.quitAndInstall());
+    await runInstallSequence();
     return true;
   });
   // Detailed diagnostics for the Updates screen (feed config + live feed probe).
   ipcMain.handle("mrp:update:diagnostics", () => updateDiagnostics());
+
+  // ── Automatic-update handlers (the primary, overhauled flow) ──────────────
+  // The pending prompt, so a renderer that mounts AFTER the launch check still
+  // sees the "update available" confirmation.
+  ipcMain.handle("mrp:update:get-pending", () => pendingPrompt);
+  ipcMain.handle("mrp:update:get-prefs", () => loadUpdatePrefs());
+  ipcMain.handle(
+    "mrp:update:set-prefs",
+    (_e, patch: { autoUpdate?: boolean; skippedVersion?: string | null }) => {
+      const current = loadUpdatePrefs();
+      const next: UpdatePreferences = {
+        autoUpdate:
+          typeof patch?.autoUpdate === "boolean" ? patch.autoUpdate : current.autoUpdate,
+        skippedVersion:
+          patch && "skippedVersion" in patch
+            ? typeof patch.skippedVersion === "string"
+              ? patch.skippedVersion
+              : null
+            : current.skippedVersion,
+      };
+      saveUpdatePrefs(next);
+      // Turning auto-update off dismisses any pending prompt (manual fallback only).
+      if (!next.autoUpdate) pendingPrompt = null;
+      return next;
+    },
+  );
+  // "Update now" in the prompt: go fully automatic — download, then install.
+  ipcMain.handle("mrp:update:confirm", async () => {
+    pendingPrompt = null;
+    autoInstallPending = true;
+    updateFlow.setUnattended(true);
+    updateFlow.transition("downloading-update", "starting download");
+    try {
+      await autoUpdater.downloadUpdate();
+    } catch (err) {
+      autoInstallPending = false;
+      updateFlow.fail(err, "download failed");
+      sendUpdateEvent("error", { message: String((err as Error)?.message ?? err) });
+    }
+    return true;
+  });
+  // "Later": don't re-prompt for THIS version, but keep auto-update on. The
+  // manual Updates screen still works as the fallback.
+  ipcMain.handle("mrp:update:defer", (_e, version: string | null) => {
+    pendingPrompt = null;
+    if (typeof version === "string" && version) {
+      saveUpdatePrefs({ ...loadUpdatePrefs(), skippedVersion: version });
+    }
+    return true;
+  });
 
   try {
     autoUpdater.autoDownload = false;
@@ -842,9 +933,23 @@ function initAutoUpdates(): void {
       updateFlow.transition("checking-for-updates");
       sendUpdateEvent("checking", null);
     });
-    autoUpdater.on("update-available", (info) =>
-      sendUpdateEvent("available", { version: info.version }),
-    );
+    autoUpdater.on("update-available", (info) => {
+      sendUpdateEvent("available", { version: info.version });
+      // The automatic flow: if enabled and this version wasn't skipped, raise the
+      // one confirmation prompt (version + download size + recommended free
+      // space). On confirm it downloads + installs on its own.
+      try {
+        const prefs = loadUpdatePrefs();
+        // Don't re-raise the prompt once an auto-update is already underway (a
+        // second launch check can emit update-available again).
+        if (shouldPrompt(prefs, info.version) && !autoInstallPending && !updateFlow.unattended) {
+          pendingPrompt = buildUpdatePrompt(info as UpdateInfoLike);
+          win?.webContents.send("mrp:update:prompt", pendingPrompt);
+        }
+      } catch (err) {
+        console.error("[auto-update] could not build the update prompt:", err);
+      }
+    });
     autoUpdater.on("update-not-available", (info) =>
       sendUpdateEvent("not-available", { version: info.version }),
     );
@@ -864,15 +969,26 @@ function initAutoUpdates(): void {
       // electron-updater verifies the artifact checksum/signature during the
       // download pipeline; record it as its own state for the report.
       updateFlow.transition("verifying-update", `v${info.version} checksum verified`);
-      updateFlow.transition("idle", "downloaded — ready to install");
       sendUpdateEvent("downloaded", { version: info.version });
+      if (autoInstallPending) {
+        // Unattended: proceed straight to install → restart, no second click.
+        autoInstallPending = false;
+        void runInstallSequence();
+      } else {
+        // Manual download from the Updates screen: wait for "Restart & install".
+        updateFlow.transition("idle", "downloaded — ready to install");
+      }
     });
     autoUpdater.on("error", (err) => {
       const e = err as { message?: string; statusCode?: number } | undefined;
-      sendUpdateEvent("error", {
-        message: String(e?.message ?? err),
-        statusCode: e?.statusCode ?? null,
-      });
+      const message = String(e?.message ?? err);
+      sendUpdateEvent("error", { message, statusCode: e?.statusCode ?? null });
+      // A failure during an unattended update must surface in the overlay's
+      // recovery dialog, not leave a spinner hanging.
+      if (autoInstallPending || updateFlow.unattended) {
+        autoInstallPending = false;
+        if (updateFlow.active) updateFlow.fail(message);
+      }
     });
 
     if (process.env.MRP_DISABLE_AUTOUPDATE !== "1") {
