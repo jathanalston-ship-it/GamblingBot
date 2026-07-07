@@ -235,6 +235,12 @@ def create_app(session_factory: sessionmaker[Session] | None = None) -> FastAPI:
         def _start_daemon() -> None:
             market_daemon.start()
             reconciliation_loop.start()
+            # Catch-up scan on open: the daemon only scans during market hours, so
+            # after the app was closed (overnight/weekend/holiday) the newest data
+            # is whatever the last session scanned — which the dashboard then shows
+            # as several sessions stale. One immediate scan pulls the latest
+            # completed session's bars so opening the app always shows current data.
+            market_daemon.trigger_scan()
 
         @app.on_event("shutdown")
         def _stop_daemon() -> None:
