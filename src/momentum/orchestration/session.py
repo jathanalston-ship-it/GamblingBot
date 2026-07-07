@@ -51,8 +51,14 @@ def pull_bars(
     milliseconds and a failure reason (None on success) — used for market-data
     provenance logging, so a fetch that returned no bars records *why*.
     """
-    end_ts = to_utc_timestamp(end)
-    start_ts = end_ts - pd.Timedelta(days=lookback_days)
+    # ``end`` is an inclusive calendar date, but a daily bar is timestamped at the
+    # session OPEN (~13:30 UTC), so a request whose upper bound is ``end`` at
+    # 00:00 UTC excludes that day's bar — and, across a weekend/holiday, several
+    # prior sessions too (the classic "data is 4 days old after Monday's close").
+    # Extend the bound to the END of ``end`` (next-day 00:00 UTC) so the latest
+    # completed session — including ``end`` itself once it has closed — is returned.
+    start_ts = to_utc_timestamp(end) - pd.Timedelta(days=lookback_days)
+    end_ts = to_utc_timestamp(end) + pd.Timedelta(days=1)
     bars: dict[str, pd.DataFrame] = {}
     for symbol in symbols:
         started = dt.datetime.now(tz=dt.UTC)

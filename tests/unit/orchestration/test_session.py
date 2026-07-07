@@ -99,3 +99,36 @@ def test_run_paper_session_handles_no_data(session: Session) -> None:
     )
     assert report.num_opened == 0
     assert report.run_id == "paper-20260105"
+
+
+class _YahooLikeProvider:
+    """Mimics a daily feed: bars are timestamped at the session OPEN (13:30 UTC)
+    and only those with ts <= the requested ``end`` are returned (Yahoo period2)."""
+
+    def __init__(self) -> None:
+        self.last_end: pd.Timestamp | None = None
+
+    def get_bars(self, symbol: str, start: Any, end: Any, *a: Any, **k: Any) -> pd.DataFrame:
+        self.last_end = pd.Timestamp(end)
+        # Business days over ~a year, each stamped at 13:30 UTC (market open).
+        idx = pd.date_range("2025-08-01", "2026-07-07", freq="B", tz="UTC") + pd.Timedelta(
+            hours=13, minutes=30
+        )
+        idx = idx[idx <= self.last_end]
+        px = np.linspace(40.0, 60.0, len(idx))
+        return pd.DataFrame(
+            {"open": px, "high": px * 1.01, "low": px * 0.99, "close": px, "volume": px * 0},
+            index=idx,
+        )
+
+
+def test_pull_bars_includes_the_end_days_completed_session() -> None:
+    """Regression: a request for ``end=Mon Jul 6`` after the close must return
+    Monday's bar — not stop days short because the upper bound was 00:00 UTC."""
+    provider = _YahooLikeProvider()
+    bars = pull_bars(provider, ["AAA"], end=dt.date(2026, 7, 6), lookback_days=400)
+    newest = bars["AAA"].index[-1]
+    # The end bound reaches into the end day so its 13:30-UTC bar qualifies…
+    assert provider.last_end >= pd.Timestamp("2026-07-06 13:30", tz="UTC")
+    # …so the newest bar returned is Monday Jul 6, not the pre-holiday Thursday.
+    assert newest.date() == dt.date(2026, 7, 6)
