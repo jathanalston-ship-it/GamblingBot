@@ -5,13 +5,17 @@ incremental cache), scan the selected universe, recompute conviction, update
 trade health / watchlists / trade plans / analogs (all inside ``run_scan``),
 from which the command center, portfolio and thesis journal derive — then
 report incremental metrics. When the pre-pass shows **no symbol changed**, the
-whole pipeline is skipped and every prior result remains valid (identical to a
-full scan by construction).
+expensive scan is skipped and every prior result remains valid (identical to a
+full scan by construction) — but the daemon still **stamps freshness** so the
+dashboard shows a live pull instead of a frozen last-scan time, and it **never
+skips while a position is open** (a held trade must be managed on fresh intraday
+prices every cycle).
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import logging
 import time
 from collections.abc import Callable
 from typing import Any
@@ -28,6 +32,8 @@ from momentum.daemon import (
 from momentum.data.providers.base import MarketDataProvider
 from momentum.orchestration.session import pull_bars
 from momentum.universe.screener import MomentumScanner
+
+_log = logging.getLogger("momentum.daemon")
 
 BENCHMARK_SYMBOL = "SPY"
 DEFAULT_LOOKBACK_DAYS = 400
@@ -59,21 +65,25 @@ def build_cycle(
         from momentum.api import actions, universe_service, user_settings
 
         started = time.perf_counter()
+        now = dt.datetime.now(tz=dt.UTC)
         provider = provider_factory()
         caching = CachingProvider(provider, shared_cache, max_age_seconds=config.bar_reuse_seconds)
 
         with session_factory() as session:
             universe = universe_service.resolve_selected(session)
+            has_open = _has_open_positions(session)
         symbols = list(universe.symbols)
         sectors = dict(universe.sectors)
         provider_name = getattr(provider, "name", None) or user_settings.read_provider()
 
         # Incremental pre-pass: refresh every symbol's bars through the cache and
-        # detect what actually changed. Skipped on manual scans (always full) and
-        # when reuse is disabled or the cache is cold (nothing to compare against).
-        if not manual and config.bar_reuse_seconds > 0 and shared_cache.size() > 0:
+        # detect what actually changed. Skipped on manual scans (always full),
+        # when reuse is disabled or the cache is cold, AND — crucially — whenever
+        # a position is open: a held trade must be managed (stops/targets on fresh
+        # intraday prices) every cycle, so we never take the skip while in a trade.
+        if not manual and not has_open and config.bar_reuse_seconds > 0 and shared_cache.size() > 0:
             today = dt.date.today()
-            pull_bars(
+            pre_bars = pull_bars(
                 caching,
                 [*symbols, BENCHMARK_SYMBOL],
                 end=today,
@@ -81,15 +91,21 @@ def build_cycle(
             )
             report = caching.report()
             if not report.any_changed:
+                # Nothing changed — but the daemon DID just pull. Stamp freshness so
+                # the dashboard shows a live, current pull (not a frozen last-scan
+                # time), instead of looking dead while it is actually working.
+                _stamp_freshness(session_factory, provider_name=str(provider_name), now=now)
                 return {
                     "skipped_pipeline": True,
                     "reason": "no symbol changed since the previous cycle",
                     "market_state": state.value,
                     "symbols_skipped": len(report.unchanged),
                     "symbols_recomputed": 0,
+                    "freshness_stamped": True,
                     "duration_ms": round((time.perf_counter() - started) * 1000.0, 1),
                     **caching.metrics(),
                 }
+            del pre_bars  # bars are re-pulled by run_scan below (fresh, logged)
 
         try:
             result = actions.run_scan(
@@ -116,6 +132,45 @@ def build_cycle(
         return result
 
     return cycle, shared_cache
+
+
+def _has_open_positions(session: Session) -> bool:
+    """True when any paper position is open (money at work to be managed)."""
+    from sqlalchemy import func, select
+
+    from momentum.persistence.models.trade import Trade
+
+    n = session.scalar(select(func.count()).select_from(Trade).where(Trade.status == "open"))
+    return bool(n)
+
+
+def _stamp_freshness(
+    session_factory: sessionmaker[Session], *, provider_name: str, now: dt.datetime
+) -> None:
+    """Record that the daemon just pulled and the data is unchanged-but-current.
+
+    On a skipped cycle the full ``run_scan`` (which writes ``scan_metadata``) does
+    not run, so without this the dashboard's "Last Successful Pull" / "Data Age"
+    freeze at the last full scan and the daemon looks dead while it is actually
+    re-checking every cycle. Updating the latest metadata row's pull timestamp +
+    (session-based) staleness keeps the freshness view honest. Best-effort — a
+    failure here must never break the loop.
+    """
+    from momentum.api import actions
+    from momentum.persistence.repositories.scan_metadata import ScanMetadataRepository
+
+    try:
+        with session_factory() as session:
+            meta = ScanMetadataRepository(session).latest()
+            if meta is None or meta.bar_timestamp is None:
+                return
+            age, stale, _ = actions._evaluate_staleness(meta.bar_timestamp, now)
+            meta.pull_timestamp = now
+            meta.data_age_minutes = age
+            meta.stale = stale
+            session.commit()
+    except Exception:  # noqa: BLE001 — freshness stamping must never kill the daemon
+        _log.warning("freshness stamp failed", exc_info=True)
 
 
 def create_daemon(

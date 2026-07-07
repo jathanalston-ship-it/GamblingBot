@@ -43,9 +43,20 @@ desktop shell (Electron)
 - Every symbol's bars are **fingerprinted** (newest bar timestamp + last
   close). A pre-pass refreshes the universe through the shared
   `IncrementalCache`; when **no symbol changed** (and no manual scan was
-  requested) the entire pipeline is **skipped** — prior conviction, analogs,
+  requested) the expensive pipeline is **skipped** — prior conviction, analogs,
   trade-management state and watchlists remain valid untouched, which is
   identical to a full recompute by construction.
+- **The skip stays honest, and never abandons a position** (`daemon_service`):
+  because daily bars don't change intraday, a live session would otherwise skip
+  every cycle and *look* frozen. So (a) a skipped cycle still **stamps freshness**
+  on `scan_metadata` (`_stamp_freshness`: current pull timestamp + session-based
+  staleness) — the Data Health "Last Successful Pull"/"Data Age" show a live pull,
+  not the last full scan; and (b) the daemon **never takes the skip while any
+  paper position is open** (`_has_open_positions`) — a held trade is managed
+  (stops/targets on fresh intraday prices) on **every** cycle. (For daily-bar
+  data the newest *completed* session is legitimately the reference until the
+  close, e.g. Thursday's bar all through the Monday after a holiday — freshness
+  is graded in trading sessions, not wall-clock; see `docs/TIME.md`.)
 - `CachingProvider` wraps the real provider: bars pulled within
   `bar_reuse_seconds` are served from memory (**cache hits — zero API
   calls**); a close move beyond `price_change_threshold` always counts as
