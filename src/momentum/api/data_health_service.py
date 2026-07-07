@@ -7,8 +7,14 @@ happen. Every metric carries a traffic-light ``status`` (green/yellow/red) and t
 overall status is the worst of them. A separate diagnostics view exposes the raw
 provider / cache-path / database-path / timestamp values for support.
 
-Pure status logic (``_age_status`` / ``_worst``) is unit-tested directly; the
-aggregator only wires the session + environment into those helpers.
+Freshness for daily data is graded in **trading sessions**, not wall-clock
+minutes: a daily bar is always ≥1 calendar day old and several days old across
+any weekend/holiday, so grading raw minutes would falsely flag every Monday and
+post-holiday session red. ``_session_status`` (calendar-aware) keeps a
+latest-completed-session bar green while still turning red on a genuine
+multi-session pull outage. Pure status logic (``_session_status`` /
+``_age_status`` / ``_worst``) is unit-tested directly; the aggregator only wires
+the session + environment into those helpers.
 """
 
 from __future__ import annotations
@@ -23,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from momentum.api import universe_service, user_settings
 from momentum.data.cache import BarCache
+from momentum.data.calendar import TradingCalendar
 from momentum.data.schema import Timeframe
 from momentum.persistence.database import get_database_url
 from momentum.persistence.models.conviction_score import ConvictionScore
@@ -39,6 +46,16 @@ _ORDER = {GREEN: 0, YELLOW: 1, RED: 2}
 FRESH_MINUTES = 24 * 60
 STALE_MINUTES = 4 * 24 * 60
 
+# Freshness for daily data is measured in **trading sessions**, not wall-clock:
+# a daily bar is always ≥1 calendar day old and several days old across every
+# weekend/holiday, so grading raw wall-clock minutes would flag every Monday and
+# post-holiday session red even when the data is the latest completed session.
+# Measuring sessions-behind vs *now* stays green over weekends yet still catches
+# a real pull outage (sessions accumulate while nothing refreshes).
+FRESH_SESSIONS = 1  # newest bar is this-or-fewer sessions behind → green
+AGING_SESSIONS = 3  # up to here → yellow; beyond → red
+_CALENDAR = TradingCalendar()
+
 
 def _worst(statuses: list[str]) -> str:
     """The most severe status in the list (green < yellow < red)."""
@@ -50,12 +67,40 @@ def _worst(statuses: list[str]) -> str:
 def _age_status(
     minutes: float | None, *, fresh: float = FRESH_MINUTES, stale: float = STALE_MINUTES
 ) -> str:
-    """Green if fresh, yellow if aging, red if stale or unknown."""
+    """Green if fresh, yellow if aging, red if stale or unknown (wall-clock)."""
     if minutes is None:
         return RED
     if minutes <= fresh:
         return GREEN
     if minutes <= stale:
+        return YELLOW
+    return RED
+
+
+def _sessions_behind(ts: dt.datetime | None, now: dt.datetime) -> int | None:
+    """How many completed trading sessions ``ts`` lags the latest session at ``now``.
+
+    0 means the latest completed session (e.g. a Friday bar on Monday, or a bar
+    pulled earlier today). Weekends/holidays are skipped via the trading calendar,
+    so a daily bar over a long weekend is *not* counted as stale.
+    """
+    if ts is None:
+        return None
+    ref = _CALENDAR.previous_session(now.date(), inclusive=True).date()
+    day = ts.date()
+    if day >= ref:
+        return 0
+    return max(0, _CALENDAR.count_sessions(day, ref) - 1)
+
+
+def _session_status(ts: dt.datetime | None, now: dt.datetime) -> str:
+    """Traffic light for a daily-data timestamp, measured in trading sessions."""
+    behind = _sessions_behind(ts, now)
+    if behind is None:
+        return RED
+    if behind <= FRESH_SESSIONS:
+        return GREEN
+    if behind <= AGING_SESSIONS:
         return YELLOW
     return RED
 
@@ -133,12 +178,21 @@ def data_health(
         else _age_minutes(pull_ts, now)
     )
 
-    # Connection: inferred from the most recent pull (no live network probe here —
-    # the endpoint must stay fast and offline-testable).
+    # Freshness of the newest bar / last pull, measured in trading sessions vs now
+    # (weekend/holiday-aware, but a genuine pull outage still trips it).
+    bar_status = _session_status(meta.bar_timestamp if meta else None, now)
+    pull_status = _session_status(pull_ts, now)
+    behind = _sessions_behind(meta.bar_timestamp if meta else None, now)
+
+    # Connection: green while pulls are landing on schedule; degrades only when the
+    # last pull is genuinely several sessions old (a real outage) or the scan
+    # flagged the data stale — never merely because it is a Monday.
     if meta is None:
         conn_status, conn_value = RED, "never pulled"
-    elif meta.stale:
-        conn_status, conn_value = YELLOW, "degraded (stale)"
+    elif pull_status == RED:
+        conn_status, conn_value = RED, "no recent pull"
+    elif pull_status == YELLOW or meta.stale:
+        conn_status, conn_value = YELLOW, "degraded"
     else:
         conn_status, conn_value = GREEN, "connected"
 
@@ -146,19 +200,25 @@ def data_health(
     cached = len(BarCache(_cache_root()).symbols(Timeframe.DAY))
 
     conv_as_of, conv_ts, conv_run = _latest_conviction(session)
-    conv_age = _age_minutes(conv_ts, now) if conv_ts else None
     if conv_as_of is None:
         conv_status, conv_value = RED, "No live conviction data available"
     else:
-        conv_status = _age_status(conv_age) if conv_ts else YELLOW
+        conv_status = _session_status(conv_ts, now) if conv_ts else YELLOW
         conv_value = f"{conv_as_of.isoformat()} ({conv_run or 'live'})"
 
     wl_date = WatchlistRepository(session).latest_date()
-    wl_age = _age_minutes(
-        dt.datetime.combine(wl_date, dt.time(), tzinfo=dt.UTC) if wl_date else None, now
-    )
     wl_status = (
-        RED if wl_date is None else _age_status(wl_age, fresh=STALE_MINUTES, stale=7 * 24 * 60)
+        RED
+        if wl_date is None
+        else _session_status(dt.datetime.combine(wl_date, dt.time(), tzinfo=dt.UTC), now)
+    )
+
+    age_detail = (
+        None
+        if behind is None
+        else "latest completed trading session"
+        if behind <= FRESH_SESSIONS
+        else f"{behind} trading sessions behind"
     )
 
     metrics = [
@@ -168,13 +228,14 @@ def data_health(
             "last_pull",
             "Last Successful Pull",
             pull_ts.isoformat() if pull_ts else None,
-            GREEN if pull_ts else RED,
+            pull_status,
         ),
         HealthMetric(
             "data_age",
             "Data Age",
             _humanize_age(pull_age),
-            _age_status(pull_age) if meta and not meta.stale else (RED if meta is None else YELLOW),
+            bar_status,
+            detail=age_detail,
         ),
         HealthMetric(
             "universe",

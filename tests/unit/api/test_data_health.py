@@ -128,13 +128,14 @@ def test_fresh_pipeline_is_green(factory: sessionmaker[Session]) -> None:
 
 
 def test_stale_scan_degrades_connection(factory: sessionmaker[Session]) -> None:
-    now = dt.datetime(2026, 6, 23, 12, tzinfo=dt.UTC)
+    now = dt.datetime(2026, 6, 23, 12, tzinfo=dt.UTC)  # a Tuesday
     with factory() as session:
         session.add(
             ScanMetadata(
                 scan_id="scan-old",
                 provider="yfinance",
                 universe="S&P 500",
+                bar_timestamp=now - dt.timedelta(days=10),
                 pull_timestamp=now - dt.timedelta(days=10),
                 symbol_count=10,
                 data_age_minutes=10 * 24 * 60.0,
@@ -144,8 +145,39 @@ def test_stale_scan_degrades_connection(factory: sessionmaker[Session]) -> None:
         session.commit()
         result = dh.data_health(session, provider_name="yfinance", now=now)
     metrics = {m["key"]: m for m in result["metrics"]}
-    assert metrics["connection"]["status"] == "yellow"
-    assert metrics["data_age"]["status"] in {"yellow", "red"}
+    # A 10-day (≈7 trading session) outage is a genuine problem — red, not a
+    # blanket yellow. The data-age tile is red too.
+    assert metrics["connection"]["status"] == "red"
+    assert metrics["data_age"]["status"] == "red"
+
+
+def test_holiday_weekend_daily_bar_is_not_flagged_stale(factory: sessionmaker[Session]) -> None:
+    """The reported bug: a daily bar that is the latest COMPLETED session but
+    several calendar days old across the July 4th long weekend must read green,
+    not 'awful 4-day-old data'. Fri Jul 3 2026 is the observed holiday."""
+    monday = dt.datetime(2026, 7, 6, 14, tzinfo=dt.UTC)  # first session after the long weekend
+    last_bar = dt.datetime(2026, 7, 2, 20, tzinfo=dt.UTC)  # Thursday's completed daily bar
+    with factory() as session:
+        session.add(
+            ScanMetadata(
+                scan_id="scan-20260706",
+                provider="yfinance",
+                universe="S&P 500",
+                bar_timestamp=last_bar,
+                pull_timestamp=monday - dt.timedelta(minutes=2),  # pulled just now
+                symbol_count=480,
+                data_age_minutes=round((monday - last_bar).total_seconds() / 60.0, 1),
+                stale=False,
+            )
+        )
+        session.commit()
+        result = dh.data_health(session, provider_name="yfinance", now=monday)
+    metrics = {m["key"]: m for m in result["metrics"]}
+    assert metrics["data_age"]["status"] == "green"  # latest completed session
+    assert metrics["connection"]["status"] == "green"
+    # The wall-clock age is still shown for context (it really is ~4 days).
+    assert metrics["data_age"]["value"].endswith("d")
+    assert "session" in (metrics["data_age"]["detail"] or "")
 
 
 def test_diagnostics_exposes_raw_values(factory: sessionmaker[Session]) -> None:
