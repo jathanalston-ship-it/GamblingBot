@@ -1,16 +1,8 @@
 import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 
-const STAGES = [
-  "/scan",
-  "/candidates",
-  "/conviction",
-  "/analogs",
-  "/backtest",
-  "/replay",
-  "/paper",
-  "/live",
-];
+// Number keys jump between the four main screens.
+const STAGES = ["/", "/signals", "/positions", "/results"];
 
 function isEditable(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
@@ -23,7 +15,7 @@ function isEditable(target: EventTarget | null): boolean {
   );
 }
 
-/** Global power-user keys: ⌘K palette, ? shortcuts, 1–8 stages, g-prefixed utilities. */
+/** Global keys: ⌘K palette, ? shortcuts, 1–4 main screens, g-prefixed utilities. */
 export function useGlobalKeys(opts: { onPalette: () => void; onShortcuts: () => void }): void {
   const navigate = useNavigate();
   const palette = useRef(opts.onPalette);
@@ -63,7 +55,7 @@ export function useGlobalKeys(opts: { onPalette: () => void; onShortcuts: () => 
         }, 600);
         return;
       }
-      if (e.key >= "1" && e.key <= "8") {
+      if (e.key >= "1" && e.key <= String(STAGES.length)) {
         navigate(STAGES[Number(e.key) - 1]);
       }
     }

@@ -73,19 +73,57 @@ def test_options_change_is_info() -> None:
     assert alerts[0].kind == "options_change" and alerts[0].severity == "info"
 
 
-def test_stop_and_target_from_snapshot() -> None:
+def test_stop_alerts_only_for_held_positions() -> None:
     snapshot = {
         "trades": {
-            "AMD": {"price": 91.0, "stop": 92.0, "next_target": None},
-            "PLTR": {"price": 120.0, "stop": 90.0, "next_target": 118.0},
+            "AMD": {"price": 91.0, "stop": 92.0, "taken": True},
+            # A recommendation nobody took: below its stop, but not a position.
+            "PLTR": {"price": 80.0, "stop": 90.0, "taken": False},
+            # A held winner far above any milestone: nothing is "reached".
+            "NVDA": {"price": 300.0, "stop": 90.0, "next_target": 118.0, "taken": True},
         }
     }
     alerts = _alerts(snapshot=snapshot)
-    kinds = {a.kind: a for a in alerts}
-    assert kinds["stop_reached"].symbol == "AMD"
-    assert kinds["stop_reached"].severity == "critical"
-    assert kinds["target_reached"].symbol == "PLTR"
-    assert kinds["target_reached"].severity == "warning"
+    assert [(a.kind, a.symbol, a.severity) for a in alerts] == [("stop_reached", "AMD", "critical")]
+
+
+def _snap(run_id: str, uptrend: bool | None, *symbols: str) -> dict:  # type: ignore[type-arg]
+    return {
+        "run_id": run_id,
+        "regime": {"market_uptrend": uptrend},
+        "candidates": {s: {"price": 10.0} for s in symbols},
+    }
+
+
+def test_new_buy_signals_alert_once_the_previous_scan_is_known() -> None:
+    prev = _snap("scan-1", True, "AAA")
+    new = _snap("scan-2", True, "AAA", "BBB")
+    alerts = derive_alerts([], new_snapshot=new, prev_snapshot=prev)
+    assert [(a.kind, a.symbol) for a in alerts] == [("new_signal", "BBB")]
+    assert alerts[0].severity == "warning"
+    # The very first scan has no baseline — it must not flood the feed.
+    assert derive_alerts([], new_snapshot=new) == []
+    # No buy alerts while the market gate is closed.
+    closed = _snap("scan-2", False, "AAA", "BBB")
+    kinds = [
+        a.kind for a in derive_alerts([], new_snapshot=closed, prev_snapshot=_snap("s", False))
+    ]
+    assert "new_signal" not in kinds
+
+
+def test_market_gate_flip_is_critical_both_ways() -> None:
+    down = derive_alerts(
+        [], new_snapshot=_snap("scan-2", False), prev_snapshot=_snap("scan-1", True)
+    )
+    assert [(a.kind, a.severity) for a in down] == [("market_gate", "critical")]
+    assert "paused" in down[0].title
+    up = derive_alerts([], new_snapshot=_snap("scan-3", True), prev_snapshot=_snap("scan-2", False))
+    assert up[0].kind == "market_gate" and "resumes" in up[0].title
+    # Unknown → known is not a flip.
+    assert (
+        derive_alerts([], new_snapshot=_snap("scan-2", True), prev_snapshot=_snap("scan-1", None))
+        == []
+    )
 
 
 def test_dedupe_keys_encode_the_transition() -> None:

@@ -1,4 +1,4 @@
-import type { PortfolioSnapshot } from "../api/types";
+import type { Today } from "../api/today";
 import { useApi } from "../hooks/useApi";
 import { date } from "../lib/format";
 import { useWorkspace } from "../state/workspace";
@@ -47,12 +47,11 @@ function marketSession(now: Date): MarketSession {
 export function StatusBar() {
   const { runId, symbol } = useWorkspace();
   const health = useApi<Health>("/health");
-  const snaps = useApi<PortfolioSnapshot[]>("/portfolio/snapshots?limit=400");
+  const today = useApi<Today>("/today", { refreshMs: 30_000 });
   const ok = health.data?.status === "ok";
 
   const session = marketSession(new Date());
-  const latest =
-    snaps.data && snaps.data.length > 0 ? snaps.data[snaps.data.length - 1] : null;
+  const through = today.data?.data.bars_through ?? null;
 
   return (
     <footer className="flex h-7 items-center gap-4 border-t border-surface-border bg-surface-sunken px-4 text-[11px] text-slate-500">
@@ -64,7 +63,7 @@ export function StatusBar() {
         <span className={session.tone}>●</span>
         market {session.label.toLowerCase()}
       </span>
-      <span>data {latest ? date(latest.session_date) : "—"}</span>
+      <span>prices through {through ? date(through) : "—"}</span>
       {runId ? <span>run {runId}</span> : null}
       {symbol ? <span>focus {symbol}</span> : null}
       <span className="ml-auto text-slate-600">

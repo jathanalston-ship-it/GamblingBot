@@ -33,6 +33,7 @@ from momentum.persistence.models.scan_result import ScanResult
 from momentum.persistence.models.scan_snapshot import ScanSnapshot
 from momentum.persistence.models.scan_stat import ScanStat
 from momentum.persistence.models.trade_evaluation import TradeEvaluation
+from momentum.api import strategy_service
 from momentum.persistence.models.trade_plan import TradePlan
 from momentum.persistence.models.watchlist_entry import WatchlistEntryRow
 from momentum.persistence.repositories.pulse import (
@@ -125,6 +126,8 @@ def build_snapshot(
             "price": latest.price if latest is not None else None,
             "stop": trade.stop_price,
             "next_target": next_target,
+            # Only journal-linked rows are positions (money at work).
+            "taken": trade.journal_trade_id is not None,
         }
         # Trade health also rides on the candidate map so health deltas appear
         # beside conviction deltas for scanned symbols.
@@ -144,6 +147,7 @@ def build_snapshot(
         "regime": {
             "regime": regime_row.regime if regime_row else None,
             "breadth": regime_row.breadth if regime_row else None,
+            "market_uptrend": strategy_service.market_gate(session).uptrend,
         },
         "candidates": candidates,
         "watchlists": watchlists,
@@ -208,7 +212,11 @@ def record_scan(
             ScanDelta(scan_ts=ts, run_id=run_id, prev_scan_ts=prev_ts, **record.to_dict())
         )
 
-    alert_specs = derive_alerts(deltas, new_snapshot=payload)
+    alert_specs = derive_alerts(
+        deltas,
+        new_snapshot=payload,
+        prev_snapshot=previous.payload if previous is not None else None,
+    )
     alert_repo = AlertRepository(session)
     existing = alert_repo.existing_keys([a.dedupe_key for a in alert_specs])
     alerts_written = 0

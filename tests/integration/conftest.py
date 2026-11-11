@@ -49,7 +49,7 @@ def make_bars() -> Callable[..., pd.DataFrame]:
         vol = np.full(periods, base_volume)
         vol[-1] *= last_volume_mult
         frame = pd.DataFrame(
-            {"open": px, "high": px * 1.01, "low": px * 0.99, "close": px, "volume": vol},
+            {"open": px, "high": px * 1.001, "low": px * 0.999, "close": px, "volume": vol},
             index=idx,
         )
         frame.index.name = "timestamp"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import zlib
 import datetime as dt
 from typing import Any
 
@@ -53,7 +54,7 @@ def _bars(seed: int, n: int = 320) -> pd.DataFrame:
 
 class StubProvider:
     def get_bars(self, symbol: str, *a: object, **k: object) -> pd.DataFrame:
-        return _bars(abs(hash(symbol)) % 9999)
+        return _bars(zlib.crc32(symbol.encode()) % 9999)
 
 
 class DeadProvider:

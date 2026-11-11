@@ -1,18 +1,18 @@
-"""Automatic trade management: act when price reaches the stop or a target.
+"""Automatic trade management: the strategy's exits, executed.
 
-Pure decision logic. Given a trade's plan (entry / protective stop / scale-out
-targets, with which targets have already been hit) and the freshest price,
-:func:`decide_management` returns at most one :class:`ManagementDecision`:
+Pure decision logic. Given a trade's plan, the freshest price and the
+strategy's trend-exit signal, :func:`decide_management` returns at most one
+:class:`ManagementDecision`:
 
 1. **Stop loss** — price at/through the stop → close the full position.
    Risk is honoured first, always.
-2. **Final target** — price at/above the last target → close the remainder.
-3. **Intermediate target** — price at/above an unhit earlier target → scale out
-   the plan's fraction of the ORIGINAL position for that target (fires once per
-   target; falls back to ``target_scale_out_fraction`` for legacy rows).
-4. **Breakeven stop raise** — once the trade shows ``raise_stop_gain_r`` of open
-   profit and the working stop is still below entry, the stop ratchets to
-   breakeven — the "Raise Stop" advice, executed. Risk-reducing only.
+2. **Trend exit** — the last completed daily bar *closed* below the prior
+   N-day low → close the full position. This is the strategy's only
+   profit-taking mechanism: winners run until the trend actually breaks.
+3. **Milestone selling** (``auto_take_profit``, OFF by default) — scale out at
+   the plan's R milestones / close at the last one. Kept for users who want it;
+   it was measured to cut the strategy's expectancy by roughly 90%.
+4. **Breakeven stop raise** (``auto_raise_stop_to_breakeven``, OFF by default).
 
 Every decision carries a plain-language, data-only ``analysis`` — the "how and
 why" report — built from the numbers that triggered it (no speculation). The
@@ -31,6 +31,7 @@ from momentum.trade_lifecycle.config import TradeLifecycleConfig
 from momentum.trade_lifecycle.types import ThesisEvaluation
 
 STOP_LOSS = "stop_loss"
+TREND_EXIT = "trend_exit"
 TAKE_PROFIT_SCALE = "take_profit_scale"
 TAKE_PROFIT_FINAL = "take_profit_final"
 RAISE_STOP = "raise_stop"
@@ -50,10 +51,10 @@ class TargetState:
 class ManagementDecision:
     """One action the system takes on an open trade, with its full rationale."""
 
-    kind: str  # STOP_LOSS | TAKE_PROFIT_SCALE | TAKE_PROFIT_FINAL
+    kind: str  # STOP_LOSS | TREND_EXIT | TAKE_PROFIT_SCALE | TAKE_PROFIT_FINAL | RAISE_STOP
     price: float
     fraction: float  # of the ORIGINAL position (1.0 = close everything open)
-    exit_reason: str  # journal exit_reason: "stop" | "target" | "scale_out"
+    exit_reason: str  # journal exit_reason: "stop" | "trend_exit" | "target" | "scale_out"
     target_index: int | None  # which target fired (None for stop)
     reason: str  # one-line summary
     analysis: str  # the data-only "how and why" report
@@ -61,7 +62,7 @@ class ManagementDecision:
 
     @property
     def closes_position(self) -> bool:
-        return self.kind in (STOP_LOSS, TAKE_PROFIT_FINAL)
+        return self.kind in (STOP_LOSS, TREND_EXIT, TAKE_PROFIT_FINAL)
 
     @property
     def adjusts_stop(self) -> bool:
@@ -127,12 +128,20 @@ def decide_management(
     days_held: float,
     config: TradeLifecycleConfig,
     current_stop: float | None = None,
+    trend_exit: bool = False,
+    exit_level: float | None = None,
+    exit_lookback: int = 50,
 ) -> ManagementDecision | None:
     """The one action (or none) warranted at ``price``. Long-only, like the platform.
 
     ``current_stop`` is the working stop when it has been raised (execution
     state on the linked paper trade); breach is judged against the tighter of
     the two, while R is always measured against the ORIGINAL entry/stop risk.
+
+    ``trend_exit`` is the strategy's exit signal for this symbol — the last
+    completed daily bar (on or after the entry day) closed below the prior
+    ``exit_lookback``-day low, ``exit_level``. The caller derives it with
+    :func:`momentum.strategy.rules.signal_features`; this function only acts on it.
     """
     # The working stop is the executed/user stop when one exists — EXACTLY.
     # A user who deliberately lowers the stop is respected (the override is
@@ -170,6 +179,36 @@ def decide_management(
             reason=reason,
             analysis=analysis,
             evidence={**evidence, "working_stop": round(working_stop, 4)},
+        )
+
+    # 2. Trend exit — the strategy's exit. The close broke the N-day low: the
+    #    trend that justified the trade is over, whatever the open profit.
+    if config.auto_trend_exit and trend_exit:
+        level = f" ({exit_level:.2f})" if exit_level is not None else ""
+        reason = (
+            f"trend exit: {symbol} closed below its {exit_lookback}-day low{level} "
+            f"— sold at {price:.2f} ({_fmt_r(r_now)})"
+        )
+        analysis = (
+            f"{symbol} was sold because its trend broke: the last daily close finished "
+            f"below the prior {exit_lookback}-day low{level}. The strategy never sells into "
+            f"strength — it holds every position until this signal or the stop — so this "
+            f"is how gains are realised and how a fading trade is released. Result at the "
+            f"exit: {_fmt_r(r_now)} on the {entry_price:.2f} entry.{context}"
+        )
+        return ManagementDecision(
+            kind=TREND_EXIT,
+            price=price,
+            fraction=1.0,
+            exit_reason="trend_exit",
+            target_index=None,
+            reason=reason,
+            analysis=analysis,
+            evidence={
+                **evidence,
+                "exit_level": round(exit_level, 4) if exit_level is not None else None,
+                "exit_lookback": exit_lookback,
+            },
         )
 
     take_profit = config.auto_take_profit and bool(targets)

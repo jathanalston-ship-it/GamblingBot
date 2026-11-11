@@ -25,6 +25,8 @@ class TradePlanInputs:
     distance_from_ath: float | None = None  # signed fraction (negative = below ATH)
     relative_volume: float | None = None
     sector: str | None = None
+    exit_level: float | None = None  # the strategy's trend-exit level (prior N-day low)
+    market_uptrend: bool | None = None  # the market gate at plan time (None = unknown)
 
     conviction_score: float | None = None
     conviction_band: str | None = None
@@ -85,6 +87,9 @@ class TradePlan:
     suggested_position_value: float
     suggested_portfolio_risk_pct: float
     suggested_risk_dollars: float
+    # the strategy's exit: a daily close below this level ends the trade
+    exit_level: float | None = None
+    exit_rule: str = ""
     # narrative sections
     risk_summary: list[str] = field(default_factory=list)
     reward_summary: list[str] = field(default_factory=list)
@@ -113,6 +118,8 @@ class TradePlan:
             "suggested_position_value": round(self.suggested_position_value, 2),
             "suggested_portfolio_risk_pct": round(self.suggested_portfolio_risk_pct, 4),
             "suggested_risk_dollars": round(self.suggested_risk_dollars, 2),
+            "exit_level": round(self.exit_level, 2) if self.exit_level is not None else None,
+            "exit_rule": self.exit_rule,
             "risk_summary": self.risk_summary,
             "reward_summary": self.reward_summary,
             "failure_conditions": self.failure_conditions,

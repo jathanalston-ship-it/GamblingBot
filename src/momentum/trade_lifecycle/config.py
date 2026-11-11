@@ -59,7 +59,7 @@ class TradeLifecycleConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    model_version: str = "v1"
+    model_version: str = "v2"
 
     # Feature derivation
     trend_lookback_bars: int = Field(10, ge=1)  # "prev" reading for trend direction
@@ -105,15 +105,27 @@ class TradeLifecycleConfig(BaseModel):
     # Close the tracked trade automatically when price breaches the stop.
     auto_close_on_stop: bool = True
 
-    # Take profits automatically when price reaches the plan's targets: scale
-    # out a fraction of the ORIGINAL position at each intermediate target and
-    # close the remainder at the final one.
-    auto_take_profit: bool = True
+    # The strategy's exit: close the position after a daily CLOSE below the
+    # prior N-day low (config/strategy.example.yaml: exit_lookback). This is
+    # what lets winners run — it is the tested exit and is on by default.
+    auto_trend_exit: bool = True
+
+    # Sell into strength at the plan's R milestones. OFF by default: on 20 years
+    # of data, selling thirds at fixed targets cut the strategy's expectancy
+    # from about +0.5R to about +0.04R per trade (docs/STRATEGY.md).
+    auto_take_profit: bool = False
     target_scale_out_fraction: float = Field(1.0 / 3.0, gt=0, lt=1)
 
     # Raise the working stop to breakeven once open profit reaches
-    # raise_stop_gain_r — the "Raise Stop" advice, executed (tightens only).
-    auto_raise_stop_to_breakeven: bool = True
+    # raise_stop_gain_r. OFF by default (not part of the tested rules — a
+    # breakeven stop shakes out trades that would have become winners).
+    auto_raise_stop_to_breakeven: bool = False
+
+    # Let a decisive Investment Committee EXIT vote refuse an entry. OFF by
+    # default: the committee's seven votes are untested heuristics, and a gate
+    # the backtest never applied must not silently veto backtested signals. The
+    # meeting is still convened and recorded on every take (advisory).
+    committee_blocks_entries: bool = False
 
     # Refuse to TAKE a trade when earnings are within this many days
     # (0 = off; advisory data — an unknown earnings date never blocks).

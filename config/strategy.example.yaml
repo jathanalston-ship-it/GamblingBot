@@ -1,17 +1,35 @@
-# The deliberately SIMPLE breakout strategy. No risk logic here.
-entry:
-  breakout_lookback: 50          # N-day high (Donchian upper) breakout
-  momentum_lookback: 126         # ~6 months ROC for ranking
-  momentum_min_rank_pct: 0.20    # only top 20% by momentum may enter
-  volume_confirmation: true
-  volume_zscore_min: 1.0
+# The trading strategy — ONE set of rules used everywhere: the scanner (which
+# stocks are buy signals), the trade plan (stop + size), the trade manager
+# (when to sell), Auto Pilot (what it buys) and the backtester (the evidence).
+#
+# These values were chosen on 2006-2017 data and confirmed on 2018-2026 data
+# they had never seen; neighbouring values give similar results (a plateau, not
+# a lucky peak). See docs/STRATEGY.md for the evidence and its limits.
+model_version: v2
 
-regime_filter:
-  enabled: true
-  index_symbol: SPY
-  ma_period: 200                 # only take longs when SPY > 200DMA
+# --- which stocks are tradeable at all --------------------------------------
+min_price: 5.0                 # last close must exceed this
+min_dollar_volume: 20000000    # 20-day average daily dollar volume
 
-exit:
-  donchian_exit_lookback: 20     # trail out on N-day low (channel exit)
-  use_time_stop: true
-  max_holding_days: 60
+# --- market gate: only buy when the market itself is in an uptrend ----------
+regime_ma_period: 200          # benchmark (SPY) close must be above this SMA
+
+# --- entry: a leading stock, in an uptrend, breaking out --------------------
+trend_ma_period: 200           # stock close must be above its own SMA
+min_momentum_rank: 0.80        # blended 3/6/12-month return in the top 20%
+momentum_lookbacks:            # bars -> weight
+  63: 0.4
+  126: 0.3
+  252: 0.3
+breakout_lookback: 50          # a new N-day high ...
+breakout_within: 10            # ... made within the last N sessions
+
+# --- exit: cut losers at the stop, let winners run until the trend breaks ---
+atr_period: 20
+stop_atr_mult: 3.0             # initial stop = entry - 3 x ATR
+exit_lookback: 50              # sell after a daily CLOSE below the prior N-day low
+
+# --- sizing ------------------------------------------------------------------
+risk_per_trade_pct: 0.005      # lose at most 0.5% of the account if the stop is hit
+max_position_pct: 0.08         # never more than 8% of the account in one stock
+max_positions: 20              # the book is full at this many open positions

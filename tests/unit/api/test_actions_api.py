@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import zlib
 import datetime as dt
 from typing import Any
 
@@ -39,7 +40,7 @@ class StubProvider:
         self.empty = empty
 
     def get_bars(self, symbol: str, *a: Any, **k: Any) -> pd.DataFrame:
-        return pd.DataFrame() if self.empty else _bars(seed=hash(symbol) % 100)
+        return pd.DataFrame() if self.empty else _bars(seed=zlib.crc32(symbol.encode()) % 100)
 
 
 def _client(session_factory: sessionmaker, *, provider: StubProvider | None = None) -> TestClient:

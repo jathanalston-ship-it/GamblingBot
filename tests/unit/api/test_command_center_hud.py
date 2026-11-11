@@ -51,7 +51,8 @@ def _scan(factory: sessionmaker[Session]) -> dict[str, Any]:
                 filters=ScanFilters(
                     min_relative_volume=0.0, min_sector_rs=0.0, min_dollar_volume=0.0
                 )
-            )
+            ),
+            strategy_gates=False,
         ),
         symbols=["AAA", "BBB", "CCC"],
         lookback_days=400,

@@ -3,6 +3,7 @@ each fetch returned no bars (market_data_provenance.error)."""
 
 from __future__ import annotations
 
+import zlib
 import datetime as dt
 from typing import Any
 
@@ -51,8 +52,8 @@ class MixedProvider:
             # Starts high (early ATH ~$60), drifts down to ~$33 — stays liquid (>$5,
             # high $-volume) so it survives the prefilter, but is far below its ATH /
             # below its EMAs, so a later gate rejects it (lands in scan_rejections).
-            return _frame(60.0, drift=-0.002, seed=abs(hash(symbol)) % 9999)
-        return _frame(25.0, drift=0.004, seed=abs(hash(symbol)) % 9999)  # uptrend
+            return _frame(60.0, drift=-0.002, seed=zlib.crc32(symbol.encode()) % 9999)
+        return _frame(25.0, drift=0.004, seed=zlib.crc32(symbol.encode()) % 9999)  # uptrend
 
 
 def _factory() -> sessionmaker[Session]:

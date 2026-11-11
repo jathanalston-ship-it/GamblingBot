@@ -17,6 +17,7 @@ from momentum.orchestration.engine import DailyOrchestrationEngine
 from momentum.orchestration.session import latest_marks, pull_bars, run_paper_session
 from momentum.persistence.repositories.trades import TradeRepository
 from momentum.risk.risk_manager import RiskManager
+from momentum.strategy import StrategyConfig
 from momentum.universe.scanner_config import ScanFilters, ScannerConfig
 from momentum.universe.screener import MomentumScanner
 
@@ -27,7 +28,8 @@ def _trending_bars(start: float = 50.0, drift: float = 0.004) -> pd.DataFrame:
     vol = np.full(300, 2_000_000.0)
     vol[-1] *= 3.0
     frame = pd.DataFrame(
-        {"open": px, "high": px * 1.01, "low": px * 0.99, "close": px, "volume": vol}, index=idx
+        {"open": px, "high": px * 1.001, "low": px * 0.999, "close": px, "volume": vol},
+        index=idx,
     )
     frame.index.name = "timestamp"
     return frame
@@ -56,7 +58,9 @@ def _relaxed_scanner() -> MomentumScanner:
     return MomentumScanner(
         ScannerConfig(
             filters=ScanFilters(min_relative_volume=0.0, min_sector_rs=0.0, min_dollar_volume=0.0)
-        )
+        ),
+        # A two-symbol universe cannot have a "top 20%": relax the rank floor.
+        StrategyConfig(min_momentum_rank=0.0),
     )
 
 

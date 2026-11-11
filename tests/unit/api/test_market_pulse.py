@@ -176,23 +176,35 @@ def test_identical_rescan_emits_nothing_new(factory: sessionmaker[Session]) -> N
 def test_alerts_never_duplicate(factory: sessionmaker[Session]) -> None:
     provider = StubProvider()
     first = _scan(factory, provider)
-    # the first scan may legitimately alert from its own snapshot (stop/target)
+    # the first scan has no baseline: it may only alert from its own snapshot
     assert _pulse_alerts(factory) == first["alerts_generated"]
 
     provider.bump = 0.15
     second = _scan(factory, provider)
     alerts_after_change = _pulse_alerts(factory)
     assert alerts_after_change == first["alerts_generated"] + second["alerts_generated"]
-    assert second["alerts_generated"] > 0  # a 15% jump must alert on something
 
     third = _scan(factory, provider)  # same data again — same transitions, no new alerts
     assert third["alerts_generated"] == 0
     assert _pulse_alerts(factory) == alerts_after_change
     # Management alerts (written by the lifecycle service) also never duplicate:
-    # a rescan at the same prices must not re-fire an already-hit target/stop.
+    # a rescan at the same prices must not re-fire an already-handled stop/exit.
     managed_after_second = _count(factory, Alert) - alerts_after_change
     third_total = _count(factory, Alert)
     assert third_total - alerts_after_change == managed_after_second
+
+
+def test_untaken_recommendations_never_alert(factory: sessionmaker[Session]) -> None:
+    """Nothing is held, so price moves alone raise no stop/target/management alerts."""
+    provider = StubProvider()
+    _scan(factory, provider)
+    provider.bump = 0.15
+    _scan(factory, provider)
+    provider.bump = -0.30
+    _scan(factory, provider)
+    with factory() as s:
+        kinds = {a.kind for a in s.scalars(select(Alert))}
+    assert not kinds & {"stop_reached", "target_reached", "trade_managed", "concentration"}
 
 
 def test_snapshots_are_immutable(factory: sessionmaker[Session]) -> None:

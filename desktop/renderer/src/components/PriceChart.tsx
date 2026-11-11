@@ -20,13 +20,14 @@ interface BarsPayload {
 export interface Overlay {
   label: string;
   price: number;
-  kind: "entry" | "stop" | "target";
+  kind: "entry" | "stop" | "target" | "exit";
 }
 
 const OVERLAY_COLOR: Record<Overlay["kind"], string> = {
   entry: "#3b82f6", // chart.line
   stop: "#ef4444", // chart.down
   target: "#059669", // chart.up
+  exit: "#d97706", // chart.warn — the trend-exit level (50-day low)
 };
 
 /**

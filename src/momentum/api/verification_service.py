@@ -103,7 +103,8 @@ def _relaxed_scanner() -> MomentumScanner:
                 require_ema_mid_above_slow=False,
                 min_sector_rs=0.0,
             )
-        )
+        ),
+        strategy_gates=False,
     )
 
 

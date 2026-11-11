@@ -67,6 +67,23 @@ def _read_yaml(path: Path) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def _superseded(user_data: dict[str, Any], shipped: dict[str, Any] | None) -> bool:
+    """True when both configs carry a ``model_version`` and they differ."""
+    if shipped is None:
+        return False
+    mine, theirs = user_data.get("model_version"), shipped.get("model_version")
+    return mine is not None and theirs is not None and str(mine) != str(theirs)
+
+
+def _retire(path: Path) -> None:
+    """Move a superseded user config aside (``<name>.yaml.bak``). Best-effort."""
+    try:
+        path.replace(path.with_suffix(path.suffix + ".bak"))
+        _log.info("retired superseded user config %s (new defaults shipped)", path)
+    except OSError:
+        _log.warning("could not retire superseded user config %s", path)
+
+
 def _bootstrap(path: Path, data: dict[str, Any]) -> None:
     """Write *data* to *path* so a default config exists + is editable. Best-effort."""
     try:
@@ -85,16 +102,12 @@ def load_config(example_name: str, *, embedded: dict[str, Any] | None = None) ->
     defaults. The first time defaults are used they are bootstrapped to the user
     config dir. Never assumes a source checkout; never requires a repository file
     (when *embedded* is supplied).
-    """
-    user_path = user_config_dir() / _user_name(example_name)
-    if user_path.is_file():
-        try:
-            return _read_yaml(user_path)
-        except (OSError, yaml.YAMLError):
-            _log.warning(
-                "invalid user config %s; falling back to shipped/embedded defaults", user_path
-            )
 
+    A user file whose ``model_version`` differs from the shipped one is
+    *superseded*: it is moved aside to ``<name>.yaml.bak`` and the new shipped
+    defaults take over (and are re-bootstrapped), so an app upgrade that changes
+    the rules actually changes them.
+    """
     data: dict[str, Any] | None = None
     bundled = bundled_config_dir() / example_name
     if bundled.is_file():
@@ -104,6 +117,22 @@ def load_config(example_name: str, *, embedded: dict[str, Any] | None = None) ->
             data = None
     if data is None and embedded is not None:
         data = dict(embedded)
+
+    user_path = user_config_dir() / _user_name(example_name)
+    if user_path.is_file():
+        try:
+            user_data = _read_yaml(user_path)
+        except (OSError, yaml.YAMLError):
+            _log.warning(
+                "invalid user config %s; falling back to shipped/embedded defaults", user_path
+            )
+        else:
+            if not _superseded(user_data, data):
+                return user_data
+            # The shipped defaults moved to a new model version: a file that was
+            # auto-bootstrapped from the OLD defaults must not silently pin the
+            # app to rules it no longer ships. Keep it as a backup, take the new.
+            _retire(user_path)
     if data is None:
         raise FileNotFoundError(
             f"no configuration for {example_name!r}: looked in {user_path} and {bundled}, "

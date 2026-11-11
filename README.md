@@ -2,9 +2,14 @@
 
 A systematic **momentum-breakout** research and trading platform for US equities — built around the thesis that durable edge comes from **risk management and position sizing**, not from predicting markets.
 
-> **Status: architecture & scaffold only.** This repository currently contains the
-> project structure, documented module stubs (docstrings, no logic), configuration
-> templates and the design documents. No business logic is implemented yet.
+> **Status: a working paper-trading app ("Momentum Lab").** One tested strategy —
+> buy leading stocks breaking out to new highs while the market is rising, risk a
+> small fixed amount, hold until the trend breaks — drives the scanner, the trade
+> plan, the automatic trade manager, Auto Pilot and the backtester. The desktop
+> app's four main screens are **Today · Buy signals · Positions · Results**; the
+> research and diagnostic tools sit under *Advanced*. Paper money only.
+> **Start with [docs/STRATEGY.md](docs/STRATEGY.md)** — the rules, the evidence
+> (20 years of data, in- and out-of-sample) and the honest limits.
 
 ---
 
@@ -59,6 +64,7 @@ metrics above.
 
 | Doc | Contents |
 |---|---|
+| **[docs/STRATEGY.md](docs/STRATEGY.md)** | **The strategy: the rules, why each was chosen, the 20-year evidence and its limits.** One config drives scan, plan, exits, Auto Pilot and backtest. |
 | **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** | System layers, data-flow & dependency diagrams, the full module catalog, one-code-path design. |
 | **[docs/RISK_MANAGEMENT.md](docs/RISK_MANAGEMENT.md)** | The risk engine: sizing, stops, heat, correlation, drawdown throttle, circuit breakers, worked examples. |
 | **[docs/DATA_MODEL.md](docs/DATA_MODEL.md)** | Broader target schema + ERD and the auditability guarantees. |

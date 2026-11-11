@@ -67,3 +67,8 @@ desktop/build/.pyiwork/
 
 # Development Mode (`npm run dev-app`) isolated state: DB, logs, settings.
 .dev/
+config/*.yaml.bak
+
+# Research data caches (scripts/research)
+scripts/research/bars/
+scripts/research/*.pkl

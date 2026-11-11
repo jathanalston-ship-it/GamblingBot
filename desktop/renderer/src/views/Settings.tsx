@@ -349,7 +349,7 @@ function AutopilotPanel() {
           </button>
           <span className="text-xs text-slate-500">
             {data.enabled
-              ? "While the app is open, each market-hours scan takes the strongest committee-approved entries automatically and manages them to their stops and targets."
+              ? "While the app is open, each day's buy signals are taken automatically at the market open (strongest first, only while the market is in an uptrend) and sold at the stop or the trend exit."
               : "Entries stay manual (the Take button). Scanning and management of positions you take run automatically either way."}
           </span>
         </div>
@@ -359,7 +359,7 @@ function AutopilotPanel() {
             {numField(
               "max_open_positions",
               "Max open positions",
-              "hard cap across the whole book",
+              "the tested rules use 20",
             )}
             {numField(
               "max_entries_per_cycle",
@@ -368,8 +368,8 @@ function AutopilotPanel() {
             )}
             {numField(
               "min_conviction_score",
-              "Min conviction",
-              "0–100; 70 ≈ the HIGH band",
+              "Min conviction (optional)",
+              "0 = off (recommended). Conviction is not part of the tested rules.",
             )}
           </div>
         ) : null}
@@ -511,9 +511,9 @@ const SEVERITY_LABEL: Record<string, string> = {
 const KNOWN_ALERT_KINDS = [
   "trade_managed",
   "autopilot_entry",
-  "conviction_change",
-  "regime_change",
-  "concentration",
+  "new_signal",
+  "market_gate",
+  "stop_reached",
 ];
 
 function NotificationsPanel() {
@@ -550,9 +550,9 @@ function NotificationsPanel() {
     <Card title="Notifications">
       <div className="space-y-4">
         <p className="text-sm text-slate-400">
-          Desktop notifications for market alerts — automatic trade management (stop-loss /
-          take-profit), conviction upgrades and downgrades, regime changes and sector concentration
-          warnings.
+          Desktop notifications for the events you act on: a position sold (stop or trend exit),
+          Auto Pilot buying, a new buy signal, and the market trend flipping. Research-level
+          changes stay inside the app.
         </p>
         <label className="flex items-center gap-2 text-sm text-slate-200">
           <input

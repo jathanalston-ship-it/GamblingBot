@@ -9,6 +9,7 @@ every endpoint returns that run, not demo.
 
 from __future__ import annotations
 
+import zlib
 import datetime as dt
 from typing import Any
 
@@ -67,7 +68,7 @@ class StubProvider:
         self.newest = newest
 
     def get_bars(self, symbol: str, *a: object, **k: object) -> pd.DataFrame:
-        return _bars(abs(hash(symbol)) % 9999, self.newest)
+        return _bars(zlib.crc32(symbol.encode()) % 9999, self.newest)
 
 
 def _counts(factory: sessionmaker[Session]) -> dict[str, dict[str, int]]:

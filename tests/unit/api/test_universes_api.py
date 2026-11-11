@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import zlib
 from pathlib import Path
 from typing import Any
 
@@ -57,7 +58,7 @@ def _bars(start: float = 50.0, n: int = 260, seed: int = 0) -> pd.DataFrame:
 
 class StubProvider:
     def get_bars(self, symbol: str, *a: Any, **k: Any) -> pd.DataFrame:
-        return _bars(seed=hash(symbol) % 9973)
+        return _bars(seed=zlib.crc32(symbol.encode()) % 9973)
 
 
 def _client(factory: sessionmaker[Session]) -> TestClient:
@@ -137,7 +138,8 @@ def _relaxed_scanner() -> MomentumScanner:
     return MomentumScanner(
         ScannerConfig(
             filters=ScanFilters(min_relative_volume=0.0, min_sector_rs=0.0, min_dollar_volume=0.0)
-        )
+        ),
+        strategy_gates=False,
     )
 
 

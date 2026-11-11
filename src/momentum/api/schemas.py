@@ -189,6 +189,10 @@ class ScanResultOut(_ORMModel):
     distance_from_ath: float | None
     atr: float | None
     sector: str | None
+    trend_ma: float | None = None
+    breakout_level: float | None = None
+    bars_since_breakout: int | None = None
+    exit_level: float | None = None
 
 
 class OptimizationResultOut(_ORMModel):
@@ -517,6 +521,8 @@ class TradePlanOut(BaseModel):
     suggested_position_value: float
     suggested_portfolio_risk_pct: float
     suggested_risk_dollars: float
+    exit_level: float | None = None
+    exit_rule: str = ""
     risk_summary: list[str]
     reward_summary: list[str]
     failure_conditions: list[str]
@@ -971,6 +977,8 @@ class TrackedTradeOut(BaseModel):
     unrealized_r: float | None = None
     unrealized_pnl: float | None = None
     distance_to_stop_pct: float | None = None
+    # The strategy's trend-exit level: a daily close below it ends the trade.
+    exit_level: float | None = None
     # Confidence trend between the last two evaluations (rising/falling/flat)
     conviction_trend: str | None = None
     conviction_change: float | None = None

@@ -59,7 +59,14 @@ export function invalidateApiCache(): void {
 
 // Any successful POST/PUT invalidates all cached reads — a mutation can touch
 // many screens (a scan rewrites nearly everything), and correctness beats reuse.
-onApiMutation(invalidateApiCache);
+// Mounted hooks also refetch right away, so every visible number (the top bar's
+// account figures as much as the page that made the change) updates together
+// instead of waiting for its own poll.
+const mounted = new Set<() => void>();
+onApiMutation(() => {
+  invalidateApiCache();
+  for (const refetch of mounted) refetch();
+});
 
 /** Fetch `path` on mount (and on demand via `reload`), optionally polling.
  *  Cached responses render immediately; a background refetch then updates. */
@@ -73,6 +80,13 @@ export function useApi<T>(path: string, options: ApiOptions = {}): ApiState<T> {
   const [tick, setTick] = useState(0);
 
   const reload = useCallback(() => setTick((t) => t + 1), []);
+
+  useEffect(() => {
+    mounted.add(reload);
+    return () => {
+      mounted.delete(reload);
+    };
+  }, [reload]);
 
   useEffect(() => {
     let cancelled = false;

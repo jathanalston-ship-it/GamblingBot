@@ -67,6 +67,15 @@ from momentum.trade_lifecycle import (
     features_from_bars,
     targets_from_records,
 )
+from momentum.strategy.config import StrategyConfig
+from momentum.strategy.config import default_config as default_strategy
+from momentum.strategy import rules as strategy_rules
+from momentum.strategy.rules import (
+    SignalFeatures,
+    market_date,
+    session_date,
+    signal_features,
+)
 from momentum.trade_lifecycle import management
 from momentum.trade_lifecycle.outcomes import (
     AdviceGrade,
@@ -266,6 +275,7 @@ def reevaluate_open_trades(
 
     engine = ThesisReevaluationEngine(cfg)
     conviction_engine = ConvictionEngine()
+    strategy = default_strategy()
     regime = services.latest_regime(session)
     regime_label = regime.regime if regime else None
     breadth = _latest_breadth(session)
@@ -285,6 +295,13 @@ def reevaluate_open_trades(
         symbol = trade.symbol
         frame = bars.get(symbol) if bars is not None else None
         features = features_from_bars(frame, benchmark, config=cfg) if frame is not None else None
+        # The strategy's own read of this symbol (completed bars only): its
+        # trend-exit signal + the level the next close must hold.
+        signal = (
+            signal_features(frame, strategy, now=strategy_rules.live_clock())
+            if frame is not None
+            else None
+        )
         scan = _latest_scan_row(session, symbol) if features is None else None
         if features is None:
             features = _fallback_features(scan)
@@ -354,6 +371,16 @@ def reevaluate_open_trades(
         )
         repo.apply_evaluation(trade, evaluation, ts=ts)
         evaluated += 1
+        if signal is not None:
+            eval_row.explanation = {
+                **(eval_row.explanation or {}),
+                "strategy": {
+                    "as_of": signal.as_of.isoformat(),
+                    "exit_level": signal.exit_level,
+                    "exit_signal": signal.exit_signal,
+                    "exit_lookback": strategy.exit_lookback,
+                },
+            }
         managed = _apply_management(
             session,
             repo,
@@ -364,6 +391,8 @@ def reevaluate_open_trades(
             run_id=run_id,
             ts=ts,
             config=cfg,
+            signal=signal,
+            strategy=strategy,
         )
         if managed is not None and managed.closes_position:
             closed += 1
@@ -408,8 +437,10 @@ def _check_concentration(
     from momentum.persistence.models.alert import Alert
     from momentum.persistence.repositories.pulse import AlertRepository
 
+    # Only money at work can be concentrated: recommendation-only rows (never
+    # taken) are not positions and must not raise a "crowded book" warning.
     crowded = sector_concentration(
-        [t.sector for t in repo.open_trades()],
+        [t.sector for t in repo.open_trades() if t.journal_trade_id is not None],
         warn_share=config.sector_concentration_warn_share,
         min_positions=config.sector_concentration_min_positions,
     )
@@ -462,19 +493,26 @@ def _apply_management(
     run_id: str | None,
     ts: dt.datetime,
     config: TradeLifecycleConfig,
+    signal: SignalFeatures | None = None,
+    strategy: StrategyConfig | None = None,
 ) -> ManagementDecision | None:
-    """Act on the freshest price: stop-loss / take-profit per the trade's plan.
+    """Act on the freshest price: the strategy's exits, executed.
 
     Executes the decision against the linked paper (journal) trade — full close
-    on stop or final target, partial scale-out at intermediate targets — marks
-    the fired target as hit (never re-fires), closes the tracked trade when the
-    position is done, and persists the how-and-why report as part of this
-    evaluation plus an alert, an activity-feed entry and an audit event.
+    on the stop or the trend exit (plus optional milestone scale-outs when the
+    user enabled them) — closes the tracked trade when the position is done,
+    and persists the how-and-why report as part of this evaluation plus an
+    alert, an activity-feed entry and an audit event.
+
+    A recommendation that was never taken is not a position: it is quietly
+    retired once its stop or trend exit invalidates it — no alert, no audit
+    event, nothing for the user to act on.
     """
     if trade.run_id == "demo":
         return None  # showcase rows are never traded against live prices
     if trade.management_mode == "manual":
         return None  # user owns execution — the bot evaluates and advises only
+    strategy = strategy or default_strategy()
     decision = decide_management(
         symbol=trade.symbol,
         entry_price=trade.entry_price,
@@ -485,11 +523,19 @@ def _apply_management(
         days_held=days_held,
         config=config,
         current_stop=_working_stop(session, trade),
+        trend_exit=_trend_exit_applies(session, trade, signal),
+        exit_level=signal.exit_level if signal is not None else None,
+        exit_lookback=strategy.exit_lookback,
     )
     if decision is None:
         return None
-    if decision.adjusts_stop and trade.journal_trade_id is None:
-        return None  # nothing executed — an untracked recommendation keeps advice-only stops
+    if trade.journal_trade_id is None:
+        # Never taken — retire an invalidated recommendation silently.
+        if decision.closes_position and decision.kind in ("stop_loss", "trend_exit"):
+            repo.close(trade, ts=ts, reason=f"recommendation expired — {decision.reason}"[:255])
+            session.flush()
+            return decision
+        return None
 
     decision = _execute_on_journal(session, trade, decision, ts=ts)
     _mark_target_hit(trade, decision.target_index)
@@ -501,6 +547,25 @@ def _apply_management(
     _record_management_event(session, trade, decision, run_id=run_id, ts=ts)
     session.flush()
     return decision
+
+
+def _trend_exit_applies(
+    session: Session, trade: TrackedTrade, signal: SignalFeatures | None
+) -> bool:
+    """Did the strategy's trend exit fire on a bar the trade was actually held for?
+
+    The signal is read from the last COMPLETED daily bar; it only counts when
+    that bar is dated on or after the entry day (a close that printed before the
+    position was opened says nothing about this trade).
+    """
+    if signal is None or not signal.exit_signal:
+        return False
+    entered = trade.recommended_at
+    if trade.journal_trade_id is not None:
+        journal_trade = session.get(Trade, trade.journal_trade_id)
+        if journal_trade is not None and journal_trade.entry_ts is not None:
+            entered = journal_trade.entry_ts
+    return bool(session_date(signal.as_of) >= market_date(entered))
 
 
 def _working_stop(session: Session, trade: TrackedTrade) -> float | None:
@@ -540,7 +605,12 @@ def _execute_on_journal(
         journal.update_stop(journal_trade, decision.price)  # price IS the new stop
         return decision
 
-    tag = "stop" if decision.kind == "stop_loss" else f"t{(decision.target_index or 0) + 1}"
+    if decision.kind == "stop_loss":
+        tag = "stop"
+    elif decision.kind == "trend_exit":
+        tag = "exit"
+    else:
+        tag = f"t{(decision.target_index or 0) + 1}"
 
     if not decision.closes_position:
         original = journal_trade.quantity + (journal_trade.scaled_out_quantity or 0)
@@ -635,6 +705,9 @@ def _record_management_event(
         if decision.kind == "stop_loss":
             title = f"{trade.symbol} stop loss — position closed"
             severity = "critical"
+        elif decision.kind == "trend_exit":
+            title = f"{trade.symbol} sold — trend exit"
+            severity = "warning"
         elif decision.adjusts_stop:
             title = f"{trade.symbol} stop raised to breakeven"
             severity = "info"
@@ -836,6 +909,14 @@ def _conviction_trend(
     return {"conviction_trend": trend, "conviction_change": round(delta, 1)}
 
 
+def _strategy_exit_level(latest: TradeEvaluation | None) -> float | None:
+    """The trend-exit level recorded on the latest evaluation (None if unknown)."""
+    explanation = latest.explanation if latest is not None else None
+    block = explanation.get("strategy") if isinstance(explanation, dict) else None
+    level = block.get("exit_level") if isinstance(block, dict) else None
+    return round(float(level), 4) if isinstance(level, (int, float)) else None
+
+
 def _mark_to_market(session: Session, row: TrackedTrade) -> dict[str, Any]:
     """Live-ish valuation from the last known price (the latest evaluation's
     price — scan-fresh, not a realtime quote; labeled as such in the UI)."""
@@ -858,6 +939,7 @@ def _mark_to_market(session: Session, row: TrackedTrade) -> dict[str, Any]:
         "unrealized_r": round(unrealized_r, 3) if unrealized_r is not None else None,
         "unrealized_pnl": (round((price - row.entry_price) * quantity, 2) if quantity else None),
         "distance_to_stop_pct": (round((price - row.stop_price) / price, 4) if price > 0 else None),
+        "exit_level": _strategy_exit_level(latest),
         **_conviction_trend(latest, previous),
     }
 
@@ -1238,9 +1320,10 @@ def take_trade(
     if not shares or shares <= 0:
         return {"ok": False, "error": f"no position size for {sym} — pass an explicit quantity"}
 
-    # Investment Committee review: every trade action passes through it. The
-    # meeting is always persisted (append-only minutes); only a decisive EXIT
-    # verdict blocks the entry — the committee is a reviewer, not a coward.
+    # Investment Committee review: every trade action passes through it and the
+    # meeting is always persisted (append-only minutes). It is ADVISORY by
+    # default; a decisive EXIT verdict blocks the entry only when the user
+    # enabled ``committee_blocks_entries``.
     committee_summary: dict[str, Any] | None = None
     try:
         from momentum.api import committee_service
@@ -1254,7 +1337,7 @@ def take_trade(
             "agreement": round(decision.agreement, 3),
             "narrative": decision.narrative,
         }
-        if decision.action.value == "exit":
+        if decision.action.value == "exit" and default_config().committee_blocks_entries:
             session.commit()  # the minutes survive the refusal
             return {
                 "ok": False,

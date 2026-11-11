@@ -1,28 +1,25 @@
-# Trade-plan generation. Copy to tradeplan.yaml to override.
+# Trade-plan generation. READ-ONLY — derives a plan, never places a trade.
 #
-# A trade plan is DERIVED (read-only) from a candidate's price, ATR, support
-# (EMAs), historical analogs, volatility and the market regime. It never places
-# a trade — it produces entry / stop / three targets / sizing / failure rules.
-model_version: v1
+# The stop multiple and the position size come from the strategy
+# (config/strategy.example.yaml): stop = entry - 3 x ATR, risk 0.5% of the
+# account, max 8% of the account per position. Those are the tested numbers.
+model_version: v2
 
-# Stop: the wider of (stop_atr_mult x ATR below entry) and just below the nearest
-# support (an EMA below price), so noise above structure doesn't stop us out.
-stop_atr_mult: 1.8
-support_buffer_pct: 0.005 # place a structural stop 0.5% below the support level
+# stop_atr_mult: 3.0          # uncomment ONLY to override the strategy's stop
+use_structural_stop: false     # true = also sit the stop below swing-low support
+support_buffer_pct: 0.005
 
-# Three scale-out targets, in R multiples of the entry-to-stop risk. T2/T3 are
-# lifted toward the analogs' average winner / favourable excursion when available.
-target_r_multiples: [1.0, 2.0, 3.5]
-scale_out_fractions: [0.34, 0.33, 0.33] # fraction of the position taken at T1/T2/T3
+# Progress milestones in R (multiples of the initial risk). The strategy does
+# NOT sell here — winners run until a close below the 50-day low.
+target_r_multiples: [2.0, 4.0, 8.0]
+scale_out_fractions: [0.34, 0.33, 0.33]
 
-# Position size and aggression scale with the regime.
-regime_size_factor:
+regime_size_factor:            # the market gate is on/off; size is not throttled
   bull: 1.0
-  neutral: 0.7
-  bear: 0.4
+  neutral: 1.0
+  bear: 1.0
 
-# Holding-period + failure tunables.
-base_holding_days: 15 # fallback when no analog holding data exists
+base_holding_days: 60          # typical winner hold when no history exists yet
 min_holding_days: 3
-time_stop_days: 10 # exit if T1 is not reached within this many days
-rvol_momentum_floor: 1.0 # momentum is "lost" if relative volume fades below this
+time_stop_days: 10             # legacy (unused)
+rvol_momentum_floor: 1.0       # legacy (unused)

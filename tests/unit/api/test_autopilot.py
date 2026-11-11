@@ -35,14 +35,44 @@ def user_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def _configure(user_dir: Path, **autopilot: Any) -> None:
+    """Persist autopilot settings the way the app does (current rules generation)."""
+    from momentum.api.user_settings import AUTOPILOT_RULES_VERSION
+
+    autopilot.setdefault("rules_version", AUTOPILOT_RULES_VERSION)
     (user_dir / "settings.yaml").write_text(yaml.safe_dump({"autopilot": autopilot}))
+
+
+def test_limits_saved_under_the_old_rules_are_not_carried_over(user_dir: Path) -> None:
+    """Before the strategy change any toggle persisted that era's defaults
+    (8 positions, conviction >= 70). They must not silently restrict the new
+    rules; the on/off switches themselves are always honoured."""
+    from momentum.api import user_settings
+
+    legacy = {
+        "enabled": True,
+        "include_premarket": True,
+        "max_open_positions": 8,
+        "max_entries_per_cycle": 2,
+        "min_conviction_score": 70.0,
+    }
+    (user_dir / "settings.yaml").write_text(yaml.safe_dump({"autopilot": legacy}))
+    loaded = user_settings.read_autopilot()
+    assert loaded["enabled"] is True and loaded["include_premarket"] is True
+    assert loaded["max_open_positions"] == user_settings.DEFAULT_AUTOPILOT["max_open_positions"]
+    assert loaded["min_conviction_score"] == 0.0
+
+    # Saving from the UI stamps the current generation; those values then stick.
+    user_settings.write_autopilot(max_open_positions=12, min_conviction_score=55.0)
+    again = user_settings.read_autopilot()
+    assert again["max_open_positions"] == 12 and again["min_conviction_score"] == 55.0
 
 
 def _relaxed() -> MomentumScanner:
     return MomentumScanner(
         ScannerConfig(
             filters=ScanFilters(min_relative_volume=0.0, min_sector_rs=0.0, min_dollar_volume=0.0)
-        )
+        ),
+        strategy_gates=False,
     )
 
 

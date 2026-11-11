@@ -18,9 +18,9 @@ def universe(make_bars) -> dict[str, pd.DataFrame]:
     return {
         "AAA": make_bars(start=50, drift=0.003, last_volume_mult=3.0),  # strong + surge
         "BBB": make_bars(start=80, drift=0.0015, last_volume_mult=1.2),  # moderate
-        "CCC": make_bars(start=100, drift=-0.002),  # downtrend -> fails EMA stack
+        "CCC": make_bars(start=100, drift=-0.002),  # downtrend -> below its trend average
         "DDD": make_bars(start=2.0, drift=0.0005),  # cheap + illiquid
-        "EEE": make_bars(start=60, drift=0.001, last_volume_mult=0.2),  # low rel vol
+        "EEE": make_bars(start=60, drift=0.001, last_volume_mult=0.2),  # laggard
     }
 
 
@@ -78,12 +78,89 @@ def test_scores_bounded_0_100(scanner, universe, sectors) -> None:
 def test_downtrend_filtered_out(scanner, universe, sectors) -> None:
     res = scanner.scan(universe, sectors=sectors)
     symbols = {c.symbol for c in res.candidates}
-    assert "CCC" not in symbols  # 50<200 EMA => fails the stack
+    assert "CCC" not in symbols
+    assert res.filter_report.reasons["CCC"] == "below_trend"
 
 
-def test_low_relative_volume_filtered(scanner, universe, sectors) -> None:
+def test_only_momentum_leaders_pass(scanner, universe, sectors) -> None:
+    """The strategy buys the top fifth by blended momentum — laggards are rejected."""
     res = scanner.scan(universe, sectors=sectors)
-    assert "EEE" not in {c.symbol for c in res.candidates}
+    assert {c.symbol for c in res.candidates} == {"AAA", "BBB"}
+    assert res.filter_report.reasons["EEE"] == "weak_momentum"
+    for c in res.candidates:
+        assert c.momentum_rank is not None and c.momentum_rank >= 0.8
+
+
+def test_candidates_carry_the_strategy_levels(scanner, universe, sectors) -> None:
+    """A candidate is a recent breakout above its trend average, with an exit level."""
+    res = scanner.scan(universe, sectors=sectors)
+    assert res.candidates
+    for c in res.candidates:
+        assert c.trend_ma is not None and c.price > c.trend_ma
+        assert c.bars_since_breakout is not None
+        assert c.bars_since_breakout < scanner.strategy.breakout_within
+        assert c.breakout_level is not None
+        assert c.exit_level is not None and c.exit_level < c.price
+    record = res.to_records(run_id="r")[0]
+    assert {"trend_ma", "breakout_level", "bars_since_breakout", "exit_level"} <= set(record)
+
+
+def test_leader_without_a_recent_breakout_is_watch_only(make_bars) -> None:
+    """Top momentum + uptrend but no new high lately → rejected as ``no_breakout``."""
+    import numpy as np
+
+    scanner = MomentumScanner(ScannerConfig())
+    stalled = make_bars(start=50, drift=0.003)
+    flat = stalled.copy()
+    # The last 30 sessions go sideways just under the high: still a leader, no breakout.
+    peak = float(stalled["close"].iloc[-31])
+    for col, mult in (("open", 0.99), ("high", 0.991), ("low", 0.989), ("close", 0.99)):
+        flat.iloc[-30:, flat.columns.get_loc(col)] = peak * mult
+    laggards = {f"L{i}": make_bars(start=40, drift=0.0002 * (i + 1)) for i in range(4)}
+    res = scanner.scan({"LEAD": flat, **laggards})
+    assert "LEAD" not in {c.symbol for c in res.candidates}
+    assert res.filter_report.reasons["LEAD"] == "no_breakout"
+    assert np.isfinite(res.features.loc["LEAD", "bars_since_breakout"])
+
+
+def test_signals_ignore_a_still_forming_bar(make_bars) -> None:
+    """A live scan reads completed sessions: an intraday spike on today's partial
+    bar moves ``price`` but cannot create (or cancel) a signal."""
+    import datetime as dt
+
+    scanner = MomentumScanner(ScannerConfig())
+    base = {
+        "AAA": make_bars(start=50, drift=0.003),
+        **{f"L{i}": make_bars(start=40, drift=0.0002 * (i + 1)) for i in range(4)},
+    }
+    done = scanner.scan(base)
+    last = base["AAA"].index[-1]
+    today = last + pd.Timedelta(days=1)
+    partial = base["AAA"].iloc[[-1]].copy()
+    partial.index = pd.DatetimeIndex([today], name="timestamp")
+    partial[["open", "high", "low", "close"]] = partial[["open", "high", "low", "close"]] * 0.5
+    with_partial = {**base, "AAA": pd.concat([base["AAA"], partial])}
+    # 10:00 New York on the partial bar's date — the session is still open.
+    now = dt.datetime.combine(today.date(), dt.time(15, 0), tzinfo=dt.UTC)
+    live = scanner.scan(with_partial, now=now)
+    a_done = next(c for c in done.candidates if c.symbol == "AAA")
+    a_live = next(c for c in live.candidates if c.symbol == "AAA")
+    assert a_live.price == pytest.approx(a_done.price * 0.5)  # display price is live
+    assert a_live.exit_level == pytest.approx(a_done.exit_level)  # signals are not
+    assert a_live.bars_since_breakout == a_done.bars_since_breakout
+
+
+def test_optional_relative_volume_gate(make_bars, sectors) -> None:
+    """The legacy gates are off by default but still work when switched on."""
+    cfg = ScannerConfig.from_dict({"filters": {"min_relative_volume": 1.0}})
+    uni = {
+        "AAA": make_bars(start=50, drift=0.003, last_volume_mult=0.2),  # quiet last bar
+        **{f"L{i}": make_bars(start=40, drift=0.0002 * (i + 1)) for i in range(4)},
+    }
+    assert "AAA" in {c.symbol for c in MomentumScanner(ScannerConfig()).scan(uni).candidates}
+    res = MomentumScanner(cfg).scan(uni)
+    assert "AAA" not in {c.symbol for c in res.candidates}
+    assert res.filter_report.reasons["AAA"] == "min_relative_volume"
 
 
 def test_filter_report_accounts_for_all(scanner, universe, sectors) -> None:
@@ -148,7 +225,7 @@ def test_empty_universe(scanner) -> None:
 
 
 def test_insufficient_history_excluded(scanner, make_bars) -> None:
-    # 30 bars: 200 EMA undefined -> NaN -> fails EMA stack, not ranked
+    # 30 bars: the 200-day trend average is undefined -> the strategy gates fail
     short = {"SHORT": make_bars(periods=30, drift=0.003)}
     res = scanner.scan(short)
     assert len(res) == 0

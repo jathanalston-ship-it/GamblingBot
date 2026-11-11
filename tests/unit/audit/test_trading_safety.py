@@ -78,7 +78,8 @@ def _relaxed() -> MomentumScanner:
     return MomentumScanner(
         ScannerConfig(
             filters=ScanFilters(min_relative_volume=0.0, min_sector_rs=0.0, min_dollar_volume=0.0)
-        )
+        ),
+        strategy_gates=False,
     )
 
 

@@ -4,7 +4,7 @@
 # Every trade recommendation creates a tracked trade; every scan reevaluates all
 # OPEN tracked trades against fresh data and appends an evaluation (append-only —
 # history is never overwritten).
-model_version: v1
+model_version: v2
 
 # Feature derivation from bars
 trend_lookback_bars: 10 # "prev" reading used for trend direction
@@ -53,15 +53,23 @@ scale_in_conviction_gain: 5.0
 # Close the tracked trade automatically when price breaches the stop.
 auto_close_on_stop: true
 
-# Take profits automatically when price reaches the plan's targets: scale out
-# a fraction of the ORIGINAL position at each intermediate target and close
-# the remainder at the final one.
-auto_take_profit: true
+# The strategy's exit: sell after a daily CLOSE below the prior N-day low
+# (N = exit_lookback in strategy.example.yaml). This is the tested exit.
+auto_trend_exit: true
+
+# Sell into strength at the plan's R milestones. OFF: on 20 years of data,
+# selling thirds at fixed targets cut expectancy from ~+0.5R to ~+0.04R a trade.
+auto_take_profit: false
 target_scale_out_fraction: 0.3333333333333333
 
-# Raise the working stop to breakeven once open profit reaches
-# raise_stop_gain_r (the "Raise Stop" advice, executed; tightens only).
-auto_raise_stop_to_breakeven: true
+# Raise the stop to breakeven at raise_stop_gain_r of open profit. OFF: not part
+# of the tested rules (it shakes out trades that would have become winners).
+auto_raise_stop_to_breakeven: false
+
+# Let a decisive Investment Committee EXIT vote refuse an entry. OFF: the
+# committee is advisory (recorded on every take) — its votes are untested
+# heuristics and must not veto signals the backtest would have taken.
+committee_blocks_entries: false
 
 # Refuse to TAKE a trade when earnings are within this many days
 # (0 = off; unknown earnings dates never block).

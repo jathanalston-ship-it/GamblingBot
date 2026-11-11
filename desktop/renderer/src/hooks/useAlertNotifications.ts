@@ -44,6 +44,16 @@ function remember(id: number): void {
  * Honors the user's notification preferences (Settings → Notifications):
  * a global on/off switch, a severity floor, and per-kind mutes.
  */
+/** Only events a trader acts on interrupt them; research churn (conviction
+ *  moves, watchlist ranks, sector rotation) stays in the app. */
+const NOTIFY_KINDS = new Set([
+  "trade_managed",
+  "autopilot_entry",
+  "new_signal",
+  "market_gate",
+  "stop_reached",
+]);
+
 export function useAlertNotifications(): void {
   const timer = useRef<number | null>(null);
 
@@ -72,7 +82,10 @@ export function useAlertNotifications(): void {
       const fresh = rows
         .filter(
           (r) =>
-            r.id > seen && (SEVERITY_RANK[r.severity] ?? 0) >= floor && !muted.has(r.kind),
+            r.id > seen &&
+            NOTIFY_KINDS.has(r.kind) &&
+            (SEVERITY_RANK[r.severity] ?? 0) >= floor &&
+            !muted.has(r.kind),
         )
         .sort((a, b) => a.id - b.id)
         .slice(-MAX_PER_POLL);

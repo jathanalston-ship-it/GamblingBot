@@ -10,8 +10,10 @@ and restraint* on top:
 
 * entries only during the regular session (premarket opt-in — premarket
   cycles still scan and manage, entries wait for the open by default);
-* candidates ranked by conviction, gated at ``min_conviction_score``
-  (default 70 ≈ the HIGH band);
+* nothing is bought while the market gate is closed (benchmark below its
+  200-day average) — the strategy's regime rule;
+* candidates are the scan's buy signals, taken strongest-momentum first
+  (an optional ``min_conviction_score`` floor is off by default);
 * hard caps: ``max_entries_per_cycle`` per scan and ``max_open_positions``
   across the book;
 * every take (and every refusal) is journaled — an ``autopilot_entry``
@@ -55,8 +57,18 @@ def run_for_scan(
         result["skipped_reason"] = f"market state '{state}' — entries wait for the open"
         return result
 
+    from momentum.api import strategy_service
     from momentum.persistence.models.conviction_score import ConvictionScore
+    from momentum.persistence.models.scan_result import ScanResult
     from momentum.persistence.models.trade import Trade
+
+    # The market gate: the strategy opens nothing new while the benchmark is
+    # below its long average (unknown counts as closed). Held positions keep
+    # being managed by the lifecycle step regardless.
+    gate = strategy_service.market_gate(session)
+    if not gate.entries_allowed:
+        result["skipped_reason"] = gate.headline
+        return result
 
     open_trades = session.scalars(select(Trade).where(Trade.status == "open")).all()
     held = {t.symbol for t in open_trades}
@@ -66,19 +78,23 @@ def run_for_scan(
         result["skipped_reason"] = f"book is full: {len(held)} open positions (cap {max_open})"
         return result
 
-    # One knob controls selectivity: the score floor (default 70 ≈ the HIGH
-    # conviction band). The committee still reviews every take individually.
+    # Every scan candidate already passes the strategy's entry rules; they are
+    # taken strongest-momentum first (scan rank), exactly as backtested. The
+    # conviction floor is an optional extra restriction (0 = off, the default).
     min_score = float(settings["min_conviction_score"])  # type: ignore[arg-type]
-    candidates = list(
-        session.scalars(
-            select(ConvictionScore)
-            .where(
-                ConvictionScore.run_id == run_id,
-                ConvictionScore.score >= min_score,
-            )
-            .order_by(ConvictionScore.score.desc())
-        ).all()
-    )
+    conviction_by_symbol = {
+        c.symbol: float(c.score)
+        for c in session.scalars(select(ConvictionScore).where(ConvictionScore.run_id == run_id))
+    }
+    candidates = [
+        row
+        for row in session.scalars(
+            select(ScanResult)
+            .where(ScanResult.run_id == run_id, ScanResult.passed.is_(True))
+            .order_by(ScanResult.rank.asc())
+        )
+        if min_score <= 0 or conviction_by_symbol.get(row.symbol, 0.0) >= min_score
+    ]
 
     from momentum.api import trade_lifecycle_service
 
@@ -92,9 +108,11 @@ def run_for_scan(
         if symbol in held:
             continue
         take = trade_lifecycle_service.take_trade(session, symbol, ts=ts)
+        conviction = conviction_by_symbol.get(symbol)
         outcome = {
             "symbol": symbol,
-            "conviction": round(float(candidate.score), 1),
+            "rank": candidate.rank,
+            "conviction": round(conviction, 1) if conviction is not None else None,
             "ok": bool(take.get("ok")),
             "detail": take.get("error")
             or f"{take.get('shares')} sh @ {take.get('entry_price')} (stop {take.get('stop_price')})",
@@ -174,13 +192,13 @@ def _scan_state(phase: str | None) -> tuple[str, str]:
     if "autopilot" in p:
         return (
             "entering",
-            "Evaluating entries — ranking this scan's conviction and routing "
-            "qualified setups through the take-trade path…",
+            "Evaluating entries — taking this scan's strongest buy signals "
+            "through the take-trade path…",
         )
     if "managing open trades" in p or "reevaluating" in p:
         return (
             "exiting",
-            "Managing open trades — checking stops, targets and scale-outs "
+            "Managing open trades — checking stops and trend exits "
             "against this scan's fresh prices…",
         )
     detail = f" ({phase})" if phase else ""

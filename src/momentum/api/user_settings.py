@@ -265,11 +265,16 @@ def write_shadow(*, enabled: bool) -> dict[str, object]:
     return read_shadow()
 
 
+#: Generation of the autopilot selection limits (see ``read_autopilot``).
+AUTOPILOT_RULES_VERSION = 2
+
 DEFAULT_AUTOPILOT: dict[str, object] = {
     "enabled": False,
-    "max_open_positions": 8,
-    "max_entries_per_cycle": 2,
-    "min_conviction_score": 70.0,
+    # The strategy's tested book: up to 20 positions, strongest signals first.
+    "max_open_positions": 20,
+    "max_entries_per_cycle": 5,
+    # Optional extra restriction; 0 = off (conviction does not gate the rules).
+    "min_conviction_score": 0.0,
     "include_premarket": False,
     # Automation Mode: the desktop shell holds a power-save blocker while
     # Auto Pilot runs (system sleep prevented; the display may still sleep).
@@ -288,13 +293,19 @@ def read_autopilot() -> dict[str, object]:
             out["include_premarket"] = section["include_premarket"]
         if isinstance(section.get("prevent_sleep"), bool):
             out["prevent_sleep"] = section["prevent_sleep"]
-        for key in ("max_open_positions", "max_entries_per_cycle"):
-            value = section.get(key)
-            if isinstance(value, int) and value > 0:
-                out[key] = value
-        score = section.get("min_conviction_score")
-        if isinstance(score, (int, float)) and 0 <= score <= 100:
-            out["min_conviction_score"] = float(score)
+        # The selection limits were re-based when the strategy rules changed
+        # (20-position book, conviction no longer a gate). Values saved under the
+        # previous rules were that era's DEFAULTS persisted by any toggle — not a
+        # deliberate choice for these rules — so only current-generation values
+        # are honoured; the on/off switches above always are.
+        if section.get("rules_version") == AUTOPILOT_RULES_VERSION:
+            for key in ("max_open_positions", "max_entries_per_cycle"):
+                value = section.get(key)
+                if isinstance(value, int) and value > 0:
+                    out[key] = value
+            score = section.get("min_conviction_score")
+            if isinstance(score, (int, float)) and 0 <= score <= 100:
+                out["min_conviction_score"] = float(score)
     return out
 
 
@@ -328,7 +339,7 @@ def write_autopilot(
             raise ValueError("min_conviction_score must be 0..100")
         current["min_conviction_score"] = float(min_conviction_score)
     data = _read_settings_yaml()
-    data["autopilot"] = current
+    data["autopilot"] = {**current, "rules_version": AUTOPILOT_RULES_VERSION}
     path = _settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(data, sort_keys=False))

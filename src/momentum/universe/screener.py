@@ -7,14 +7,21 @@ score** (0..100), and returns ranked :class:`ScanCandidate` objects.
 
 Pipeline
 --------
-1. **Features** — per symbol: price, avg dollar volume, relative volume,
-   distance from all-time high, 20/50/200 EMAs, ATR, blended momentum, sector.
-2. **Score** — blend cross-sectional components (momentum, trend alignment,
-   ATH proximity, relative volume, sector relative strength) per the configured
-   weights, re-normalized over whichever components are available.
-3. **Filter** — price > $5, liquidity, relative volume, within-ATH, EMA stack
-   (20>50, 50>200), sector relative strength.
+1. **Features** — per symbol, from **completed** daily bars: avg dollar volume,
+   relative volume, distance from all-time high, EMAs, and the strategy inputs
+   (trend average, ATR, blended momentum, breakout level/age, exit level) from
+   :mod:`momentum.strategy.rules`. ``price`` alone is the freshest print.
+2. **Score** — cross-sectional momentum percentile (optionally blended with
+   trend / ATH proximity / relative volume / sector strength per the weights).
+3. **Filter** — liquidity floors, then the strategy's entry rules: above the
+   trend average, top-momentum rank, a recent N-day-high breakout. A symbol's
+   first failed gate is recorded (``no_breakout`` rejections are the natural
+   "watching" list: leaders that have not broken out yet).
 4. **Rank** — survivors ordered by score (rank 1 = strongest).
+
+The entry rules are the ones the backtest validates — both read
+:class:`momentum.strategy.StrategyConfig` — so a scan candidate *is* a tested
+buy signal.
 
 The result is DataFrame-backed (auditable) and converts straight to ORM rows for
 the ``scan_results`` table via :meth:`ScanResult.to_records`.
@@ -22,6 +29,7 @@ the ``scan_results`` table via :meth:`ScanResult.to_records`.
 
 from __future__ import annotations
 
+import datetime as dt
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -46,14 +54,19 @@ from momentum.signals.momentum import (
     percentile_rank,
     sector_relative_strength,
 )
+from momentum.strategy.config import StrategyConfig, default_config as default_strategy
+from momentum.strategy.rules import completed_bars, signal_features
 from momentum.universe.filters import (
+    AboveTrendMA,
     EmaBullishStack,
     Filter,
     FilterReport,
     MinDollarVolume,
+    MinMomentumRank,
     MinPrice,
     MinRelativeVolume,
     MinSectorRelativeStrength,
+    RecentBreakout,
     WithinDistanceOfATH,
     combine,
 )
@@ -94,6 +107,12 @@ class ScanCandidate:
     sector: str | None
     sector_rs: float | None
     components: dict[str, float]
+    # --- strategy inputs (momentum.strategy.rules), from completed bars -----
+    trend_ma: float | None = None  # the stock's own trend average (200-day SMA)
+    breakout_level: float | None = None  # the N-day high the breakout cleared
+    bars_since_breakout: int | None = None  # sessions since that new high
+    exit_level: float | None = None  # a daily close below this ends the trade
+    momentum_rank: float | None = None  # blended-momentum percentile (0..1)
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,6 +172,11 @@ class ScanResult:
             sector=None if pd.isna(row.get("sector")) else str(row["sector"]),
             sector_rs=_opt(row.get("sector_rs")),
             components=components,  # type: ignore[arg-type]
+            trend_ma=_opt(row.get("trend_ma")),
+            breakout_level=_opt(row.get("breakout_level")),
+            bars_since_breakout=_opt_int(row.get("bars_since_breakout")),
+            exit_level=_opt(row.get("exit_level")),
+            momentum_rank=_opt(row.get("c_momentum")),
         )
 
     def to_records(self, *, run_id: str | None = None) -> list[dict[str, Any]]:
@@ -183,6 +207,10 @@ class ScanResult:
                     "sector": c.sector,
                     "sector_rs": c.sector_rs,
                     "components": c.components,
+                    "trend_ma": c.trend_ma,
+                    "breakout_level": c.breakout_level,
+                    "bars_since_breakout": c.bars_since_breakout,
+                    "exit_level": c.exit_level,
                 }
             )
         return records
@@ -191,8 +219,19 @@ class ScanResult:
 class MomentumScanner:
     """Screens and ranks a universe of symbols by momentum."""
 
-    def __init__(self, config: ScannerConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: ScannerConfig | None = None,
+        strategy: StrategyConfig | None = None,
+        *,
+        strategy_gates: bool = True,
+    ) -> None:
         self.config = config or ScannerConfig()
+        self.strategy = strategy or default_strategy()
+        # ``False`` skips the strategy's entry rules (and its liquidity floors):
+        # every symbol with features becomes a candidate. For engine
+        # verification and plumbing tests only — never for trading.
+        self.strategy_gates = strategy_gates
 
     # -- public API --------------------------------------------------------- #
     def scan(
@@ -201,14 +240,21 @@ class MomentumScanner:
         *,
         sectors: Mapping[str, str] | None = None,
         as_of: Any | None = None,
+        now: dt.datetime | None = None,
     ) -> ScanResult:
-        """Scan ``bars`` (symbol -> OHLCV) and rank the momentum candidates."""
+        """Scan ``bars`` (symbol -> OHLCV) and rank the momentum candidates.
+
+        ``now`` (live scans) excludes a still-forming daily bar from every signal
+        input — signals only change on completed closes, exactly as backtested —
+        while ``price`` still reports the freshest print. Leave it ``None`` for
+        historical frames.
+        """
         as_of_ts = pd.Timestamp(as_of) if as_of is not None else None
         rows: dict[str, dict[str, Any]] = {}
         last_seen: list[pd.Timestamp] = []
         for symbol, frame in bars.items():
             try:
-                row = self._symbol_features(frame, as_of_ts)
+                row = self._symbol_features(frame, as_of_ts, now)
             except Exception as exc:  # noqa: BLE001 - one bad frame must not abort the scan
                 _log.warning("skipping %s: malformed bars (%s)", symbol, exc)
                 continue
@@ -247,20 +293,26 @@ class MomentumScanner:
 
     # -- feature extraction ------------------------------------------------- #
     def _symbol_features(
-        self, frame: pd.DataFrame, as_of: pd.Timestamp | None
+        self, frame: pd.DataFrame, as_of: pd.Timestamp | None, now: dt.datetime | None = None
     ) -> dict[str, Any] | None:
         cfg = self.config
         if frame is None or frame.empty or "close" not in frame.columns:
             return None
-        df = frame
+        live = frame
         if as_of is not None:
-            df = df.loc[:as_of]
+            live = live.loc[:as_of]
+        live_close = live["close"].dropna()
+        if live_close.empty:
+            return None
+        # Signals read completed sessions only; the freshest print is display-only.
+        df = completed_bars(live, now)
         close = df["close"].dropna()
         if close.empty:
             return None
         high = df["high"] if "high" in df.columns else close
         low = df["low"] if "low" in df.columns else close
         volume = df["volume"] if "volume" in df.columns else pd.Series(0.0, index=df.index)
+        signal = signal_features(df, self.strategy)
 
         ath_series = (
             all_time_high(close)
@@ -268,7 +320,7 @@ class MomentumScanner:
             else rolling_high(close, cfg.ath_lookback)
         )
         ath = float(ath_series.iloc[-1])
-        price = float(close.iloc[-1])
+        price = float(live_close.iloc[-1])
         support_level, resistance_level = swing_pivot_levels(high, low, price, cfg.pivot_window)
 
         rvol_series = realized_volatility(close, cfg.vol_window)
@@ -285,13 +337,30 @@ class MomentumScanner:
             "ema_fast": _last(ema(close, cfg.ema_fast)),
             "ema_mid": _last(ema(close, cfg.ema_mid)),
             "ema_slow": _last(ema(close, cfg.ema_slow)),
-            "atr": _last(atr(high, low, close, cfg.atr_period)),
+            "atr": (
+                signal.atr
+                if signal is not None and signal.atr is not None
+                else _last(atr(high, low, close, cfg.atr_period))
+            ),
+            # NaN (never None) when history is too short, so the columns stay
+            # numeric and the strategy gates simply fail for that symbol.
+            "signal_close": float(close.iloc[-1]),
+            "trend_ma": _nan(signal.trend_ma if signal is not None else None),
+            "breakout_level": _nan(signal.breakout_level if signal is not None else None),
+            "bars_since_breakout": _nan(signal.bars_since_breakout if signal is not None else None),
+            "exit_level": _nan(signal.exit_level if signal is not None else None),
             "support_level": support_level,
             "resistance_level": resistance_level,
             "implied_vol": _last(rvol_series),
             "iv_rank": _last(volatility_rank(rvol_series, cfg.vol_rank_lookback)),
-            "momentum_raw": blended_momentum(close, cfg.momentum_lookbacks, skip=cfg.momentum_skip),
-            "_last_ts": close.index[-1],
+            # The strategy's blend (needs the full longest lookback) ranks the
+            # universe; the scanner's lenient blend only fills young listings.
+            "momentum_raw": (
+                signal.momentum
+                if signal is not None and signal.momentum is not None
+                else blended_momentum(close, cfg.momentum_lookbacks, skip=cfg.momentum_skip)
+            ),
+            "_last_ts": live_close.index[-1],
         }
 
     # -- scoring ------------------------------------------------------------ #
@@ -327,14 +396,33 @@ class MomentumScanner:
     # -- filters ------------------------------------------------------------ #
     def _filters(self) -> list[Filter]:
         f = self.config.filters
-        return [
-            MinPrice(f.min_price),
-            MinDollarVolume(f.min_dollar_volume),
-            MinRelativeVolume(f.min_relative_volume),
-            WithinDistanceOfATH(f.max_distance_from_ath),
-            EmaBullishStack(f.require_ema_fast_above_mid, f.require_ema_mid_above_slow),
-            MinSectorRelativeStrength(f.min_sector_rs),
+        st = self.strategy
+        gated = self.strategy_gates
+        filters: list[Filter] = [
+            MinPrice(max(f.min_price, st.min_price) if gated else f.min_price),
+            MinDollarVolume(
+                max(f.min_dollar_volume, st.min_dollar_volume) if gated else f.min_dollar_volume
+            ),
         ]
+        # Optional legacy gates — only when a user switched them on.
+        if f.min_relative_volume > 0:
+            filters.append(MinRelativeVolume(f.min_relative_volume))
+        if f.max_distance_from_ath < 1.0:
+            filters.append(WithinDistanceOfATH(f.max_distance_from_ath))
+        if f.require_ema_fast_above_mid or f.require_ema_mid_above_slow:
+            filters.append(
+                EmaBullishStack(f.require_ema_fast_above_mid, f.require_ema_mid_above_slow)
+            )
+        if f.min_sector_rs > 0:
+            filters.append(MinSectorRelativeStrength(f.min_sector_rs))
+        # The strategy's entry rules (the same ones the backtest trades).
+        if gated:
+            filters += [
+                AboveTrendMA(),
+                MinMomentumRank(st.min_momentum_rank),
+                RecentBreakout(st.breakout_within),
+            ]
+        return filters
 
 
 def _last(series: pd.Series) -> float:
@@ -342,5 +430,13 @@ def _last(series: pd.Series) -> float:
     return float(series.iloc[-1]) if len(series) else float("nan")
 
 
+def _nan(value: float | int | None) -> float:
+    return float("nan") if value is None else float(value)
+
+
 def _opt(value: Any) -> float | None:
     return None if value is None or pd.isna(value) else float(value)
+
+
+def _opt_int(value: Any) -> int | None:
+    return None if value is None or pd.isna(value) else int(value)

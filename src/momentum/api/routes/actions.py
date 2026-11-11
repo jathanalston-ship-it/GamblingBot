@@ -179,7 +179,7 @@ def start_backtest(request: Request, params: ActionParams | None = None) -> JobO
         return actions.run_backtest(
             provider=provider,
             symbols=symbols,
-            lookback_days=p.lookback_days,
+            lookback_days=max(p.lookback_days, actions.BACKTEST_MIN_LOOKBACK_DAYS),
             progress=progress,
             session_factory=sf,
         )
@@ -198,7 +198,8 @@ def start_walk_forward(request: Request, params: ActionParams | None = None) -> 
         return actions.walk_forward_backtest(
             provider=provider,
             symbols=symbols,
-            lookback_days=max(p.lookback_days, 500),  # folds need deeper history
+            # folds need deep history (a year of warm-up per out-of-sample slice)
+            lookback_days=max(p.lookback_days, actions.BACKTEST_MIN_LOOKBACK_DAYS),
             progress=progress,
             session_factory=sf,
         )

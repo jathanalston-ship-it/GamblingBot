@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import zlib
 from pathlib import Path
 from typing import Any
 
@@ -57,7 +58,7 @@ class ListingProvider:
     """A provider that can enumerate constituents (Alpaca/Polygon-style)."""
 
     def get_bars(self, symbol: str, *a: Any, **k: Any) -> pd.DataFrame:
-        return _bars(seed=hash(symbol) % 1000)
+        return _bars(seed=zlib.crc32(symbol.encode()) % 1000)
 
     def list_symbols(self, universe_key: str) -> list[str] | None:
         return (
@@ -69,7 +70,7 @@ class NonListingProvider:
     """yfinance-style: no constituent listing."""
 
     def get_bars(self, symbol: str, *a: Any, **k: Any) -> pd.DataFrame:
-        return _bars(seed=hash(symbol) % 1000)
+        return _bars(seed=zlib.crc32(symbol.encode()) % 1000)
 
 
 def _client(factory: sessionmaker[Session], provider: Any) -> TestClient:
@@ -105,7 +106,8 @@ def _relaxed() -> MomentumScanner:
     return MomentumScanner(
         ScannerConfig(
             filters=ScanFilters(min_relative_volume=0.0, min_sector_rs=0.0, min_dollar_volume=0.0)
-        )
+        ),
+        strategy_gates=False,
     )
 
 

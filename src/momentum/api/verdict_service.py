@@ -47,8 +47,13 @@ def _factor_names(breakdown: dict[str, Any] | None) -> tuple[tuple[str, ...], tu
 
 
 def gather_inputs(session: Session, symbol: str) -> VerdictInputs | None:
-    from momentum.api import earnings_service, options_eligibility_service, tradeplan_service
-    from momentum.api.services import latest_regime
+    from momentum.api import (
+        earnings_service,
+        options_eligibility_service,
+        strategy_service,
+        tradeplan_service,
+    )
+    from momentum.api.services import latest_regime, resolve_active_run_id
     from momentum.trade_lifecycle.config import default_config as lifecycle_config
 
     sym = symbol.upper()
@@ -74,6 +79,7 @@ def gather_inputs(session: Session, symbol: str) -> VerdictInputs | None:
     top, weak = _factor_names(conviction.breakdown if conviction is not None else None)
 
     plan = tradeplan_service.trade_plan(session, sym, None)
+    active_run = resolve_active_run_id(session)
     regime = latest_regime(session)
     metadata = session.scalars(
         select(ScanMetadata).order_by(ScanMetadata.pull_timestamp.desc()).limit(1)
@@ -140,6 +146,9 @@ def gather_inputs(session: Session, symbol: str) -> VerdictInputs | None:
         failure_conditions=tuple(plan_dict.get("failure_conditions") or []),
         instrument_verdict=instrument_verdict,
         instrument_reasons=instrument_reasons,
+        market_uptrend=strategy_service.market_gate(session).uptrend,
+        is_current_signal=(active_run is None or scan.run_id == active_run),
+        bars_since_breakout=scan.bars_since_breakout,
     )
 
 

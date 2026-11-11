@@ -181,4 +181,8 @@ class TrackedTradeRepository(Repository[TrackedTrade]):
             )
             .group_by(TrackedTrade.trade_health)
         )
-        return {health: int(n) for health, n in self.session.execute(stmt).all()}
+        return {
+            str(health): int(n)
+            for health, n in self.session.execute(stmt).all()
+            if health is not None
+        }

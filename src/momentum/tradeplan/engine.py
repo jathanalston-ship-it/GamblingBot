@@ -1,23 +1,25 @@
 """Trade-plan generation (pure logic).
 
-Derives a complete plan from a candidate's price, ATR, swing-pivot support /
-resistance (EMA fallback), historical analogs, volatility and the market regime:
+Turns a scan candidate into the concrete plan the strategy trades
+(:mod:`momentum.strategy`):
 
-* **Stop** — the wider of an ATR stop and just below the nearest swing-low support
-  (falls back to the nearest support EMA when no pivot is available).
-* **Targets** — three scale-out levels in R, lifted toward the analogs' average
-  winner / favourable excursion, with T1 snapped beneath overhead swing resistance.
-* **Sizing** — from the candidate's risk budget (risk $ / risk-per-share),
-  throttled by the regime.
-* **Holding period** — from the analogs' average winner hold (regime-adjusted).
+* **Stop** — ``entry − stop_atr_mult × ATR`` (3×ATR by default; optionally
+  widened below swing-low support with ``use_structural_stop``).
+* **Size** — a fixed fraction of the account at risk per trade, capped by the
+  per-position limit (:func:`momentum.strategy.rules.position_size`).
+* **Exit** — there is no profit target. The position is held until a daily
+  close below the trend-exit level (the prior N-day low) or the stop. The
+  three "targets" are R milestones for tracking progress only.
+* **Holding period** — from the analogs' average winner hold when history exists.
 
 It returns plain numbers + narrative summaries; it never places a trade.
 """
 
 from __future__ import annotations
 
-import math
-
+from momentum.strategy.config import StrategyConfig
+from momentum.strategy.config import default_config as default_strategy
+from momentum.strategy.rules import initial_stop, position_size
 from momentum.tradeplan.config import TradePlanConfig, default_config
 from momentum.tradeplan.types import TradePlanInputs, TradePlan, TargetLevel
 
@@ -29,8 +31,17 @@ def _fmt_pct(x: float) -> str:
 class TradePlanEngine:
     """Turns :class:`TradePlanInputs` into a :class:`TradePlan`."""
 
-    def __init__(self, config: TradePlanConfig | None = None) -> None:
+    def __init__(
+        self, config: TradePlanConfig | None = None, strategy: StrategyConfig | None = None
+    ) -> None:
         self.config = config or default_config()
+        self.strategy = strategy or default_strategy()
+
+    @property
+    def stop_atr_mult(self) -> float:
+        """The stop multiple in force (the strategy's unless explicitly overridden)."""
+        override = self.config.stop_atr_mult
+        return override if override is not None else self.strategy.stop_atr_mult
 
     def plan(self, inputs: TradePlanInputs) -> TradePlan | None:
         """Return a plan, or ``None`` when price/ATR are missing (can't plan)."""
@@ -44,7 +55,7 @@ class TradePlanEngine:
         stop, support = self._stop(inputs, entry, atr)
         risk_per_share = entry - stop
         if risk_per_share <= 0:  # degenerate; fall back to a pure ATR stop
-            stop = entry - cfg.stop_atr_mult * atr
+            stop = entry - self.stop_atr_mult * atr
             support = None
             risk_per_share = entry - stop
         stop_pct = risk_per_share / entry
@@ -55,9 +66,12 @@ class TradePlanEngine:
 
         regime_factor = cfg.regime_factor(inputs.regime)
         shares, position_value, risk_dollars, risk_pct = self._size(
-            inputs, risk_per_share, regime_factor
+            inputs, entry, stop, regime_factor
         )
         hold_low, hold_high = self._holding(inputs, regime_factor)
+        exit_level = (
+            inputs.exit_level if inputs.exit_level is not None and inputs.exit_level > 0 else None
+        )
 
         return TradePlan(
             symbol=inputs.symbol,
@@ -76,21 +90,28 @@ class TradePlanEngine:
             suggested_position_value=position_value,
             suggested_portfolio_risk_pct=risk_pct,
             suggested_risk_dollars=risk_dollars,
+            exit_level=exit_level,
+            exit_rule=self._exit_rule(exit_level),
             risk_summary=self._risk_summary(
                 inputs, entry, stop, stop_pct, atr, atr_pct, risk_per_share, shares, support
             ),
-            reward_summary=self._reward_summary(inputs, targets, blended),
-            failure_conditions=self._failure_conditions(inputs, stop, support),
-            methodology=self._methodology(inputs, support, regime_factor),
+            reward_summary=self._reward_summary(inputs, targets, exit_level),
+            failure_conditions=self._failure_conditions(inputs, stop, exit_level),
+            methodology=self._methodology(inputs, support),
         )
 
     # -- stop ---------------------------------------------------------------- #
     def _stop(
         self, inputs: TradePlanInputs, entry: float, atr: float
     ) -> tuple[float, float | None]:
-        atr_stop = entry - self.config.stop_atr_mult * atr
-        # Prefer a confirmed swing-low support (real structure); fall back to the
-        # nearest EMA below price when no pivot is available.
+        if self.config.stop_atr_mult is None:
+            atr_stop = initial_stop(entry, atr, self.strategy)
+        else:
+            atr_stop = entry - self.config.stop_atr_mult * atr
+        if not self.config.use_structural_stop:
+            return atr_stop, None
+        # Optional: respect real structure too. Prefer a confirmed swing-low
+        # support; fall back to the nearest EMA below price.
         support: float | None = None
         if inputs.support_level is not None and inputs.support_level < entry:
             support = inputs.support_level
@@ -105,32 +126,15 @@ class TradePlanEngine:
         # The wider (lower) stop respects both ATR noise and structure.
         return min(atr_stop, structural_stop), support
 
-    # -- targets ------------------------------------------------------------- #
+    # -- milestones ---------------------------------------------------------- #
     def _targets(
         self, inputs: TradePlanInputs, entry: float, risk_per_share: float
     ) -> tuple[TargetLevel, TargetLevel, TargetLevel]:
-        m1, m2, m3 = self.config.target_r_multiples
-        # Lift T2 toward the analogs' average winner, T3 toward their MFE.
-        if inputs.analog_avg_winner_r is not None:
-            m2 = max(m2, round(inputs.analog_avg_winner_r, 2))
-        if inputs.analog_avg_mfe_r is not None:
-            m3 = max(m3, round(inputs.analog_avg_mfe_r, 2))
-
-        # Snap T1 down to just below the nearest overhead swing resistance when it
-        # is the realistic first hurdle (closer than the R-based T1).
-        t1_price = entry + m1 * risk_per_share
-        res = inputs.resistance_level
-        if res is not None and entry < res < t1_price:
-            t1_price = res * (1.0 - self.config.support_buffer_pct)
-            m1 = (t1_price - entry) / risk_per_share
-        m2 = max(m2, m1 + 0.5)  # keep strictly increasing
-        m3 = max(m3, m2 + 0.5)
-
+        """Three R milestones (progress markers — nothing is sold at them)."""
         fracs = self.config.scale_out_fractions
         labels = ("T1", "T2", "T3")
-        multiples = (m1, m2, m3)
         levels: list[TargetLevel] = []
-        for label, m, frac in zip(labels, multiples, fracs, strict=True):
+        for label, m, frac in zip(labels, self.config.target_r_multiples, fracs, strict=True):
             price = entry + m * risk_per_share
             levels.append(
                 TargetLevel(
@@ -145,19 +149,32 @@ class TradePlanEngine:
 
     # -- sizing -------------------------------------------------------------- #
     def _size(
-        self, inputs: TradePlanInputs, risk_per_share: float, regime_factor: float
+        self, inputs: TradePlanInputs, entry: float, stop: float, regime_factor: float
     ) -> tuple[int, float, float, float]:
+        """Shares / position value / risk dollars / risk % — the strategy's sizing.
+
+        An explicit ``risk_dollars`` / ``risk_pct`` on the inputs overrides the
+        strategy's per-trade risk; the per-position cap always applies.
+        """
         equity = inputs.equity if inputs.equity and inputs.equity > 0 else 100_000.0
-        if inputs.risk_dollars is not None:
-            risk_dollars = inputs.risk_dollars * regime_factor
+        risk_per_share = entry - stop
+        if risk_per_share <= 0:
+            return 0, 0.0, 0.0, 0.0
+        strategy = self.strategy
+        if inputs.risk_dollars is not None and equity > 0:
+            risk_fraction = inputs.risk_dollars / equity
         elif inputs.risk_pct is not None:
-            risk_dollars = inputs.risk_pct * equity * regime_factor
+            risk_fraction = inputs.risk_pct
         else:
-            risk_dollars = 0.005 * equity * regime_factor  # 0.5% fallback
-        shares = max(0, math.floor(risk_dollars / risk_per_share)) if risk_per_share > 0 else 0
-        position_value = shares * inputs.price if inputs.price else 0.0
-        risk_pct = (shares * risk_per_share) / equity if equity > 0 else 0.0
-        return shares, position_value, shares * risk_per_share, risk_pct
+            risk_fraction = strategy.risk_per_trade_pct
+        risk_fraction *= regime_factor
+        if risk_fraction <= 0:
+            return 0, 0.0, 0.0, 0.0
+        sized = strategy.model_copy(update={"risk_per_trade_pct": min(risk_fraction, 0.05)})
+        shares = position_size(equity, entry, stop, sized)
+        position_value = shares * entry
+        risk_dollars = shares * risk_per_share
+        return shares, position_value, risk_dollars, (risk_dollars / equity if equity > 0 else 0.0)
 
     # -- holding period ------------------------------------------------------ #
     def _holding(self, inputs: TradePlanInputs, regime_factor: float) -> tuple[int, int]:
@@ -172,6 +189,15 @@ class TradePlanEngine:
         return low, high
 
     # -- narrative ----------------------------------------------------------- #
+    def _exit_rule(self, exit_level: float | None) -> str:
+        days = self.strategy.exit_lookback
+        if exit_level is None:
+            return f"Hold until a daily close below the {days}-day low, or the stop."
+        return (
+            f"Hold until a daily close below {exit_level:.2f} (the {days}-day low, which "
+            "rises as the stock climbs), or the stop — whichever comes first."
+        )
+
     def _risk_summary(
         self,
         inputs: TradePlanInputs,
@@ -185,70 +211,66 @@ class TradePlanEngine:
         support: float | None,
     ) -> list[str]:
         lines = [
-            f"Risk per share ${risk_per_share:.2f} → ${risk_per_share * shares:,.0f} total "
-            f"on {shares:,} shares.",
-            f"Stop {stop:.2f} ({_fmt_pct(stop_pct)} below {entry:.2f}); "
-            f"{self.config.stop_atr_mult:g}×ATR"
-            + (f" / just below support {support:.2f}." if support is not None else "."),
-            f"Volatility: ATR {atr:.2f} ({_fmt_pct(atr_pct)} of price) per day.",
+            f"If the stop is hit you lose about ${risk_per_share * shares:,.0f} "
+            f"(${risk_per_share:.2f} a share on {shares:,} shares).",
+            f"Stop {stop:.2f} — {_fmt_pct(stop_pct)} below the {entry:.2f} entry "
+            f"({self.stop_atr_mult:g}× the stock's average daily range)"
+            + (f", just below support at {support:.2f}." if support is not None else "."),
+            f"Typical daily move: {atr:.2f} ({_fmt_pct(atr_pct)} of price).",
         ]
         if atr_pct > 0.06:
-            lines.append("Elevated volatility — size already reflects the wider ATR stop.")
+            lines.append("This is a volatile stock — the position is sized smaller to match.")
         return lines
 
     def _reward_summary(
-        self, inputs: TradePlanInputs, targets: tuple[TargetLevel, ...], blended: float
+        self,
+        inputs: TradePlanInputs,
+        targets: tuple[TargetLevel, ...],
+        exit_level: float | None,
     ) -> list[str]:
         lines = [
-            f"{t.label} {t.price:.2f} (+{t.r_multiple:.1f}R, {_fmt_pct(t.gain_pct)}) — "
-            f"scale out {int(t.scale_out_pct * 100)}%."
-            for t in targets
+            "No profit target: winners are held until the trend breaks. Most of this "
+            "strategy's profit comes from a minority of large winners, so they are not "
+            "sold early.",
+            self._exit_rule(exit_level),
+            "Milestones (not sell orders): "
+            + ", ".join(f"{t.price:.2f} = +{t.r_multiple:g}R" for t in targets)
+            + ".",
         ]
-        lines.append(f"Blended reward:risk ≈ {blended:.2f}R across the scale-out.")
         if inputs.analog_expectancy_r is not None and inputs.analog_sample_size > 0:
             lines.append(
-                f"Analogs: {inputs.analog_expectancy_r:+.2f}R expectancy over "
-                f"{inputs.analog_sample_size} similar setups"
-                + (
-                    f" (win rate {_fmt_pct(inputs.analog_win_rate)})."
-                    if inputs.analog_win_rate is not None
-                    else "."
-                )
+                f"Your own history in similar setups: {inputs.analog_expectancy_r:+.2f}R "
+                f"average over {inputs.analog_sample_size} closed trades."
             )
-        if inputs.resistance_level is not None:
-            lines.append(
-                f"Overhead swing resistance at {inputs.resistance_level:.2f} — the first hurdle "
-                "(T1 snaps just beneath it)."
-            )
-        elif inputs.distance_from_ath is not None and abs(inputs.distance_from_ath) <= 0.03:
-            lines.append("Near all-time highs — little overhead resistance (blue-sky targets).")
         return lines
 
     def _failure_conditions(
-        self, inputs: TradePlanInputs, stop: float, support: float | None
+        self, inputs: TradePlanInputs, stop: float, exit_level: float | None
     ) -> list[str]:
-        conds = [
-            f"Daily close below {stop:.2f} (hard stop) — exit in full.",
-            f"Relative volume fades below {self.config.rvol_momentum_floor:g}× — momentum lost.",
-            "Market regime flips to Bearish — reduce size or stand aside.",
-            f"No progress toward T1 within {self.config.time_stop_days} trading days — time stop.",
-        ]
-        if support is not None:
-            conds.append(f"Loses structural support near {support:.2f} on a closing basis.")
-        return conds
-
-    def _methodology(
-        self, inputs: TradePlanInputs, support: float | None, regime_factor: float
-    ) -> list[str]:
-        notes = [
-            "Stop from ATR + nearest support EMA; targets in R multiples of that risk.",
-            f"Size from the candidate's risk budget × regime factor {regime_factor:g}"
-            + (f" ({inputs.regime})." if inputs.regime else "."),
-        ]
-        if inputs.analog_sample_size > 0:
-            notes.append(
-                f"Targets and hold lifted toward {inputs.analog_sample_size} historical analogs."
+        days = self.strategy.exit_lookback
+        conds = [f"Price trades at or below the stop {stop:.2f} — sell everything."]
+        if exit_level is not None:
+            conds.append(
+                f"A daily close below {exit_level:.2f} (the {days}-day low) — the trend "
+                "is broken; sell at the next open."
             )
         else:
-            notes.append("No historical analogs for this cohort — defaults used for targets/hold.")
+            conds.append(f"A daily close below the {days}-day low — sell at the next open.")
+        if inputs.market_uptrend is False:
+            conds.append(
+                "The market is in a downtrend right now — the strategy opens no new "
+                "positions until it recovers."
+            )
+        return conds
+
+    def _methodology(self, inputs: TradePlanInputs, support: float | None) -> list[str]:
+        strategy = self.strategy
+        notes = [
+            f"Stop = entry − {self.stop_atr_mult:g} × ATR({strategy.atr_period}).",
+            f"Size = {strategy.risk_per_trade_pct * 100:g}% of the account at risk, "
+            f"never more than {strategy.max_position_pct * 100:g}% of the account in one stock.",
+            f"Exit = stop, or a daily close below the {strategy.exit_lookback}-day low.",
+        ]
+        if support is not None:
+            notes.append(f"Stop widened to sit below swing support at {support:.2f}.")
         return notes

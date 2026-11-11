@@ -47,7 +47,8 @@ def _scan(factory: sessionmaker[Session], provider: Any = None) -> dict[str, Any
                 filters=ScanFilters(
                     min_relative_volume=0.0, min_sector_rs=0.0, min_dollar_volume=0.0
                 )
-            )
+            ),
+            strategy_gates=False,
         ),
         symbols=["AAA", "BBB", "CCC"],
         lookback_days=400,
@@ -128,12 +129,12 @@ def test_convert_manual_stops_bot_execution(factory: sessionmaker[Session], take
         assert result["management_mode"] == "manual"
         assert _audit_overrides(session)
 
-    # A 40% gap through every target: a MANAGED trade would be acted on;
+    # A 40% gap DOWN through the stop: a MANAGED trade would be closed;
     # the MANUAL trade must remain untouched (bot advises, never acts).
     class Gapped(StubProvider):
         def get_bars(self, symbol: str, *a: Any, **k: Any) -> Any:
             frame = super().get_bars(symbol, *a, **k)
-            return frame * 1.4 if not frame.empty else frame
+            return frame * 0.6 if not frame.empty else frame
 
     _scan(factory, Gapped())
     with factory() as session:
@@ -147,13 +148,8 @@ def test_convert_manual_stops_bot_execution(factory: sessionmaker[Session], take
     _scan(factory, Gapped())
     with factory() as session:
         journal = session.scalars(select(Trade)).one()
-        tracked = session.scalars(select(TrackedTrade).where(TrackedTrade.symbol == "AAA")).one()
-        acted = (
-            journal.status == "closed"
-            or (journal.quantity < (tracked.quantity or 0))
-            or (journal.current_stop is not None)
-        )
-        assert acted  # the bot resumed managing immediately
+        assert journal.status == "closed"  # the bot resumed managing immediately
+        assert journal.exit_reason == "stop"
 
 
 def test_reduce_add_and_close(factory: sessionmaker[Session], taken: str) -> None:

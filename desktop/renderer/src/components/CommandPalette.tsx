@@ -19,17 +19,20 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       onClose();
     };
     return [
-      { label: "Scan", hint: "stage 1", run: go("/scan") },
-      { label: "Candidates", hint: "stage 2", run: go("/candidates") },
-      { label: "Conviction", hint: "stage 3", run: go("/conviction") },
-      { label: "Analogs", hint: "stage 4", run: go("/analogs") },
-      { label: "Backtest", hint: "stage 5", run: go("/backtest") },
-      { label: "Replay", hint: "stage 6", run: go("/replay") },
-      { label: "Paper", hint: "stage 7", run: go("/paper") },
-      { label: "Live", hint: "stage 8 · gated", run: go("/live") },
-      { label: "Portfolio", hint: "utility", run: go("/portfolio") },
-      { label: "Analytics", hint: "utility", run: go("/analytics") },
-      { label: "Settings", hint: "utility", run: go("/settings") },
+      { label: "Today", hint: "1", run: go("/") },
+      { label: "Buy signals", hint: "2", run: go("/signals") },
+      { label: "Positions", hint: "3", run: go("/positions") },
+      { label: "Results", hint: "4", run: go("/results") },
+      { label: "Settings", hint: "", run: go("/settings") },
+      { label: "Command Center", hint: "advanced", run: go("/command-center") },
+      { label: "Scanner", hint: "advanced", run: go("/scan") },
+      { label: "Trade Plan", hint: "advanced", run: go("/tradeplan") },
+      { label: "Conviction", hint: "advanced", run: go("/conviction") },
+      { label: "Backtesting", hint: "advanced", run: go("/backtest") },
+      { label: "Paper Account", hint: "advanced", run: go("/paper") },
+      { label: "Portfolio", hint: "advanced", run: go("/portfolio") },
+      { label: "Analytics", hint: "advanced", run: go("/analytics") },
+      { label: "Data Health", hint: "advanced", run: go("/data-health") },
     ];
   }, [navigate, onClose]);
 

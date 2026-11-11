@@ -11,7 +11,11 @@ import pytest
 
 @pytest.fixture
 def make_bars() -> Callable[..., pd.DataFrame]:
-    """Synthetic OHLCV frame with controllable drift and a last-bar volume surge."""
+    """Synthetic OHLCV frame with controllable drift and a last-bar volume surge.
+
+    The daily range is a tight ±0.1% so a steadily rising series closes above
+    its prior highs (a breakout) whenever ``drift`` exceeds 0.1% a day.
+    """
 
     def _make(
         start: float = 50.0,
@@ -28,8 +32,8 @@ def make_bars() -> Callable[..., pd.DataFrame]:
         frame = pd.DataFrame(
             {
                 "open": px,
-                "high": px * 1.01,
-                "low": px * 0.99,
+                "high": px * 1.001,
+                "low": px * 0.999,
                 "close": px,
                 "volume": vol,
             },

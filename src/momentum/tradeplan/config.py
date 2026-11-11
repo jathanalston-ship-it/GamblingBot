@@ -22,20 +22,31 @@ class TradePlanConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    model_version: str = "v1"
+    model_version: str = "v2"
 
-    stop_atr_mult: float = Field(1.8, gt=0)
+    # The stop multiple and position sizing come from the strategy
+    # (config/strategy.example.yaml) — the same numbers the backtest trades.
+    # Set ``stop_atr_mult`` here only to deliberately override the strategy.
+    stop_atr_mult: float | None = Field(None, gt=0)
+    # Widen the stop to sit below the nearest swing-low support. Off by default:
+    # the validated rules use the plain ATR stop.
+    use_structural_stop: bool = False
     support_buffer_pct: float = Field(0.005, ge=0)
 
-    target_r_multiples: tuple[float, float, float] = (1.0, 2.0, 3.5)
+    # Reference milestones in R. The strategy does NOT sell at these — winners
+    # run until the trend-exit fires — so they are progress markers only.
+    target_r_multiples: tuple[float, float, float] = (2.0, 4.0, 8.0)
     scale_out_fractions: tuple[float, float, float] = (0.34, 0.33, 0.33)
 
+    # Regime gating is on/off (the market gate blocks new entries); size is not
+    # throttled by regime label.
     regime_size_factor: dict[str, float] = Field(
-        default_factory=lambda: {"bull": 1.0, "neutral": 0.7, "bear": 0.4}
+        default_factory=lambda: {"bull": 1.0, "neutral": 1.0, "bear": 1.0}
     )
 
-    base_holding_days: int = Field(15, gt=0)
+    base_holding_days: int = Field(60, gt=0)
     min_holding_days: int = Field(3, gt=0)
+    # Legacy knobs (no longer exit rules; kept so older configs still load).
     time_stop_days: int = Field(10, gt=0)
     rvol_momentum_floor: float = Field(1.0, ge=0)
 

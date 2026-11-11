@@ -17,7 +17,14 @@ def test_defaults() -> None:
     assert cfg.ema_mid == 50
     assert cfg.ema_slow == 200
     assert cfg.filters.min_price == 5.0
-    assert cfg.weights.momentum == 0.40
+    # The validated strategy ranks by blended momentum alone.
+    assert cfg.weights.momentum == 1.0
+    assert cfg.weights.sector_rs == 0.0
+    # Legacy gates are off by default — the strategy rules do the gating.
+    assert cfg.filters.min_relative_volume == 0.0
+    assert cfg.filters.max_distance_from_ath == 1.0
+    assert cfg.filters.require_ema_fast_above_mid is False
+    assert cfg.filters.min_sector_rs == 0.0
     assert cfg.momentum_lookbacks == {63: 0.4, 126: 0.3, 252: 0.3}
 
 
@@ -52,7 +59,8 @@ def test_example_yaml_loads() -> None:
     repo_root = Path(__file__).resolve().parents[3]
     cfg = ScannerConfig.from_yaml(repo_root / "config" / "scanner.example.yaml")
     assert cfg.filters.min_price == 5.0
-    assert cfg.weights.sector_rs == 0.15
+    # The shipped example must equal the in-code defaults (one behaviour).
+    assert cfg == ScannerConfig()
 
 
 def test_immutable() -> None:

@@ -80,6 +80,41 @@ Remaining refinements (not blockers):
   readiness audit; passes in isolation and in repeat full runs. Find and pin
   the cross-test state if it recurs.
 
+## Strategy overhaul follow-ups (2026-11, v0.0.113)
+
+*The strategy was rebuilt on evidence (`docs/STRATEGY.md`) and the UI reduced to
+four main screens. Deferred:*
+
+- **Point-in-time universe / delisted names** — every backtest uses today's
+  stock lists (survivorship bias, stated in the UI and docs). Needs a data
+  source with delisted symbols + historical index membership.
+- **Shipped universe lists are stale** — `config/universes.example.yaml`
+  contains delisted tickers (ANSS, HES, MMC, WBA…) and the broad sets are
+  partial seeds. `scripts/research/universe_wide.txt` (~690 verified symbols)
+  could become a built-in universe once daemon scan cost at that size is
+  measured (the daemon rescans every 60 s in market hours).
+- **Legacy "paper session" path** (`orchestration/engine.py` + `ExitManager`,
+  the Paper screen's *Run paper session*) trades its own entry/exit logic, not
+  `momentum.strategy`. Now under Advanced; either retire it or port it to the
+  strategy rules.
+- **Shadow mode** still ranks by conviction (`shadow_service`,
+  `min_conviction_score: 70`) — align it with the scan-rank selection Auto
+  Pilot now uses.
+- **Advanced screens still speak the old vocabulary** — Trade Plan shows the R
+  milestones as "targets"; Trade Health advice (Scale In/Out, Raise Stop) and
+  conviction are untested heuristics. They are advisory only; relabel or retire.
+- **Thesis-reevaluation "action" advice** is not validated by the backtest and
+  is no longer surfaced on the main screens; grade it or remove it.
+- **Exit fills** — a trend exit detected after the close is filled at that
+  close in the paper journal; the backtest fills at the next open. Small,
+  unbiased on average; a pending-order model would make them identical.
+- **Intraday daemon cycles** recompute the full scan every minute although
+  signals only change on completed daily bars — cache the signal set per
+  session and only re-mark positions intraday.
+- **Research ideas not adopted** (no robust edge found): relative-volume
+  confirmation, 52-week-high proximity, sector strength, volatility targeting,
+  liquidating on a regime flip. Re-test only with a point-in-time universe.
+
 ## Conventions for this file
 
 One line per item: what + where + why deferred. Keep it short; delete done items.

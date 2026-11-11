@@ -9,6 +9,7 @@ Fails if any screen remains empty after a successful scan.
 
 from __future__ import annotations
 
+import zlib
 import datetime as dt
 from typing import Any
 
@@ -74,7 +75,7 @@ class YahooLikeStub:
     """Stands in for live Yahoo: returns fresh bars for every symbol (offline)."""
 
     def get_bars(self, symbol: str, *a: object, **k: object) -> pd.DataFrame:
-        return _bars(abs(hash(symbol)) % 9999, pd.Timestamp(dt.date.today(), tz="UTC"))
+        return _bars(zlib.crc32(symbol.encode()) % 9999, pd.Timestamp(dt.date.today(), tz="UTC"))
 
 
 def test_one_scan_drives_the_whole_application(factory: sessionmaker[Session]) -> None:

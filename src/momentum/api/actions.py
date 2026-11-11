@@ -22,8 +22,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from momentum.api.jobs import Progress
 from momentum.api.trading_mutex import serialized
-from momentum.backtest import BacktestConfig, BacktestEngine, OrderIntent
-from momentum.backtest.engine import StrategyContext
+from momentum.backtest import BacktestConfig, BacktestEngine
 from momentum.conviction.engine import ConvictionEngine
 from momentum.conviction.inputs import ConvictionInputs
 from momentum.core.enums import RegimeState
@@ -51,6 +50,14 @@ from momentum.persistence.repositories.scans import ScanResultRepository
 from momentum.persistence.repositories.trades import TradeRepository
 from momentum.risk.risk_manager import RiskManager
 from momentum.signals.regime import RegimeEngine
+from momentum.strategy import (
+    MomentumBreakoutStrategy,
+    StrategyConfig,
+    completed_bars,
+    market_uptrend,
+)
+from momentum.strategy import default_config as default_strategy_config
+from momentum.strategy import rules as strategy_rules
 from momentum.universe.membership import select_universe
 from momentum.universe.prefilter import liquidity_prefilter
 from momentum.universe.screener import MomentumScanner
@@ -313,6 +320,28 @@ def _newest_bar_timestamp(bars: Mapping[str, pd.DataFrame]) -> dt.datetime | Non
     return result
 
 
+def market_gate_record(
+    benchmark: pd.DataFrame | None, strategy: StrategyConfig, *, now: dt.datetime | None = None
+) -> dict[str, Any]:
+    """The market gate as stored on the regime row: ``uptrend`` plus its evidence."""
+    uptrend = market_uptrend(benchmark, strategy, now=now)
+    close: float | None = None
+    average: float | None = None
+    if benchmark is not None and len(benchmark) > 0:
+        closes = completed_bars(benchmark, now)["close"].dropna()
+        if len(closes):
+            close = round(float(closes.iloc[-1]), 4)
+        if len(closes) >= strategy.regime_ma_period:
+            average = round(float(closes.iloc[-strategy.regime_ma_period :].mean()), 4)
+    return {
+        "uptrend": uptrend,
+        "close": close,
+        "average": average,
+        "period": strategy.regime_ma_period,
+        "symbol": BENCHMARK_SYMBOL,
+    }
+
+
 def _breadth_above_200dma(bars: Mapping[str, pd.DataFrame]) -> float | None:
     """Fraction of the universe trading above its 200-day moving average (0..1).
 
@@ -466,7 +495,10 @@ def run_scan(
 
     # 2. Scan + rank the universe (stable ``run_id`` keyed on the data date).
     progress(0.5, "scanning the universe")
-    scan = scanner.scan(bars, sectors=sectors)
+    #    Signals read COMPLETED daily bars only (``now`` drops a still-forming
+    #    session bar), exactly as the strategy was backtested; ``price`` stays live.
+    signal_now = strategy_rules.live_clock()
+    scan = scanner.scan(bars, sectors=sectors, now=signal_now)
     candidates = scan.candidates
     as_of = scan.as_of.date()
     run_id = f"scan-{as_of:%Y%m%d}"
@@ -477,6 +509,13 @@ def run_scan(
     regime = RegimeEngine().evaluate(spy, breadth=breadth, as_of=to_utc_timestamp(as_of))
     regime_label = _REGIME_TO_CONVICTION.get(regime.state)
     regime_record = regime.to_record()
+    # The strategy's market gate (benchmark above its 200-day average on the last
+    # completed close) rides on the regime row — the ONE switch that allows new
+    # entries. Verdicts, Auto Pilot and the UI all read it from here.
+    regime_record["details"] = {
+        **(regime_record.get("details") or {}),
+        "market_gate": market_gate_record(spy, scanner.strategy, now=signal_now),
+    }
 
     # 4. Score conviction for every ranked candidate — UNLESS the data is stale.
     conviction_engine = ConvictionEngine()
@@ -824,35 +863,75 @@ def run_scan(
 # --------------------------------------------------------------------------- #
 # Run Backtest
 # --------------------------------------------------------------------------- #
-class BreakoutStrategy:
-    """A simple N-day high breakout with a fixed protective stop (no look-ahead)."""
+#: Calendar days of history a backtest pulls at minimum (~20 years). The
+#: strategy needs a year of warm-up, holds winners for months, and earns its
+#: keep in bear markets — a window without one (the 2010s) cannot show what the
+#: market gate and the stops are for, so the default reaches back past 2008.
+BACKTEST_MIN_LOOKBACK_DAYS = 7300
 
-    def __init__(
-        self,
-        symbols: Sequence[str],
-        *,
-        lookback: int = 50,
-        stop_frac: float = 0.9,
-        shares: int = 50,
-    ) -> None:
-        self.symbols = list(symbols)
-        self.lookback = lookback
-        self.stop_frac = stop_frac
-        self.shares = shares
 
-    def on_bar(self, ctx: StrategyContext) -> list[OrderIntent]:
-        intents: list[OrderIntent] = []
-        for symbol in self.symbols:
-            if ctx.position(symbol) is not None:
-                continue
-            price = ctx.price(symbol)
-            history = ctx.history(symbol)
-            if price is None or len(history) < self.lookback + 1:
-                continue
-            prior_high = float(history["high"].iloc[-(self.lookback + 1) : -1].max())
-            if price > prior_high:
-                intents.append(OrderIntent(symbol, self.shares, stop_price=price * self.stop_frac))
-        return intents
+def _curve_stats(curve: pd.Series) -> dict[str, float | None]:
+    """CAGR / max drawdown / total return of an equity (or price) curve."""
+    curve = curve.dropna()
+    if len(curve) < 2 or float(curve.iloc[0]) <= 0:
+        return {"cagr": None, "max_drawdown": None, "total_return": None, "years": None}
+    years = (curve.index[-1] - curve.index[0]).days / 365.25
+    total = float(curve.iloc[-1]) / float(curve.iloc[0])
+    cagr = total ** (1.0 / years) - 1.0 if years > 0 and total > 0 else None
+    drawdown = float((curve / curve.cummax() - 1.0).min())
+    return {
+        "cagr": round(cagr, 4) if cagr is not None else None,
+        "max_drawdown": round(drawdown, 4),
+        "total_return": round(total - 1.0, 4),
+        "years": round(years, 2),
+    }
+
+
+def _backtest_summary(
+    result: Any, benchmark: pd.DataFrame | None, *, warmup_bars: int
+) -> dict[str, Any]:
+    """The plain-language scorecard of a backtest (pure).
+
+    Statistics start after the strategy's warm-up (it cannot trade before its
+    longest lookback is available), and the benchmark is measured over exactly
+    the same dates — an honest like-for-like comparison.
+    """
+    curve = result.equity_curve
+    live = curve.iloc[min(warmup_bars, max(len(curve) - 2, 0)) :]
+    stats = _curve_stats(live)
+    bench: dict[str, float | None] = {"cagr": None, "max_drawdown": None, "total_return": None}
+    if benchmark is not None and not benchmark.empty and len(live) >= 2:
+        closes = benchmark["close"]
+        window = closes[(closes.index >= live.index[0]) & (closes.index <= live.index[-1])]
+        b = _curve_stats(window)
+        bench = {k: b[k] for k in ("cagr", "max_drawdown", "total_return")}
+    trades = result.performance.trades
+    exits: dict[str, int] = {}
+    for t in result.trades:
+        key = t.exit_reason or "unknown"
+        exits[key] = exits.get(key, 0) + 1
+    return {
+        "start": live.index[0].date().isoformat() if len(live) else None,
+        "end": live.index[-1].date().isoformat() if len(live) else None,
+        "years": stats["years"],
+        "starting_equity": round(float(live.iloc[0]), 2) if len(live) else None,
+        "final_equity": round(float(live.iloc[-1]), 2) if len(live) else None,
+        "cagr": stats["cagr"],
+        "total_return": stats["total_return"],
+        "max_drawdown": stats["max_drawdown"],
+        "benchmark_cagr": bench["cagr"],
+        "benchmark_total_return": bench["total_return"],
+        "benchmark_max_drawdown": bench["max_drawdown"],
+        "num_trades": int(trades.num_trades),
+        "win_rate": round(float(trades.win_rate), 4),
+        "expectancy_r": round(float(trades.expectancy_r), 4),
+        "profit_factor": round(float(trades.profit_factor), 4),
+        "avg_winner_r": round(float(trades.avg_winner_r), 4),
+        "avg_loser_r": round(float(trades.avg_loser_r), 4),
+        "largest_winner_r": round(float(trades.largest_winner_r), 4),
+        "avg_holding_days": round(float(trades.avg_holding_days), 1),
+        "exit_reasons": exits,
+    }
 
 
 def _downsample_curve(curve: pd.Series) -> list[dict[str, Any]]:
@@ -885,7 +964,9 @@ def _benchmark_curve(spy: pd.DataFrame | None, equity_curve: pd.Series) -> list[
     return _downsample_curve(scaled)
 
 
-def _backtest_detail(result: Any, benchmark: pd.DataFrame | None = None) -> dict[str, Any]:
+def _backtest_detail(
+    result: Any, benchmark: pd.DataFrame | None = None, *, warmup_bars: int = 0
+) -> dict[str, Any]:
     """Equity curve + per-trade detail for the Backtesting screen (pure).
 
     The equity curve is downsampled to <= 250 points (endpoints preserved) and
@@ -893,7 +974,11 @@ def _backtest_detail(result: Any, benchmark: pd.DataFrame | None = None) -> dict
     benchmark bars are supplied a buy-and-hold ``benchmark_curve`` (same schema,
     same starting equity) is included for the overlay.
     """
-    equity_points = _downsample_curve(result.equity_curve)
+    # Charts start where the strategy can first trade (after its warm-up), so
+    # the benchmark overlay is a like-for-like comparison from the same date.
+    curve = result.equity_curve
+    curve = curve.iloc[min(max(warmup_bars, 0), max(len(curve) - 2, 0)) :]
+    equity_points = _downsample_curve(curve)
     trades = sorted(result.trades, key=lambda t: t.exit_date or dt.date.min)[-200:]
     trade_rows = [
         {
@@ -908,7 +993,7 @@ def _backtest_detail(result: Any, benchmark: pd.DataFrame | None = None) -> dict
         for t in trades
     ]
     detail = {"equity_curve": equity_points, "trades": trade_rows}
-    bench = _benchmark_curve(benchmark, result.equity_curve)
+    bench = _benchmark_curve(benchmark, curve)
     if bench:
         detail["benchmark_curve"] = bench
     return detail
@@ -921,13 +1006,31 @@ def run_backtest(
     lookback_days: int,
     progress: Progress,
     session_factory: sessionmaker[Session] | None = None,
-    lookback: int = 50,
+    lookback: int | None = None,
+    strategy: StrategyConfig | None = None,
 ) -> dict[str, Any]:
-    """Pull data, run an event-driven breakout backtest, persist + return the summary."""
+    """Backtest the app's real strategy and persist + return the scorecard.
+
+    Runs :class:`momentum.strategy.MomentumBreakoutStrategy` — the same rule
+    functions the scanner, trade plan and trade manager use — through the
+    event-driven engine (next-open fills, gap-aware stops, commissions and
+    slippage). ``lookback`` optionally overrides the breakout lookback.
+    """
+    cfg = strategy or default_strategy_config()
+    if lookback is not None:
+        cfg = cfg.model_copy(update={"breakout_lookback": lookback})
     progress(0.2, "pulling market data")
     bars = pull_bars(provider, symbols, end=_today(), lookback_days=lookback_days)
     if not bars:
         raise RuntimeError("no market data available for the universe")
+    benchmark = bars.get(BENCHMARK_SYMBOL)
+    if benchmark is None:
+        try:
+            benchmark = pull_bars(
+                provider, [BENCHMARK_SYMBOL], end=_today(), lookback_days=lookback_days
+            ).get(BENCHMARK_SYMBOL)
+        except Exception:  # noqa: BLE001 — without a benchmark the market gate stays open
+            benchmark = None
     progress(0.6, "running backtest")
     engine = BacktestEngine(
         BacktestConfig(
@@ -936,15 +1039,9 @@ def run_backtest(
             slippage=BpsSlippage(),
         )
     )
-    result = engine.run(bars, BreakoutStrategy(list(bars), lookback=lookback))
-    benchmark = bars.get(BENCHMARK_SYMBOL)
-    if benchmark is None:
-        try:
-            benchmark = pull_bars(
-                provider, [BENCHMARK_SYMBOL], end=_today(), lookback_days=lookback_days
-            ).get(BENCHMARK_SYMBOL)
-        except Exception:  # noqa: BLE001 — the overlay is auxiliary to the backtest
-            benchmark = None
+    result = engine.run(bars, MomentumBreakoutStrategy(bars, benchmark=benchmark, config=cfg))
+    # The first signal is possible on bar index min_history - 1 (filled the next bar).
+    scorecard = _backtest_summary(result, benchmark, warmup_bars=cfg.min_history - 1)
     run_id = _run_stamp("backtest")
     summary = {
         "run_id": run_id,
@@ -955,27 +1052,35 @@ def run_backtest(
         "expectancy_r": round(result.expectancy_r, 4),
         "profit_factor": round(result.profit_factor, 4),
         "max_drawdown": round(result.max_drawdown, 4),
+        "scorecard": scorecard,
     }
 
     # Persist the run as a single-row study so the Backtesting screen shows history.
     if session_factory is not None:
         progress(0.9, "saving results")
         row = OptimizationResult(
-            study_name="breakout",
+            study_name="momentum_breakout",
             optimizer="manual",
             run_id=run_id,
             param_hash=run_id,
-            parameters={"breakout_lookback": lookback, "symbols": len(bars)},
+            parameters={
+                "strategy": cfg.model_dump(mode="json"),
+                "config_hash": cfg.config_hash(),
+                "breakout_lookback": cfg.breakout_lookback,
+                "symbols": len(bars),
+            },
             objective="expectancy_r",
             objective_value=summary["expectancy_r"],
             sample="full",
+            cagr=scorecard["cagr"],
             max_drawdown=summary["max_drawdown"],
             profit_factor=summary["profit_factor"],
             expectancy_r=summary["expectancy_r"],
             num_trades=summary["num_trades"],
             rank=1,
             is_selected=True,
-            details=_backtest_detail(result, benchmark),
+            details=_backtest_detail(result, benchmark, warmup_bars=cfg.min_history - 1)
+            | {"scorecard": scorecard},
         )
         with session_factory() as session:
             OptimizationResultRepository(session).save(row)
@@ -992,7 +1097,7 @@ def run_backtest(
             result.trades,
             run_id=run_id,
             output_dir=_user_dir() / "reports",
-            extra_meta={"symbols": len(bars), "lookback": lookback},
+            extra_meta={"symbols": len(bars), "lookback": cfg.breakout_lookback},
         )
         summary["tearsheet"] = str(path)
     except Exception:  # noqa: BLE001 — reporting is auxiliary to the backtest
@@ -1009,8 +1114,9 @@ def walk_forward_backtest(
     lookback_days: int,
     progress: Progress,
     session_factory: sessionmaker[Session] | None = None,
-    lookback: int = 50,
+    lookback: int | None = None,
     n_folds: int = 3,
+    strategy: StrategyConfig | None = None,
 ) -> dict[str, Any]:
     """Walk-forward robustness test: expanding-window folds through the real engine.
 
@@ -1025,6 +1131,10 @@ def walk_forward_backtest(
     bars = pull_bars(provider, symbols, end=_today(), lookback_days=lookback_days)
     if not bars:
         raise RuntimeError("no market data available for the universe")
+    cfg = strategy or default_strategy_config()
+    if lookback is not None:
+        cfg = cfg.model_copy(update={"breakout_lookback": lookback})
+    benchmark = bars.get(BENCHMARK_SYMBOL)
     progress(0.5, "running walk-forward folds")
     config = BacktestConfig(
         initial_cash=100_000.0,
@@ -1033,7 +1143,7 @@ def walk_forward_backtest(
     )
     report = walk_forward(
         bars,
-        lambda fold_bars: BreakoutStrategy(list(fold_bars), lookback=lookback),
+        lambda fold_bars: MomentumBreakoutStrategy(fold_bars, benchmark=benchmark, config=cfg),
         config=config,
         n_folds=n_folds,
     )
@@ -1055,7 +1165,7 @@ def walk_forward_backtest(
                 optimizer="manual",
                 run_id=run_id,
                 param_hash=f"{run_id}:{fold.index}:{metrics.sample}",
-                parameters={"breakout_lookback": lookback, "symbols": len(bars)},
+                parameters={"breakout_lookback": cfg.breakout_lookback, "symbols": len(bars)},
                 objective="expectancy_r",
                 objective_value=metrics.expectancy_r,
                 sample=metrics.sample,

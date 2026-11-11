@@ -59,8 +59,14 @@ def _key(kind: str, symbol: str | None, transition: str) -> str:
     return f"{kind}:{symbol or 'market'}:{transition}"[:160]
 
 
-def derive_alerts(deltas: list[DeltaRecord], *, new_snapshot: dict[str, Any]) -> list[AlertSpec]:
-    """The important changes: thresholded deltas + stop/target hits."""
+def derive_alerts(
+    deltas: list[DeltaRecord],
+    *,
+    new_snapshot: dict[str, Any],
+    prev_snapshot: dict[str, Any] | None = None,
+) -> list[AlertSpec]:
+    """The important changes: thresholded deltas, stop hits on held positions,
+    and — given the previous snapshot — new buy signals and market-gate flips."""
     alerts: list[AlertSpec] = []
     for d in deltas:
         if d.metric == "conviction" and d.delta is not None and abs(d.delta) >= CONVICTION_ALERT:
@@ -149,15 +155,15 @@ def derive_alerts(deltas: list[DeltaRecord], *, new_snapshot: dict[str, Any]) ->
                 )
             )
 
-    # Stop / target hits from the new snapshot's tracked-trade state.
+    # Stop reached — for POSITIONS only. A tracked recommendation nobody took
+    # carries no money; alerting on its stop (or a "target") is pure noise.
     trades = new_snapshot.get("trades")
     if isinstance(trades, dict):
         for symbol, state in trades.items():
-            if not isinstance(state, dict):
+            if not isinstance(state, dict) or not state.get("taken"):
                 continue
             price = state.get("price")
             stop = state.get("stop")
-            target = state.get("next_target")
             if price is not None and stop is not None and price <= stop:
                 alerts.append(
                     AlertSpec(
@@ -169,17 +175,53 @@ def derive_alerts(deltas: list[DeltaRecord], *, new_snapshot: dict[str, Any]) ->
                         _key("stop", symbol, f"{stop}"),
                     )
                 )
-            elif price is not None and target is not None and price >= target:
-                alerts.append(
-                    AlertSpec(
-                        "target_reached",
-                        symbol,
-                        WARNING,
-                        f"{symbol} target reached",
-                        f"price {price:.2f} at/above target {target:.2f}",
-                        _key("target", symbol, f"{target}"),
-                    )
+
+    if prev_snapshot is not None:
+        alerts.extend(_signal_and_gate_alerts(prev_snapshot, new_snapshot))
+    return alerts
+
+
+def _signal_and_gate_alerts(prev: dict[str, Any], new: dict[str, Any]) -> list[AlertSpec]:
+    """What a trader acts on between two scans: the market gate flipping, and
+    symbols that newly joined the buy-signal list (only while the gate is open)."""
+    alerts: list[AlertSpec] = []
+    before = (prev.get("regime") or {}).get("market_uptrend")
+    after = (new.get("regime") or {}).get("market_uptrend")
+    if isinstance(before, bool) and isinstance(after, bool) and before != after:
+        alerts.append(
+            AlertSpec(
+                "market_gate",
+                None,
+                CRITICAL,
+                (
+                    "Market back in an uptrend — buying resumes"
+                    if after
+                    else "Market turned down — new buys paused"
+                ),
+                (
+                    "SPY closed back above its 200-day average: buy signals are live again."
+                    if after
+                    else "SPY closed below its 200-day average: the strategy opens no new "
+                    "positions until it recovers. Open positions keep their stops and exits."
+                ),
+                _key("market-gate", None, f"{before}->{after}:{new.get('run_id')}"),
+            )
+        )
+    prev_candidates = prev.get("candidates")
+    new_candidates = new.get("candidates")
+    if after is True and isinstance(prev_candidates, dict) and isinstance(new_candidates, dict):
+        for symbol in sorted(set(new_candidates) - set(prev_candidates)):
+            alerts.append(
+                AlertSpec(
+                    "new_signal",
+                    symbol,
+                    WARNING,
+                    f"{symbol} is a new buy signal",
+                    f"{symbol} now passes every entry rule: top-momentum, above its "
+                    "200-day average, and a new 50-day high.",
+                    _key("new-signal", symbol, str(new.get("run_id"))),
                 )
+            )
     return alerts
 
 

@@ -1,6 +1,6 @@
 const ROWS: [string, string][] = [
   ["⌘K / Ctrl-K", "command palette"],
-  ["1 – 8", "jump to a pipeline stage"],
+  ["1 – 4", "Today · Buy signals · Positions · Results"],
   ["g p / g a / g s", "Portfolio / Analytics / Settings"],
   ["j / k", "next / previous candidate (Scan)"],
   ["⏎", "drill the selection (Scan → Conviction)"],

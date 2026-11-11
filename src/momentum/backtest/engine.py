@@ -49,7 +49,10 @@ class OrderIntent:
     kind: str = "entry"  # "entry" | "exit"
     side: Side = Side.LONG
     stop_price: float | None = None  # protective stop for entries
-    tag: str | None = None
+    tag: str | None = None  # entries: entry reason; exits: exit reason
+    # Alternative to ``stop_price``: place the stop this far below (long) / above
+    # (short) the ACTUAL fill, the way a live plan anchors its stop to the entry.
+    stop_distance: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,6 +161,7 @@ class _Position:
     highest: float
     lowest: float
     bars_held: int = 0
+    entry_reason: str | None = None
 
 
 class _SymbolData:
@@ -312,7 +316,7 @@ class BacktestEngine:
                 continue  # symbol does not trade this session; order lapses
             bar_open = float(data.open[row])
             if order.kind == "exit":
-                self._close_position(sym, bar_open, ts, reason="signal", gapped=False)
+                self._close_position(sym, bar_open, ts, reason=order.tag or "signal", gapped=False)
             elif order.kind == "entry" and order.quantity > 0:
                 if self._open_position(order, bar_open, ts):
                     opened.add(sym)
@@ -320,10 +324,15 @@ class BacktestEngine:
 
     def _open_position(self, order: OrderIntent, bar_open: float, ts: pd.Timestamp) -> bool:
         sym = order.symbol.upper()
-        if sym in self.positions or order.stop_price is None:
+        if sym in self.positions or (order.stop_price is None and order.stop_distance is None):
             return False  # no pyramiding; a protective stop is mandatory
         fill = self.sim.fill_at(reference_price=bar_open, shares=order.quantity, side=order.side)
-        risk_per_share = abs(fill.price - order.stop_price)
+        stop_price = (
+            order.stop_price
+            if order.stop_price is not None
+            else fill.price - order.side.sign * float(order.stop_distance or 0.0)
+        )
+        risk_per_share = abs(fill.price - stop_price)
         if risk_per_share <= 0:
             return False
         self.cash -= order.side.sign * fill.cash_flow + fill.commission
@@ -333,11 +342,12 @@ class BacktestEngine:
             shares=order.quantity,
             entry_price=fill.price,
             entry_time=ts,
-            stop_price=order.stop_price,
+            stop_price=stop_price,
             risk_per_share=risk_per_share,
             entry_commission=fill.commission,
             highest=fill.price,
             lowest=fill.price,
+            entry_reason=order.tag,
         )
         return True
 
@@ -413,6 +423,8 @@ class BacktestEngine:
                 side=pos.side,
                 entry_date=pos.entry_time.date(),
                 exit_date=ts.date(),
+                entry_reason=pos.entry_reason,
+                exit_reason=reason,
             )
         )
 

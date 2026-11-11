@@ -1,5 +1,5 @@
-"""End-to-end automatic trade management: scan → take → target scale-out →
-final-target close → stop close, with realized outcomes, reports and alerts.
+"""End-to-end automatic trade management: scan → take → hold through strength →
+trend exit / stop close, with realized outcomes, reports and alerts.
 
 Each test drives the REAL scan pipeline (stub provider with controllable last
 prices) so what is proven here is exactly what the daemon does every cycle
@@ -118,32 +118,44 @@ def _take_one(factory: sessionmaker[Session]) -> tuple[str, str, list[dict[str, 
         return trade.symbol, trade.trade_uid, list(trade.targets or []), trade.stop_price
 
 
-def test_take_profit_scales_then_closes_at_final_target(factory: sessionmaker[Session]) -> None:
+def test_price_through_the_milestones_sells_nothing(factory: sessionmaker[Session]) -> None:
+    """The strategy has no profit target: a winner is simply held."""
     provider = PricedProvider()
     _scan(factory, provider)
     symbol, uid, targets, _stop = _take_one(factory)
     assert len(targets) >= 2
 
-    # Next cycle: price pops through target 1 → partial scale-out, stays open.
-    provider.last[symbol] = float(targets[0]["price"]) * 1.001
-    result = _scan(factory, provider)
-    assert result["trades_scaled_out"] == 1
-    assert result["trades_auto_closed"] == 0
+    for level in (targets[0], targets[-1]):
+        provider.last[symbol] = float(level["price"]) * 1.001
+        result = _scan(factory, provider)
+        assert result["trades_scaled_out"] == 0
+        assert result["trades_auto_closed"] == 0
     with factory() as s:
         trade = TrackedTradeRepository(s).get_by_uid(uid)
         assert trade is not None and trade.status == "open"
-        assert trade.targets is not None and trade.targets[0].get("hit") is True
         journal = s.get(Trade, trade.journal_trade_id)
         assert journal is not None and journal.status == "open"
-        assert journal.scaled_out_quantity > 0
-        assert journal.scaled_out_pnl > 0
+        assert journal.scaled_out_quantity == 0
+        assert not list(s.scalars(select(Alert).where(Alert.kind == "trade_managed")))
 
-    # Same price again: the hit target must NOT re-fire (idempotent per target).
-    again = _scan(factory, provider)
+
+def test_milestone_selling_is_still_available_when_switched_on(
+    factory: sessionmaker[Session], monkeypatch: Any
+) -> None:
+    """Opt-in legacy behaviour: scale out at T1, close the rest at the last milestone."""
+    from momentum.trade_lifecycle.config import TradeLifecycleConfig
+
+    monkeypatch.setattr(svc, "default_config", lambda: TradeLifecycleConfig(auto_take_profit=True))
+    provider = PricedProvider()
+    _scan(factory, provider)
+    symbol, uid, targets, _stop = _take_one(factory)
+
+    provider.last[symbol] = float(targets[0]["price"]) * 1.001
+    result = _scan(factory, provider)
+    assert result["trades_scaled_out"] == 1 and result["trades_auto_closed"] == 0
+    again = _scan(factory, provider)  # the hit milestone must not re-fire
     assert again["trades_scaled_out"] == 0
-    assert again["trades_auto_closed"] == 0
 
-    # Final target reached → remainder closed, outcome realized, advice gradable.
     provider.last[symbol] = float(targets[-1]["price"]) * 1.001
     final = _scan(factory, provider)
     assert final["trades_auto_closed"] == 1
@@ -151,10 +163,108 @@ def test_take_profit_scales_then_closes_at_final_target(factory: sessionmaker[Se
         trade = TrackedTradeRepository(s).get_by_uid(uid)
         assert trade is not None and trade.status == "closed"
         assert trade.realized_r is not None and trade.realized_r > 0
-        assert trade.realized_pnl is not None and trade.realized_pnl > 0
+        journal = s.get(Trade, trade.journal_trade_id)
+        assert journal is not None and journal.exit_reason == "target"
+
+
+BASE = "BASE"
+
+
+class BaseBreakoutProvider(PricedProvider):
+    """Adds one crafted symbol: a strong run-up, a 50-bar choppy base just under
+    the high, then a breakout close. Its 50-day low (the base's floor, ~96) sits
+    well above the 3×ATR stop (~93), so a close between the two is a trend exit."""
+
+    def get_bars(self, symbol: str, *a: object, **k: object) -> pd.DataFrame:
+        from momentum.data.schema import Timeframe
+
+        if symbol != BASE or Timeframe.MINUTE in a:
+            return super().get_bars(symbol, *a, **k)
+        run_up = np.geomspace(20.0, 100.0, 250)
+        base = np.where(np.arange(49) % 2 == 0, 96.5, 99.5)
+        close = np.concatenate([run_up, base, [103.0]])
+        pinned = self.last.get(symbol)
+        if pinned is not None:
+            close[-1] = pinned
+        idx = pd.date_range(end=pd.Timestamp(dt.date.today(), tz="UTC"), periods=300, freq="B")
+        return pd.DataFrame(
+            {
+                "open": close,
+                "high": close * 1.002,
+                "low": close * 0.998,
+                "close": close,
+                "volume": np.full(300, 3_000_000.0),
+            },
+            index=idx,
+        )
+
+
+def _take_base(
+    factory: sessionmaker[Session], provider: PricedProvider
+) -> tuple[str, float, float]:
+    """Take the crafted breakout; return (uid, exit_level, stop)."""
+    with factory() as s:
+        tracked = TrackedTradeRepository(s).open_for_symbol(BASE)
+        assert tracked is not None, "the crafted breakout must be a scan candidate"
+        prior_low = float(provider.get_bars(BASE)["low"].iloc[-51:-1].min())
+        assert prior_low > tracked.stop_price * 1.02  # the scenario's premise
+        take = svc.take_trade(s, BASE, ts=NOW)
+        assert take["ok"] is True, take
+        return tracked.trade_uid, prior_low, tracked.stop_price
+
+
+def test_trend_exit_closes_and_realizes(factory: sessionmaker[Session]) -> None:
+    """A daily close below the prior 50-day low sells the position — the
+    strategy's exit — with its own report, alert and audit trail."""
+    provider = BaseBreakoutProvider()
+    universe = [*SYMBOLS, BASE]
+    _scan(factory, provider, symbols=universe)
+    symbol = BASE
+    uid, exit_level, stop = _take_base(factory, provider)
+
+    provider.last[symbol] = (exit_level + stop) / 2.0  # below the 50-day low, above the stop
+    result = _scan(factory, provider, symbols=universe)
+    assert result["trades_auto_closed"] >= 1
+    with factory() as s:
+        trade = TrackedTradeRepository(s).get_by_uid(uid)
+        assert trade is not None and trade.status == "closed"
+        assert "trend exit" in (trade.close_reason or "")
         journal = s.get(Trade, trade.journal_trade_id)
         assert journal is not None and journal.status == "closed"
-        assert journal.exit_reason == "target"
+        assert journal.exit_reason == "trend_exit"
+        report = svc.management_report(s, uid)
+        assert report is not None and report.events[-1].kind == "trend_exit"
+        assert "50-day low" in report.events[-1].analysis
+        alerts = list(
+            s.scalars(select(Alert).where(Alert.kind == "trade_managed", Alert.symbol == symbol))
+        )
+        assert len(alerts) == 1 and "trend exit" in alerts[0].title
+
+
+def test_untaken_recommendations_raise_no_alerts(factory: sessionmaker[Session]) -> None:
+    """A recommendation nobody took is not a position: when price invalidates
+    it, it is retired quietly — no alert, no activity, no audit event."""
+    provider = PricedProvider()
+    _scan(factory, provider)
+    with factory() as s:
+        tracked = TrackedTradeRepository(s).open_trades()
+        assert tracked and all(t.journal_trade_id is None for t in tracked)
+        victim = tracked[0]
+        symbol, uid, stop = victim.symbol, victim.trade_uid, victim.stop_price
+
+    provider.last[symbol] = stop * 0.97
+    _scan(factory, provider)
+    with factory() as s:
+        trade = TrackedTradeRepository(s).get_by_uid(uid)
+        assert trade is not None and trade.status == "closed"
+        assert "recommendation expired" in (trade.close_reason or "")
+        assert not list(s.scalars(select(Alert).where(Alert.kind == "trade_managed")))
+        assert not list(s.scalars(select(Alert).where(Alert.kind == "concentration")))
+        assert not list(
+            s.scalars(
+                select(Activity).where(Activity.category == "management", Activity.symbol == symbol)
+            )
+        )
 
 
 def test_stop_loss_closes_and_realizes(factory: sessionmaker[Session]) -> None:

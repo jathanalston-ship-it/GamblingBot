@@ -1,11 +1,12 @@
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
-import type { PortfolioSnapshot, Regime, Run } from "../api/types";
+import type { Today } from "../api/today";
+import type { Run } from "../api/types";
 import { useApi } from "../hooks/useApi";
-import { money, pct, signed } from "../lib/format";
+import { money, signed } from "../lib/format";
 import { useUpdateStatus } from "../state/updates";
 import { useWorkspace } from "../state/workspace";
-import { Badge, regimeTone } from "./Badge";
+import { ADVANCED_PATHS } from "./StageRail";
 
 function Divider() {
   return <span className="h-4 w-px bg-surface-border" aria-hidden />;
@@ -20,71 +21,78 @@ function Metric({ label, children }: { label: string; children: React.ReactNode 
   );
 }
 
-/** The persistent top bar: brand · market context · account · ⌘K · mode. */
+/** The persistent top bar: brand · is it OK to buy · account · search. The run
+ *  selector is a research tool and only appears on the Advanced screens. */
 export function ContextBar({ onOpenPalette }: { onOpenPalette: () => void }) {
   const { runId, setRunId, symbol } = useWorkspace();
   const navigate = useNavigate();
+  const location = useLocation();
   const update = useUpdateStatus();
+  const today = useApi<Today>("/today", { refreshMs: 30_000 });
+  const advanced = ADVANCED_PATHS.some(
+    (p) => location.pathname === p || location.pathname.startsWith(`${p}/`),
+  );
   const runs = useApi<Run[]>("/runs");
-  const regime = useApi<Regime>("/regimes/latest");
-  const snaps = useApi<PortfolioSnapshot[]>("/portfolio/snapshots?limit=400");
 
-  // NB: do NOT auto-pin runId here. Leaving it null lets every read resolve to the
-  // latest *live scan* run on the backend (resolve_active_run_id) — auto-pinning to
-  // an arbitrary run (e.g. demo or a paper session) silently emptied or demo-fied
-  // the research screens. The dropdown below remains an explicit opt-in override.
-
-  const adx = regime.data ? regime.data["adx"] : null;
-  const rv = regime.data ? regime.data["realized_vol"] : null;
-  const breadth = regime.data ? regime.data["breadth"] : null;
-
-  const latest = snaps.data && snaps.data.length > 0 ? snaps.data[snaps.data.length - 1] : null;
-  const dayPnl = latest?.daily_pnl ?? null;
+  const market = today.data?.market;
+  const account = today.data?.account;
+  const gateTone =
+    market?.uptrend === true
+      ? "border-bull/30 bg-bull/10 text-bull"
+      : market?.uptrend === false
+        ? "border-bear/40 bg-bear/10 text-bear"
+        : "border-surface-edge/60 text-slate-400";
+  const gateWord =
+    market?.uptrend === true
+      ? "Market uptrend · buying allowed"
+      : market?.uptrend === false
+        ? "Market downtrend · no new buys"
+        : "Market trend unknown";
 
   return (
     <header className="flex h-12 items-center gap-3.5 border-b border-surface-border bg-surface-raised/80 px-4 backdrop-blur">
-      <span className="flex items-center gap-2">
+      <button onClick={() => navigate("/")} className="flex items-center gap-2" title="Today">
         <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent-soft/20 text-sm font-bold text-accent">
           M
         </span>
         <span className="text-sm font-semibold tracking-tight text-slate-100">Momentum Lab</span>
+      </button>
+
+      <Divider />
+
+      <span
+        className={`rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${gateTone}`}
+        title={market?.detail ?? "Run a scan to measure the market trend"}
+      >
+        {gateWord}
       </span>
 
       <Divider />
 
-      <span className="flex items-center gap-3">
-        {regime.data ? (
-          <Badge tone={regimeTone(regime.data.regime)}>{regime.data.regime}</Badge>
-        ) : (
-          <span className="text-xs text-slate-600">no regime</span>
-        )}
-        {adx != null ? <span className="text-xs text-slate-500">ADX {String(adx)}</span> : null}
-        {typeof rv === "number" ? (
-          <span className="text-xs text-slate-500">RV {pct(rv, 1)}</span>
-        ) : null}
-        {typeof breadth === "number" ? (
-          <span className="text-xs text-slate-500" title="% of universe above its 200DMA">
-            Breadth {pct(breadth, 0)}
-          </span>
-        ) : null}
-      </span>
-
-      <Divider />
-
-      <span className="flex items-center gap-3">
-        <Metric label="Equity">
-          <span className="text-slate-200">{money(latest?.equity ?? null)}</span>
+      <span className="flex items-center gap-3.5">
+        <Metric label="Account">
+          <span className="text-slate-200">{money(account?.equity ?? null)}</span>
         </Metric>
-        <Metric label="Day">
-          {dayPnl == null ? (
+        <Metric label="Open P/L">
+          {account == null ? (
             <span className="text-slate-600">—</span>
           ) : (
-            <span className={dayPnl >= 0 ? "text-bull" : "text-bear"}>{signed(dayPnl, 0)}</span>
+            <span
+              className={
+                account.unrealized_pnl > 0
+                  ? "text-bull"
+                  : account.unrealized_pnl < 0
+                    ? "text-bear"
+                    : "text-slate-300"
+              }
+            >
+              {signed(account.unrealized_pnl, 0)}
+            </span>
           )}
         </Metric>
-        <Metric label="Heat">
+        <Metric label="Positions">
           <span className="text-slate-200">
-            {latest?.portfolio_heat != null ? pct(latest.portfolio_heat, 1) : "—"}
+            {account ? `${account.open_positions}/${account.max_positions}` : "—"}
           </span>
         </Metric>
       </span>
@@ -102,23 +110,25 @@ export function ContextBar({ onOpenPalette }: { onOpenPalette: () => void }) {
         </button>
       ) : null}
 
-      <label className="flex items-center gap-1.5 text-xs text-slate-500">
-        Run
-        <select
-          value={runId ?? ""}
-          onChange={(e) => setRunId(e.target.value || null)}
-          className="field max-w-40 py-0.5 text-xs"
-        >
-          <option value="">latest (auto)</option>
-          {(runs.data ?? []).map((r) => (
-            <option key={r.run_id} value={r.run_id}>
-              {r.run_id}
-            </option>
-          ))}
-        </select>
-      </label>
+      {advanced ? (
+        <label className="flex items-center gap-1.5 text-xs text-slate-500">
+          Run
+          <select
+            value={runId ?? ""}
+            onChange={(e) => setRunId(e.target.value || null)}
+            className="field max-w-40 py-0.5 text-xs"
+          >
+            <option value="">latest (auto)</option>
+            {(runs.data ?? []).map((r) => (
+              <option key={r.run_id} value={r.run_id}>
+                {r.run_id}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
 
-      {symbol ? (
+      {advanced && symbol ? (
         <span
           className="rounded-md border border-surface-edge/60 px-2 py-0.5 text-xs font-medium text-slate-300"
           title="focused symbol"
@@ -133,7 +143,7 @@ export function ContextBar({ onOpenPalette }: { onOpenPalette: () => void }) {
 
       <span
         className="rounded-full border border-bull/30 bg-bull/10 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-bull"
-        title="Live execution stays locked until paper results justify it"
+        title="Paper trading — no real money is ever traded"
       >
         PAPER
       </span>

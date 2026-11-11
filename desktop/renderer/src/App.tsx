@@ -8,7 +8,12 @@ import { Placeholder } from "./components/Placeholder";
 
 // The landing page loads eagerly (first paint); every other view is a lazy
 // chunk fetched on first visit — smaller initial parse, faster startup.
-import CommandCenter from "./views/CommandCenter";
+import Today from "./views/Today";
+
+const CommandCenter = lazy(() => import("./views/CommandCenter"));
+const Signals = lazy(() => import("./views/Signals"));
+const Positions = lazy(() => import("./views/Positions"));
+const Results = lazy(() => import("./views/Results"));
 
 const Analogs = lazy(() => import("./views/Analogs"));
 const Analytics = lazy(() => import("./views/Analytics"));
@@ -49,7 +54,10 @@ export default function App() {
       <Suspense fallback={<Loading />}>
         <Routes>
           <Route element={<AppShell />}>
-            <Route index element={<CommandCenter />} />
+            <Route index element={<Today />} />
+            <Route path="signals" element={<Signals />} />
+            <Route path="positions" element={<Positions />} />
+            <Route path="results" element={<Results />} />
             <Route path="command-center" element={<CommandCenter />} />
             <Route path="scan" element={<Scan />} />
             <Route path="candidates" element={<Scan shortlist />} />

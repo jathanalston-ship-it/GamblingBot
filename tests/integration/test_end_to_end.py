@@ -32,6 +32,7 @@ from momentum.portfolio.journal import TradeJournal
 from momentum.portfolio.portfolio import Portfolio
 from momentum.risk.risk_manager import RiskManager
 from momentum.risk.types import AccountState, TradeProposal
+from momentum.strategy import StrategyConfig
 from momentum.universe.screener import MomentumScanner, ScanResult
 from momentum.universe.scanner_config import ScanFilters, ScannerConfig
 
@@ -77,7 +78,8 @@ def test_scanner_ranks_candidates(make_bars: MakeBars) -> None:
     config = ScannerConfig(
         filters=ScanFilters(min_relative_volume=0.0, min_sector_rs=0.0, min_dollar_volume=0.0)
     )
-    scanner = MomentumScanner(config)
+    # Two symbols cannot both be "top 20%": relax the rank floor for this smoke test.
+    scanner = MomentumScanner(config, StrategyConfig(min_momentum_rank=0.0))
     bars = {
         "AAA": make_bars(start=50.0, drift=0.004),
         "BBB": make_bars(start=80.0, drift=0.003),

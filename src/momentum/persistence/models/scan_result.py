@@ -56,6 +56,16 @@ class ScanResult(IntPKMixin, TimestampMixin, Base):
     sector: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     sector_rs: Mapped[float | None] = mapped_column(Float, nullable=True)
     components: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+    # --- strategy inputs (momentum.strategy.rules), from completed bars -----
+    trend_ma: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # The stock's own trend average (200-day SMA) — the uptrend gate.
+    breakout_level: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # The prior N-day high the breakout cleared.
+    bars_since_breakout: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Sessions since that new high (0 = broke out on the last completed bar).
+    exit_level: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # A daily close below this level (the prior N-day low) ends the trade.
     # Per-component sub-scores behind ``momentum_score``.
 
     __table_args__ = (

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import zlib
 import datetime as dt
 from pathlib import Path
 from typing import Any
@@ -50,7 +51,7 @@ class StubProvider:
             raise RuntimeError("provider error")
         if self.empty:
             return pd.DataFrame()
-        return _bars(start=40 + len(symbol), seed=hash(symbol) % 1000)
+        return _bars(start=40 + len(symbol), seed=zlib.crc32(symbol.encode()) % 1000)
 
 
 def _noop(pct: float, msg: str) -> None:
@@ -70,7 +71,8 @@ def _relaxed() -> MomentumScanner:
     return MomentumScanner(
         ScannerConfig(
             filters=ScanFilters(min_relative_volume=0.0, min_sector_rs=0.0, min_dollar_volume=0.0)
-        )
+        ),
+        strategy_gates=False,
     )
 
 
@@ -155,6 +157,14 @@ def test_run_backtest_returns_summary() -> None:
     assert result["num_trades"] >= 1
     assert "final_equity" in result and "profit_factor" in result and "max_drawdown" in result
     assert result["bars"] > 0
+    # The plain-language scorecard: strategy vs benchmark over the same dates.
+    card = result["scorecard"]
+    assert card["num_trades"] == result["num_trades"]
+    assert card["start"] < card["end"] and card["years"] > 0
+    assert card["cagr"] is not None and card["max_drawdown"] <= 0
+    assert 0.0 <= card["win_rate"] <= 1.0
+    assert set(card["exit_reasons"]) <= {"stop", "trend_exit", "liquidation"}
+    assert sum(card["exit_reasons"].values()) == card["num_trades"]
 
 
 def test_run_backtest_persists_optimization_result(factory: sessionmaker[Session]) -> None:
@@ -172,7 +182,7 @@ def test_run_backtest_persists_optimization_result(factory: sessionmaker[Session
         rows = list(session.query(OptimizationResult))
     assert len(rows) == 1
     row = rows[0]
-    assert row.study_name == "breakout"
+    assert row.study_name == "momentum_breakout"
     assert row.run_id == result["run_id"]
     assert row.is_selected is True
     assert row.objective == "expectancy_r"

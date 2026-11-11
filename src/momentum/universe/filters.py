@@ -106,6 +106,38 @@ class MinSectorRelativeStrength:
         return (rs >= self.threshold) | rs.isna()
 
 
+@dataclass(frozen=True)
+class AboveTrendMA:
+    """Keep symbols whose last completed close is above their trend moving average."""
+
+    name: str = "below_trend"
+
+    def __call__(self, features: pd.DataFrame) -> pd.Series:
+        return features["signal_close"] > features["trend_ma"]
+
+
+@dataclass(frozen=True)
+class MinMomentumRank:
+    """Keep the leaders: blended-momentum percentile >= ``threshold`` (0.8 = top 20%)."""
+
+    threshold: float
+    name: str = "weak_momentum"
+
+    def __call__(self, features: pd.DataFrame) -> pd.Series:
+        return features["c_momentum"] >= self.threshold
+
+
+@dataclass(frozen=True)
+class RecentBreakout:
+    """Keep symbols that made a new N-day high within the last ``within`` sessions."""
+
+    within: int
+    name: str = "no_breakout"
+
+    def __call__(self, features: pd.DataFrame) -> pd.Series:
+        return features["bars_since_breakout"] < self.within
+
+
 @dataclass
 class FilterReport:
     """Per-filter elimination counts plus the final combined mask.

@@ -16,6 +16,7 @@ from momentum.persistence.database import (
 )
 from momentum.persistence.models.scan_result import ScanResult
 from momentum.persistence.repositories.scans import ScanResultRepository
+from momentum.strategy import StrategyConfig
 from momentum.universe import MomentumScanner, ScannerConfig
 
 
@@ -34,7 +35,7 @@ def _bars(start: float, drift: float, mult: float = 1.0) -> pd.DataFrame:
     vol = np.full(300, 2_000_000.0)
     vol[-1] *= mult
     return pd.DataFrame(
-        {"open": px, "high": px * 1.01, "low": px * 0.99, "close": px, "volume": vol},
+        {"open": px, "high": px * 1.001, "low": px * 0.999, "close": px, "volume": vol},
         index=idx,
     )
 
@@ -46,7 +47,9 @@ def scan_result():
         "BBB": _bars(80, 0.0015, mult=1.2),
     }
     sectors = {"AAA": "Tech", "BBB": "Tech"}
-    return MomentumScanner(ScannerConfig()).scan(universe, sectors=sectors)
+    # Persistence test, not a rules test: let both symbols through the rank gate.
+    strategy = StrategyConfig(min_momentum_rank=0.0)
+    return MomentumScanner(ScannerConfig(), strategy).scan(universe, sectors=sectors)
 
 
 def test_save_scan_roundtrip(session_factory, scan_result) -> None:

@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from momentum.analytics.trade_analysis import compute_trade_stats
-from momentum.api import services
+from momentum.api import services, strategy_service
 from momentum.api.schemas import TradePlanOut
 from momentum.persistence.models import PortfolioSnapshot, ScanResult, TradePlan
 from momentum.persistence.repositories.trades import TradeRepository
@@ -63,11 +63,18 @@ def _analog_stats(
 
 
 def _latest_equity(session: Session, run_id: str | None) -> float:
-    stmt = select(PortfolioSnapshot)
-    if run_id:
-        stmt = stmt.where(PortfolioSnapshot.run_id == run_id)
-    snap = session.scalars(stmt.order_by(PortfolioSnapshot.session_date.desc()).limit(1)).first()
-    return snap.equity if snap is not None else 100_000.0
+    """Account equity for sizing: the live paper account (demo runs keep their
+    seeded snapshot so the showcase numbers stay self-consistent)."""
+    if run_id == "demo":
+        snap = session.scalars(
+            select(PortfolioSnapshot)
+            .where(PortfolioSnapshot.run_id == run_id)
+            .order_by(PortfolioSnapshot.session_date.desc())
+            .limit(1)
+        ).first()
+        if snap is not None:
+            return snap.equity
+    return strategy_service.account_equity(session)
 
 
 def trade_plan(session: Session, symbol: str, run_id: str | None = None) -> TradePlanOut | None:
@@ -99,9 +106,8 @@ def compute_trade_plan(
         return None
 
     conviction = services.latest_conviction(session, sym, run_id)
-    opportunity = services.latest_opportunity(session, sym, run_id)
     regime = services.latest_regime(session)
-    budget = services._candidate_risk_budget(session, conviction, opportunity, run_id)
+    gate = strategy_service.market_gate(session)
     analogs = _analog_stats(
         session, sector=scan.sector, regime=regime.regime if regime else None, run_id=run_id
     )
@@ -128,8 +134,10 @@ def compute_trade_plan(
         analog_avg_loser_r=analogs.avg_loser_r,
         analog_avg_winner_holding_days=analogs.avg_winner_holding_days,
         analog_avg_mfe_r=analogs.avg_mfe_r,
-        risk_pct=budget.granted_pct if budget else None,
-        risk_dollars=budget.risk_dollars if budget else None,
+        exit_level=scan.exit_level,
+        market_uptrend=gate.uptrend,
+        # Size is the strategy's fixed per-trade risk on the real account equity
+        # (the tested rule) — not a conviction-scaled budget.
         equity=_latest_equity(session, run_id),
     )
     plan = TradePlanEngine().plan(inputs)

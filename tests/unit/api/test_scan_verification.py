@@ -7,6 +7,7 @@ does **not** generate conviction.
 
 from __future__ import annotations
 
+import zlib
 from pathlib import Path
 from typing import Any
 
@@ -50,7 +51,9 @@ class FreshProvider:
     """Returns bars ending today (a real, fresh pull)."""
 
     def get_bars(self, symbol: str, *a: Any, **k: Any) -> pd.DataFrame:
-        return _bars(end=pd.Timestamp.now(tz="UTC").normalize(), seed=hash(symbol) % 1000)
+        return _bars(
+            end=pd.Timestamp.now(tz="UTC").normalize(), seed=zlib.crc32(symbol.encode()) % 1000
+        )
 
 
 class StaleProvider:
@@ -58,7 +61,7 @@ class StaleProvider:
 
     def get_bars(self, symbol: str, *a: Any, **k: Any) -> pd.DataFrame:
         end = pd.Timestamp.now(tz="UTC").normalize() - pd.Timedelta(days=30)
-        return _bars(end=end, seed=hash(symbol) % 1000)
+        return _bars(end=end, seed=zlib.crc32(symbol.encode()) % 1000)
 
 
 def _noop(_p: float, _m: str) -> None:
@@ -83,7 +86,8 @@ def _relaxed() -> MomentumScanner:
     return MomentumScanner(
         ScannerConfig(
             filters=ScanFilters(min_relative_volume=0.0, min_sector_rs=0.0, min_dollar_volume=0.0)
-        )
+        ),
+        strategy_gates=False,
     )
 
 

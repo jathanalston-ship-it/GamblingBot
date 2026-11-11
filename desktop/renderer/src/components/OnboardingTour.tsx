@@ -16,59 +16,55 @@ const STEPS: Step[] = [
   {
     title: "Welcome to Momentum Lab",
     body:
-      "This app finds momentum-breakout setups, scores how convinced it is, sizes the risk, " +
-      "and manages every paper trade automatically — take-profits, stop-losses and plain-language " +
-      "reports on why it acted. Real market data, paper money: nothing here ever touches a live " +
-      "brokerage account. This one-minute tour shows the path from raw data to a managed trade.",
+      "This app trades one simple, tested idea: buy leading stocks as they break out to new " +
+      "highs while the market is rising, risk a small fixed amount on each, and hold until the " +
+      "trend breaks. It uses real market prices and paper money — nothing here ever touches a " +
+      "real brokerage account.",
   },
   {
-    title: "1 · Connect market data",
+    title: "1 · Today tells you what to do",
     body:
-      "Pick a data provider under Settings → Data Provider. Yahoo Finance works out of the box " +
-      "with no account; Alpaca or Polygon give faster, richer data if you have free API keys. " +
-      "You can also load a deterministic sample dataset from Settings to explore every screen " +
-      "before running anything live.",
-    route: "/settings",
-    routeLabel: "Open Settings",
+      "The Today screen answers four questions: is the market in an uptrend (is it OK to buy)? " +
+      "What do you own and how is it doing? Which stocks are buy signals today? And what has the " +
+      "app done? Prices load automatically when the app opens; “Scan now” refreshes them.",
+    route: "/",
+    routeLabel: "Open Today",
   },
   {
-    title: "2 · Choose what to scan",
+    title: "2 · A buy signal is a complete trade",
     body:
-      "Settings → Scanner Universe decides which stocks the scanner watches: the built-in " +
-      "default list, a full index like the S&P 500, one sector, or your own pasted watchlist. " +
-      "The selection sticks and every scan uses it.",
-    route: "/settings",
-    routeLabel: "Open Settings",
+      "Every signal comes with the number of shares to buy, the stop price where it is sold if " +
+      "wrong, and the dollars you lose if that happens (about half a percent of the account). " +
+      "Press Buy to open it in the paper account.",
+    route: "/signals",
+    routeLabel: "Open Buy signals",
   },
   {
-    title: "3 · Run a scan",
+    title: "3 · The app does the selling",
     body:
-      "The Scanner pulls fresh bars, screens the universe for momentum breakouts, and scores " +
-      "each candidate with an explainable 0-100 conviction. While the market is open the " +
-      "built-in daemon rescans automatically every minute — you never have to press the button " +
-      "again after the first one.",
-    route: "/scan",
-    routeLabel: "Open Scanner",
+      "Once you own a stock, the app checks it on every scan and sells it at the stop, or when " +
+      "it closes below its 50-day low. There is no profit target — winners are held for as long " +
+      "as the trend lasts. You can always sell early yourself from Positions.",
+    route: "/positions",
+    routeLabel: "Open Positions",
   },
   {
-    title: "4 · Start at the Command Center",
+    title: "4 · Or let Auto Pilot do the buying too",
     body:
-      "The Command Center is the daily landing page: current market regime, the strongest " +
-      "setups for today / this week / this month, portfolio heat and the live activity feed. " +
-      "When you just want to know “what looks good right now?”, look here first.",
-    route: "/command-center",
-    routeLabel: "Open Command Center",
+      "Switch on Auto Pilot (on the Today screen) and the app also buys each day's signals when " +
+      "the market opens. Most trades will be small losses and a few will be large winners, so " +
+      "the rules only work if every signal is taken — which is what Auto Pilot is for.",
+    route: "/",
+    routeLabel: "Open Today",
   },
   {
-    title: "5 · Take a trade and let the system manage it",
+    title: "5 · Check the evidence",
     body:
-      "Click any symbol to see its trade plan — entry, stop, targets and suggested size. " +
-      "“Take paper trade” opens it in the paper account, and from then on the system watches it " +
-      "on every scan: raising stops, scaling out at targets, closing on a stop hit — each action " +
-      "explained and delivered as an OS notification. The Trades screen shows every position's " +
-      "health and history. That's the whole loop — enjoy!",
-    route: "/trades",
-    routeLabel: "Open Trades",
+      "Results runs these exact rules over the last twenty years of real prices and compares them " +
+      "with simply holding the S&P 500 — honestly, including where they do worse. Your own paper " +
+      "results build up on the same screen. Everything else lives under Advanced in the sidebar.",
+    route: "/results",
+    routeLabel: "Open Results",
   },
 ];
 

@@ -886,6 +886,39 @@ trading platform for US equities. Python 3.12, strictly typed. See
   `desktop/scripts/command-center-screenshots.cjs`. See
   `docs/AUTOPILOT_COMMAND_CENTER.md`.
 
+- **Strategy v2 — one tested rule set + the simple UI (2026-11)**
+  (`src/momentum/strategy/`, `config/strategy.example.yaml`,
+  `api/{strategy_service,today_service}.py`, `routes/today.py`,
+  `scan_results` strategy columns + migration `0031`,
+  `desktop/.../views/{Today,Signals,Positions,Results}.tsx`,
+  `components/simple/`; **`docs/STRATEGY.md`**) — the trading logic was rebuilt
+  on evidence (20 years of real bars, chosen on 2006-2017, confirmed on
+  2018-2026; scripts in `scripts/research/`). **One `StrategyConfig` now drives
+  everything**: market gate (SPY > 200-day SMA), leaders (blended 3/6/12-month
+  momentum in the top 20%), uptrend (close > own 200-day SMA), a new 50-day high
+  within 10 sessions, stop = entry − 3×ATR(20), **exit = a daily close below the
+  prior 50-day low (no profit target)**, risk 0.5%/trade, ≤ 8% per position,
+  ≤ 20 positions. Pure rules in `strategy/rules.py` (`feature_frame`,
+  `signal_features`, `completed_bars`, `market_uptrend`, `position_size`) are
+  called by the scanner (new gates `below_trend`/`weak_momentum`/`no_breakout`;
+  legacy gates default off), `TradePlanEngine` (stop + sizing; targets are R
+  milestones only), `auto_manage` (new `TREND_EXIT`; `auto_take_profit` and the
+  breakeven ratchet now **default off** — selling thirds at targets measured
+  ≈ +0.04R vs ≈ +0.5R letting winners run), the verdict ladder, Auto Pilot
+  (scan-rank order, refuses while the gate is closed; conviction floor default
+  0) and `MomentumBreakoutStrategy` — so **the in-app backtest runs the real
+  rules** (it previously ran an unrelated toy rule) and persists a scorecard vs
+  SPY. Signals read **completed** daily bars only (`rules.live_clock()` is the
+  one clock seam; `tests/conftest.py` pins it). The market gate is stored on the
+  regime row (`details["market_gate"]`). Untaken recommendations are no longer
+  "managed" (no phantom stop/target/concentration alerts); new alerts
+  `new_signal` + `market_gate`. `load_config` retires a bootstrapped user config
+  whose `model_version` differs from the shipped one (`*.yaml.bak`). `GET /today`
+  is the home-screen aggregate; `GET /strategy` = rules + gate + latest evidence.
+  **UI**: four plain-language screens (Today · Buy signals · Positions · Results)
+  with everything else under a collapsed *Advanced* group. `ruff` lint rules are
+  now pinned in `pyproject.toml` (the unpinned default set had drifted).
+
 ## Philosophy (what we optimise for)
 
 Optimise for **expectancy, profit factor, average winner, largest winner, trend

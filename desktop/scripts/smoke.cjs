@@ -18,7 +18,13 @@ const { spawn } = require("node:child_process");
 const electronPath = require("electron"); // resolves to the Electron executable path
 const TIMEOUT_MS = 60_000;
 
-const child = spawn(electronPath, ["."], {
+// Linux CI runners cannot use Chromium's sandbox (root containers, and Ubuntu
+// 24.04's AppArmor restriction on unprivileged user namespaces) — Electron then
+// aborts before creating a window. The smoke run only loads our own built
+// files, so it runs unsandboxed there; packaged builds are unaffected.
+const args = process.platform === "linux" ? ["--no-sandbox", "."] : ["."];
+
+const child = spawn(electronPath, args, {
   env: { ...process.env, MRP_SMOKE: "1", NODE_ENV: "production" },
   stdio: ["ignore", "pipe", "pipe"],
 });

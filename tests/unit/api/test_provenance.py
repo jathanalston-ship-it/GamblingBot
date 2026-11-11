@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import zlib
 import datetime as dt
 from typing import Any
 
@@ -37,7 +38,7 @@ def factory() -> sessionmaker[Session]:
 
 class StubProvider:
     def get_bars(self, symbol: str, *a: object, **k: object) -> pd.DataFrame:
-        rng = np.random.default_rng(abs(hash(symbol)) % 9999)
+        rng = np.random.default_rng(zlib.crc32(symbol.encode()) % 9999)
         close = 60.0 * np.cumprod(1 + rng.normal(0.004, 0.02, 300))
         idx = pd.date_range(end=pd.Timestamp(dt.date.today(), tz="UTC"), periods=300, freq="B")
         opens = np.concatenate([[close[0]], close[:-1]])
