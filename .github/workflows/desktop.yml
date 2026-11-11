@@ -38,9 +38,11 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: |
           sudo apt-get update
+          # ubuntu-latest is 24.04, where libasound2 became a virtual package
+          # with two providers (apt refuses to pick one) — name the real one.
           sudo apt-get install -y --no-install-recommends \
             xvfb libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
-            libgbm1 libgtk-3-0 libasound2 libxss1 libxshmfence1 libxdamage1
+            libgbm1 libgtk-3-0 libasound2t64 libxss1 libxshmfence1 libxdamage1
 
       - name: Install dependencies (npm install)
         run: npm install --no-audit --no-fund
